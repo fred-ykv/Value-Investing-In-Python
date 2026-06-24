@@ -60,3 +60,6 @@ Original notebooks remain unchanged.
 - Reports now include justification, valuation comments, score dimensions, metric source/confidence lineage, risks, and final recommendation.
 - Updated report tests to assert the required explanatory and lineage sections are present.
 - Avoided labeling high data confidence as a weak point in narrative output.
+- Replaced the short justification with a thesis-style recommendation narrative.
+- Added explicit notes when valuation gates block a Buy rating or when weak valuation and weak quality keep a stock at Avoid.
+- Added explanatory report notes for recommendation labels, margin of safety, data confidence, and negative-FCFF DCF cases.
