@@ -17,10 +17,12 @@ analysis toolkit for US stocks.
 - Added a notebook adapter so existing notebook globals can feed the modular report pipeline.
 - Added `requirements.txt`, `.gitignore`, `CHANGELOG.md`, and tests.
 - Added explainable Markdown reports in Portuguese.
+- Calibrated valuation scoring so moderate overvaluation is not treated as near-zero value while Buy recommendations still require adequate valuation.
 
 ## Validation
 
 - Unit test suite passes locally: `python -m unittest discover -s tests -v`.
+- Current local result: 14 tests passing.
 - Current suite covers:
   - traditional industrial company profile
   - big tech company profile
@@ -28,6 +30,7 @@ analysis toolkit for US stocks.
   - negative-FCF company profile
   - DCF sensitivity and negative-FCFF handling
   - 0% growth assumptions that must not be replaced by defaults
+  - scoring calibration for valuation curve, bank P/B vs ROE, and avoid gates
   - notebook adapter behavior
   - Markdown report sections and metric lineage output
 - Live Yahoo Finance runs and batch calibration require network access and dependencies from
