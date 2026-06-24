@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Iterable, Mapping
 
-from .config import CompanyType, SCORE, VALUATION_SCORE
+from .config import CompanyType, GROWTH_TECH, SCORE, VALUATION_SCORE
 from .data_sources import MetricValue
 from .metrics import MetricPack
 from .valuation import ValuationResult
@@ -98,7 +98,14 @@ def liquidity_dimension(metrics: MetricPack, company_type: CompanyType) -> Dimen
     if company_type == CompanyType.FINANCIAL:
         return DimensionScore("liquidity", 0.50, metrics.confidence(), "Current ratio is not central for banks; neutral score.")
     current_ratio = metrics.get("current_ratio")
-    return DimensionScore("liquidity", _normalize(current_ratio, 0.8, 2.0) if current_ratio is not None else 0.50, metrics.confidence(), "Short-term liquidity.")
+    current_ratio_score = _normalize(current_ratio, 0.8, 2.0) if current_ratio is not None else 0.50
+    if company_type == CompanyType.GROWTH_TECH:
+        runway = metrics.get("cash_runway_years")
+        if runway is not None:
+            runway_score = _normalize(runway, 0.5, max(GROWTH_TECH.min_cash_runway_years, 0.5))
+            score = (current_ratio_score * 0.40) + (runway_score * 0.60)
+            return DimensionScore("liquidity", score, metrics.confidence(), "Liquidity blends current ratio with cash runway for growth/tech cash-burn risk.")
+    return DimensionScore("liquidity", current_ratio_score, metrics.confidence(), "Short-term liquidity.")
 
 
 def data_confidence_dimension(valuations: Iterable[ValuationResult], metrics: MetricPack) -> DimensionScore:
