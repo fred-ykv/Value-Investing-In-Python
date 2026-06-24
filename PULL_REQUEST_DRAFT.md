@@ -20,13 +20,18 @@ analysis toolkit for US stocks.
 
 ## Validation
 
-- Unit test suite passes locally.
-- Live validation was run against:
-  - `MLI` traditional industrial
-  - `AAPL` big tech
-  - `JPM` bank/financial
-  - `RIVN` negative-FCF growth/EV
-- Batch calibration was run against 12 mixed tickers.
+- Unit test suite passes locally: `python -m unittest discover -s tests -v`.
+- Current suite covers:
+  - traditional industrial company profile
+  - big tech company profile
+  - bank/financial company profile
+  - negative-FCF company profile
+  - DCF sensitivity and negative-FCFF handling
+  - 0% growth assumptions that must not be replaced by defaults
+  - notebook adapter behavior
+  - Markdown report sections and metric lineage output
+- Live Yahoo Finance runs and batch calibration require network access and dependencies from
+  `requirements.txt`; generated live outputs are intentionally not committed.
 
 ## Files intentionally not committed
 
