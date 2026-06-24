@@ -24,12 +24,18 @@ def safe_div(num: Optional[float], den: Optional[float]) -> Optional[float]:
     return None if num is None or den in (None, 0) else num / den
 
 
+def cash_burn_amount(cfo: Optional[float], fcff: Optional[float]) -> Optional[float]:
+    burns = [abs(value) for value in (cfo, fcff) if value is not None and value < 0]
+    return max(burns) if burns else None
+
+
 def build_metrics(statement_values: Mapping[str, MetricValue]) -> MetricPack:
     v = statement_values
     ni, eq, assets, cfo = v["net_income"].value, v["equity"].value, v["total_assets"].value, v["cfo"].value
     revenue, ebit, debt, cash = v["revenue"].value, v["ebit"].value, v["total_debt"].value, v["cash"].value
     ca, cl, shares, price = v["current_assets"].value, v["current_liabilities"].value, v["shares"].value, v["price"].value
     bvps, fcff = v["book_value_per_share"].value, v["fcff"].value
+    cash_burn = cash_burn_amount(cfo, fcff)
     metrics = {
         "roe": metric_value("roe", safe_div(ni, eq), "derived"),
         "roa": metric_value("roa", safe_div(ni, assets), "derived"),
@@ -43,6 +49,8 @@ def build_metrics(statement_values: Mapping[str, MetricValue]) -> MetricPack:
         "current_ratio": metric_value("current_ratio", safe_div(ca, cl), "derived"),
         "price_to_book": metric_value("price_to_book", safe_div(price, bvps), "derived"),
         "fcff_yield": metric_value("fcff_yield", safe_div(fcff, (price or 0.0) * (shares or 0.0)), "derived"),
+        "cash_burn": metric_value("cash_burn", cash_burn, "derived", "annual cash burn based on negative CFO/FCFF"),
+        "cash_runway_years": metric_value("cash_runway_years", safe_div(cash, cash_burn), "derived", "cash divided by annual cash burn"),
     }
     metrics["piotroski_proxy"] = metric_value("piotroski_proxy", piotroski_proxy(metrics, v), "derived")
     metrics["fama_french_value"] = metric_value("fama_french_value", value_factor_proxy(metrics), "derived")
