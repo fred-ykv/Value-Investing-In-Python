@@ -38,6 +38,11 @@ Original notebooks remain unchanged.
 - Added regression tests for traditional industrial, big tech, bank/financial, and negative-FCF company profiles.
 - Fixed zero-valued assumptions, such as 0% growth, so they are not replaced by default assumptions.
 - Added regression tests for 0% DCF growth, 0% terminal growth in DDM, and 0% Growth-Tech revenue growth.
+- Added configurable valuation score curve so moderately negative margins of safety are not scored as near zero.
+- Reduced valuation weight for traditional, growth/tech, and financial profiles while keeping valuation as a buy gate.
+- Added bank valuation calibration using ROE-adjusted justified P/B in addition to RI/DDM, raw P/B, and ROE.
+- Added recommendation gates so weak valuation prevents a Buy rating and weak valuation plus weak quality remains Avoid.
+- Added scoring calibration tests for moderate overvaluation, weak growth/tech quality, and bank P/B vs ROE logic.
 
 ## Batch score calibration scaffolding
 
