@@ -39,7 +39,7 @@ def dcf_fcff(inputs: DCFInput) -> ValuationResult:
         return ValuationResult("dcf_fcff", None, 0.0, diagnostics={"error": "missing FCFF"})
     if shares in (None, 0):
         return ValuationResult("dcf_fcff", None, 0.0, diagnostics={"error": "missing shares"})
-    wacc = inputs.wacc.value or DCF.default_wacc
+    wacc = inputs.wacc.value if inputs.wacc.value is not None else DCF.default_wacc
     growth = clamp(inputs.growth_years.value if inputs.growth_years.value is not None else DCF.default_growth_years, DCF.min_growth_years, DCF.max_growth_years)
     terminal_growth = clamp(inputs.terminal_growth.value if inputs.terminal_growth.value is not None else DCF.default_terminal_growth, DCF.min_terminal_growth, DCF.max_terminal_growth)
     diagnostics: dict[str, object] = {}
@@ -88,9 +88,10 @@ def dcf_fcff_no_sensitivity(inputs: DCFInput) -> ValuationResult:
     fcff0, shares = inputs.fcff.value, inputs.shares.value
     if fcff0 is None or shares in (None, 0):
         return ValuationResult("dcf_fcff", None, 0.0)
-    wacc = inputs.wacc.value or DCF.default_wacc
-    growth = clamp(inputs.growth_years.value or DCF.default_growth_years, DCF.min_growth_years, DCF.max_growth_years)
-    g = inputs.terminal_growth.value or DCF.default_terminal_growth
+    wacc = inputs.wacc.value if inputs.wacc.value is not None else DCF.default_wacc
+    growth_value = inputs.growth_years.value if inputs.growth_years.value is not None else DCF.default_growth_years
+    growth = clamp(growth_value, DCF.min_growth_years, DCF.max_growth_years)
+    g = inputs.terminal_growth.value if inputs.terminal_growth.value is not None else DCF.default_terminal_growth
     if wacc <= g:
         return ValuationResult("dcf_fcff", None, 0.0)
     value, projected = fcff0, []
@@ -115,7 +116,8 @@ def graham_value(eps: MetricValue, bvps: MetricValue, current_price: MetricValue
 def eva_value(invested_capital: MetricValue, roic: MetricValue, wacc: MetricValue, growth: MetricValue, shares: MetricValue, current_price: MetricValue) -> ValuationResult:
     if invested_capital.value is None or shares.value in (None, 0):
         return ValuationResult("eva", None, 0.0, diagnostics={"error": "missing invested capital or shares"})
-    discount, g = wacc.value or DCF.default_wacc, growth.value or DCF.default_terminal_growth
+    discount = wacc.value if wacc.value is not None else DCF.default_wacc
+    g = growth.value if growth.value is not None else DCF.default_terminal_growth
     if discount <= g:
         g = max(0.0, discount - DCF.min_spread_wacc_terminal)
     equity = invested_capital.value + (((roic.value or 0.0) - discount) * invested_capital.value / (discount - g))
@@ -127,7 +129,7 @@ def eva_value(invested_capital: MetricValue, roic: MetricValue, wacc: MetricValu
 def residual_income_bank(bvps: MetricValue, roe: MetricValue, ke: MetricValue, terminal_growth: MetricValue, current_price: MetricValue) -> ValuationResult:
     if bvps.value is None or roe.value is None or ke.value is None:
         return ValuationResult("residual_income", None, 0.0, diagnostics={"error": "missing BVPS, ROE, or Ke"})
-    g = terminal_growth.value or DCF.default_terminal_growth
+    g = terminal_growth.value if terminal_growth.value is not None else DCF.default_terminal_growth
     if ke.value <= g:
         g = max(0.0, ke.value - DCF.min_spread_wacc_terminal)
     fair = bvps.value + ((roe.value - ke.value) / (ke.value - g)) * bvps.value
@@ -138,7 +140,7 @@ def residual_income_bank(bvps: MetricValue, roe: MetricValue, ke: MetricValue, t
 def ddm_bank(dividend_per_share: MetricValue, ke: MetricValue, terminal_growth: MetricValue, current_price: MetricValue) -> ValuationResult:
     if dividend_per_share.value is None or ke.value is None:
         return ValuationResult("ddm", None, 0.0, diagnostics={"error": "missing dividend or Ke"})
-    g = terminal_growth.value or DCF.default_terminal_growth
+    g = terminal_growth.value if terminal_growth.value is not None else DCF.default_terminal_growth
     if ke.value <= g:
         g = max(0.0, ke.value - DCF.min_spread_wacc_terminal)
     fair = dividend_per_share.value * (1.0 + g) / (ke.value - g)
@@ -149,9 +151,14 @@ def ddm_bank(dividend_per_share: MetricValue, ke: MetricValue, terminal_growth: 
 def growth_tech_value(revenue: MetricValue, revenue_growth: MetricValue, target_fcf_margin: MetricValue, net_cash: MetricValue, shares: MetricValue, current_price: MetricValue, discount_rate: MetricValue) -> ValuationResult:
     if revenue.value is None or shares.value in (None, 0):
         return ValuationResult("growth_tech", None, 0.0, diagnostics={"error": "missing revenue or shares"})
-    growth = clamp(revenue_growth.value or 0.10, -0.10, 0.50)
-    margin = target_fcf_margin.value or GROWTH_TECH.target_fcf_margin
-    rate = discount_rate.value or GROWTH_TECH.default_discount_rate
+    revenue_growth_value = revenue_growth.value if revenue_growth.value is not None else 0.10
+    growth = clamp(revenue_growth_value, -0.10, 0.50)
+    margin = (
+        target_fcf_margin.value
+        if target_fcf_margin.value is not None
+        else GROWTH_TECH.target_fcf_margin
+    )
+    rate = discount_rate.value if discount_rate.value is not None else GROWTH_TECH.default_discount_rate
     g_term = min(GROWTH_TECH.terminal_growth, rate - DCF.min_spread_wacc_terminal)
     projected_revenue, pv = revenue.value, 0.0
     for year in range(1, DCF.horizon_years + 1):
