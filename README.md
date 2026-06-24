@@ -53,6 +53,9 @@ Or pass your own tickers:
 python calibrate.py MLI AAPL JPM RIVN
 ```
 
+Live ticker analysis and calibration use Yahoo Finance data and require the
+dependencies from `requirements.txt` plus network access.
+
 ### Notebook integration
 
 Existing notebooks can send their variables into the modular analysis pipeline by adding a final cell like this:
@@ -76,8 +79,8 @@ python -m unittest discover -s tests -v
 ```
 
 The tests cover traditional industrial companies, big tech, banks/financials,
-negative-FCF companies, valuation models, scoring, report generation, Yahoo
-statement mapping, and notebook adapter behavior.
+negative-FCF companies, DCF sensitivity, zero-growth assumptions, report
+generation with metric lineage, and notebook adapter behavior.
 
 ## Syllabus
 The organization of this tutorial falls into the following parts:
@@ -134,4 +137,4 @@ StatQuest and Towards Data Science have great tutorials on Machine Learning and 
 
 I benefited a lot from these resources.
 
-If you have any suggestions or feedback, please feel free to leave me a comment and come back to these tutorials.
+If you have any suggestions or feedback, please feel free to leave a comment or email me at sicong.zhao@duke.edu.
