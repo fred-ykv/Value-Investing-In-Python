@@ -8,7 +8,7 @@ from .config import CompanyType, MARKET
 from .data_sources import MetricValue, YahooFinanceClient, metric_value
 from .financial_statements import FinancialStatements, build_statement_metrics, update_market_from_info
 from .metrics import MetricPack, build_metrics
-from .reports import executive_summary, render_markdown_report, risk_diagnostics, score_table, valuation_table
+from .reports import executive_summary, metric_lineage_table, render_markdown_report, risk_diagnostics, score_table, valuation_table
 from .scoring import ScoreReport, compute_score
 from .sector_rules import classify_company
 from .valuation import DCFInput, ValuationResult, dcf_fcff, ddm_bank, eva_value, graham_value, growth_tech_value, residual_income_bank
@@ -36,13 +36,15 @@ def analyze_ticker_from_inputs(ticker: str, income_statement: Mapping[str, float
     dcf_input = DCFInput(values["fcff"], values["shares"], metric_value("wacc", cost_of_capital, source), metric_value("growth_years", market_data.get("growth_years"), source), metric_value("terminal_growth", market_data.get("terminal_growth"), source), values["total_debt"], values["cash"], values["price"])
     valuations = build_valuations(company_type, values, metrics, market_data, source, dcf_input)
     score = compute_score(company_type, valuations, metrics, values["price"])
+    metric_lineage = {**values, **metrics.values}
     report = {
         "executive_summary": executive_summary(ticker, score, valuations),
         "valuation_table": valuation_table(valuations),
         "score_table": score_table(score),
+        "metric_lineage_table": metric_lineage_table(metric_lineage),
         "risk_diagnostics": risk_diagnostics(score, valuations),
         "recommendation": score.recommendation,
-        "markdown": render_markdown_report(ticker, score, valuations),
+        "markdown": render_markdown_report(ticker, score, valuations, metric_lineage),
     }
     return AnalysisResult(ticker, company_type.value, valuations, metrics, score, report)
 

@@ -17,6 +17,12 @@ class ReportTests(unittest.TestCase):
         self.assertIn("Resumo executivo", markdown)
         self.assertIn("Valuation por metodo", markdown)
         self.assertIn("Score por dimensao", markdown)
+        self.assertIn("Fontes e confianca das metricas", markdown)
+        self.assertIn("| revenue |", markdown)
+        self.assertIn("| manual |", markdown)
+        self.assertTrue(result.report["metric_lineage_table"])
+        self.assertIn("source", result.report["metric_lineage_table"][0])
+        self.assertIn("confidence", result.report["metric_lineage_table"][0])
         self.assertIn("Recomendacao final", markdown)
 
 

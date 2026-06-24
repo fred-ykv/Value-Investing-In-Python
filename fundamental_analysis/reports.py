@@ -4,16 +4,25 @@ from __future__ import annotations
 from dataclasses import asdict
 from typing import Iterable
 
+from .data_sources import MetricValue
 from .scoring import ScoreReport
 from .valuation import ValuationResult
 
 
 def valuation_table(valuations: Iterable[ValuationResult]) -> list[dict[str, object]]:
-    return [{"method": v.method, "fair_value_per_share": v.fair_value_per_share, "margin_of_safety": v.margin_of_safety, "confidence": v.confidence, "diagnostics": v.diagnostics} for v in valuations]
+    return [{"method": v.method, "fair_value_per_share": v.fair_value_per_share, "margin_of_safety": v.margin_of_safety, "confidence": v.confidence, "source": v.source, "diagnostics": v.diagnostics} for v in valuations]
 
 
 def score_table(score: ScoreReport) -> list[dict[str, object]]:
     return [asdict(dimension) for dimension in score.dimensions.values()]
+
+
+def metric_lineage_table(metrics: dict[str, MetricValue]) -> list[dict[str, object]]:
+    rows = []
+    for name in sorted(metrics):
+        metric = metrics[name]
+        rows.append({"metric": name, "value": metric.value, "source": metric.source, "confidence": metric.confidence, "note": metric.note})
+    return rows
 
 
 def executive_summary(ticker: str, score: ScoreReport, valuations: Iterable[ValuationResult]) -> str:
@@ -34,14 +43,18 @@ def risk_diagnostics(score: ScoreReport, valuations: Iterable[ValuationResult]) 
     return risks or ["Nenhum risco critico detectado pela camada de validacao."]
 
 
-def render_markdown_report(ticker: str, score: ScoreReport, valuations: Iterable[ValuationResult]) -> str:
+def render_markdown_report(ticker: str, score: ScoreReport, valuations: Iterable[ValuationResult], metrics: dict[str, MetricValue] | None = None) -> str:
     valuations = list(valuations)
-    lines = [f"# Fundamental Analysis - {ticker.upper()}", "", "## Resumo executivo", executive_summary(ticker, score, valuations), "", "## Justificativa", recommendation_summary(score), "", "## Valuation por metodo", "| Metodo | Preco justo | Margem de seguranca | Confianca |", "|---|---:|---:|---:|"]
+    lines = [f"# Fundamental Analysis - {ticker.upper()}", "", "## Resumo executivo", executive_summary(ticker, score, valuations), "", "## Justificativa", recommendation_summary(score), "", "## Valuation por metodo", "| Metodo | Preco justo | Margem de seguranca | Fonte | Confianca |", "|---|---:|---:|---|---:|"]
     for row in valuation_table(valuations):
-        lines.append(f"| {row['method']} | {_fmt_money(row['fair_value_per_share'])} | {_fmt_pct(row['margin_of_safety'])} | {float(row['confidence'] or 0):.2f} |")
+        lines.append(f"| {row['method']} | {_fmt_money(row['fair_value_per_share'])} | {_fmt_pct(row['margin_of_safety'])} | {row['source']} | {float(row['confidence'] or 0):.2f} |")
     lines.extend(["", "## Score por dimensao", "| Dimensao | Score | Confianca | Explicacao |", "|---|---:|---:|---|"])
     for row in score_table(score):
         lines.append(f"| {row['name']} | {float(row['score']):.2f} | {float(row['confidence']):.2f} | {str(row['explanation']).replace('|', '/')} |")
+    if metrics:
+        lines.extend(["", "## Fontes e confianca das metricas", "| Metrica | Valor usado | Fonte | Confianca | Observacao |", "|---|---:|---|---:|---|"])
+        for row in metric_lineage_table(metrics):
+            lines.append(f"| {row['metric']} | {_fmt_number(row['value'])} | {row['source']} | {float(row['confidence'] or 0):.2f} | {str(row['note']).replace('|', '/')} |")
     lines.extend(["", "## Diagnostico de riscos"])
     lines.extend(f"- {risk}" for risk in risk_diagnostics(score, valuations))
     lines.extend(["", "## Recomendacao final", f"**{score.recommendation}**"])
@@ -64,5 +77,12 @@ def _fmt_money(value: object) -> str:
 def _fmt_pct(value: object) -> str:
     try:
         return "-" if value is None else f"{float(value) * 100:,.2f}%"
+    except Exception:
+        return "-"
+
+
+def _fmt_number(value: object) -> str:
+    try:
+        return "-" if value is None else f"{float(value):,.4f}"
     except Exception:
         return "-"
