@@ -18,11 +18,12 @@ analysis toolkit for US stocks.
 - Added `requirements.txt`, `.gitignore`, `CHANGELOG.md`, and tests.
 - Added explainable Markdown reports in Portuguese.
 - Calibrated valuation scoring so moderate overvaluation is not treated as near-zero value while Buy recommendations still require adequate valuation.
+- Fixed short-keyword sector classification so EV/AI acronyms do not match unrelated words such as beverages or defensive.
 
 ## Validation
 
 - Unit test suite passes locally: `python -m unittest discover -s tests -v`.
-- Current local result: 14 tests passing.
+- Current local result: 16 tests passing.
 - Current suite covers:
   - traditional industrial company profile
   - big tech company profile
@@ -31,8 +32,10 @@ analysis toolkit for US stocks.
   - DCF sensitivity and negative-FCFF handling
   - 0% growth assumptions that must not be replaced by defaults
   - scoring calibration for valuation curve, bank P/B vs ROE, and avoid gates
+  - sector classification for consumer defensive and standalone EV acronyms
   - notebook adapter behavior
   - Markdown report sections and metric lineage output
+- 30-ticker benchmark completed locally with 30 successes and 0 errors.
 - Live Yahoo Finance runs and batch calibration require network access and dependencies from
   `requirements.txt`; generated live outputs are intentionally not committed.
 
