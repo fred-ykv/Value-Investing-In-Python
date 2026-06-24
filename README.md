@@ -1,6 +1,84 @@
 This repository hosts the code of **Value Investing in Python**, a data science tutorial published in Medium. 
 This tutorial covers fundamental analysis for US stocks.
 
+## Modular Fundamental Analysis Toolkit
+
+This repository now also includes a modular Python toolkit for US stock
+fundamental analysis. The original notebooks are preserved, while the new
+package under `fundamental_analysis/` makes the analysis easier to audit,
+test, and reuse.
+
+### What the modular toolkit does
+
+* Collects structured annual data from Yahoo Finance.
+* Preserves support for notebook-driven Finviz/scraping workflows through an
+  adapter layer.
+* Normalizes income statement, balance sheet, cash flow, and market data.
+* Computes valuation models such as DCF/FCFF, Graham, EVA, Residual Income,
+  DDM, and Growth-Tech valuation.
+* Scores stocks across valuation, growth, quality, debt, liquidity, and data
+  confidence.
+* Produces Markdown reports with executive summary, valuation table, score by
+  dimension, risk diagnostics, and a final recommendation.
+
+### Quick start
+
+Install dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
+Run a single ticker:
+
+```bash
+python main.py AAPL
+```
+
+Save a Markdown report:
+
+```bash
+python main.py AAPL --output AAPL_report.md
+```
+
+Run a calibration basket:
+
+```bash
+python calibrate.py
+```
+
+Or pass your own tickers:
+
+```bash
+python calibrate.py MLI AAPL JPM RIVN
+```
+
+### Notebook integration
+
+Existing notebooks can send their variables into the modular analysis pipeline by adding a final cell like this:
+
+```python
+from fundamental_analysis.notebook_adapter import analyze_from_notebook_globals, print_modular_report
+
+modular_result = analyze_from_notebook_globals(globals())
+print_modular_report(modular_result)
+```
+
+This keeps the existing notebook collection flow intact while moving final
+valuation, scoring, and reporting into auditable Python modules.
+
+### Tests
+
+Run the test suite:
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+The tests cover traditional industrial companies, big tech, banks/financials,
+negative-FCF companies, valuation models, scoring, report generation, Yahoo
+statement mapping, and notebook adapter behavior.
+
 ## Syllabus
 The organization of this tutorial falls into the following parts:
 
@@ -56,4 +134,4 @@ StatQuest and Towards Data Science have great tutorials on Machine Learning and 
 
 I benefited a lot from these resources.
 
-If you have any suggestions or feedback, please feel free to leave a comment or email me at sicong.zhao@duke.edu.
+If you have any suggestions or feedback, please feel free to leave me a comment and come back to these tutorials.
