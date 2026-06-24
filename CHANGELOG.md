@@ -43,6 +43,9 @@ Original notebooks remain unchanged.
 - Added bank valuation calibration using ROE-adjusted justified P/B in addition to RI/DDM, raw P/B, and ROE.
 - Added recommendation gates so weak valuation prevents a Buy rating and weak valuation plus weak quality remains Avoid.
 - Added scoring calibration tests for moderate overvaluation, weak growth/tech quality, and bank P/B vs ROE logic.
+- Fixed sector classification for short keywords such as EV/AI so consumer defensive names like beverages are not misclassified as growth/tech.
+- Added sector-rule tests for consumer defensive beverages and standalone EV acronyms.
+- Ran a 30-ticker benchmark across industrials, big tech, banks, value/defensive names, and growth/negative-FCF companies.
 
 ## Batch score calibration scaffolding
 
