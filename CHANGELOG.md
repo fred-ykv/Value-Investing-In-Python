@@ -22,35 +22,33 @@ No original notebook was edited in this step.
 
 Original notebooks remain unchanged.
 
-## Live runner and Yahoo Finance mapping
+## Live runner and report lineage
 
 - Added structured annual statement mapping in `YahooFinanceClient.fetch_financial_statements()`.
 - Added `analyze_ticker_live()` to orchestrate a live Yahoo Finance analysis.
 - Added root `main.py` CLI runner that prints or saves a Markdown report.
-- Added Markdown report rendering with executive summary, valuation table, score dimensions, risks, and final recommendation.
-- Added tests for Yahoo statement aliases and Markdown report sections.
+- Added Markdown report rendering with executive summary, valuation table, score dimensions, metric lineage, risks, and final recommendation.
+- Added report tests for required Markdown sections and metric source/confidence output.
 
-## Live validation calibration
+## Valuation and scoring hardening
 
-- Validated the CLI/pipeline with `MLI`, `AAPL`, `JPM`, and `RIVN`.
 - Added CAPM fallback for cost of equity when `Ke`/`WACC` is not explicitly provided.
 - Added market assumptions for risk-free rate, equity risk premium, and default beta in `config.py`.
 - Improved sector classification for EV/auto manufacturers with negative FCF.
-- Added regression tests for banks without explicit `Ke` and negative-FCF auto manufacturers.
-- Generated live Markdown reports under `work_outputs_live/`.
+- Added regression tests for traditional industrial, big tech, bank/financial, and negative-FCF company profiles.
+- Fixed zero-valued assumptions, such as 0% growth, so they are not replaced by default assumptions.
+- Added regression tests for 0% DCF growth, 0% terminal growth in DDM, and 0% Growth-Tech revenue growth.
 
-## Batch score calibration
+## Batch score calibration scaffolding
 
 - Added `fundamental_analysis/calibration.py` for batch ticker diagnostics.
 - Added root `calibrate.py` CLI to generate calibration CSV and Markdown summaries.
-- Added tests for calibration rows, summaries, and Markdown output.
 - Calibrated financial-sector valuation scoring to blend RI/DDM margin, P/B, and ROE.
-- Added a regression test for financial valuation using P/B and ROE.
-- Re-ran the 12-ticker calibration basket and saved updated CSV/Markdown outputs.
+- Batch calibration is available as a CLI workflow, but live calibration outputs are intentionally not committed.
 
 ## Explainable reports
 
 - Added a Portuguese narrative section to Markdown reports.
-- Reports now include justification, strengths, attention points, valuation comments, risks, and final recommendation.
-- Updated report tests to assert the explanatory sections are present.
+- Reports now include justification, valuation comments, score dimensions, metric source/confidence lineage, risks, and final recommendation.
+- Updated report tests to assert the required explanatory and lineage sections are present.
 - Avoided labeling high data confidence as a weak point in narrative output.
