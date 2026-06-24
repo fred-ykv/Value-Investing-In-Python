@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Iterable, Mapping
 
-from .config import CompanyType, SCORE
+from .config import CompanyType, SCORE, VALUATION_SCORE
 from .data_sources import MetricValue
 from .metrics import MetricPack
 from .valuation import ValuationResult
@@ -45,7 +45,7 @@ def compute_score(company_type: CompanyType, valuations: Iterable[ValuationResul
         dimensions["liquidity"].score * weights.liquidity,
         dimensions["data_confidence"].score * weights.data_confidence,
     ])
-    recommendation = recommendation_from_score(total)
+    recommendation = recommendation_from_score(total, dimensions)
     return ScoreReport(total, recommendation, dimensions, explain_score(recommendation, dimensions))
 
 
@@ -53,7 +53,7 @@ def valuation_dimension(valuations: Iterable[ValuationResult], metrics: MetricPa
     available = [v for v in valuations if v.margin_of_safety is not None and v.confidence > 0]
     if not available:
         return financial_valuation_dimension(metrics, None, 0.0) if company_type == CompanyType.FINANCIAL and metrics else DimensionScore("valuation", 0.0, 0.0, "No reliable valuation model available.")
-    weighted = [(_normalize(v.margin_of_safety, -0.50, 1.00), min(v.confidence, SCORE.max_single_valuation_method_weight)) for v in available]
+    weighted = [(_score_margin_of_safety(v.margin_of_safety), min(v.confidence, SCORE.max_single_valuation_method_weight)) for v in available]
     total_weight = sum(weight for _, weight in weighted)
     score = sum(value * weight for value, weight in weighted) / total_weight if total_weight else 0.0
     confidence = min(1.0, total_weight / max(1, len(available)))
@@ -63,12 +63,16 @@ def valuation_dimension(valuations: Iterable[ValuationResult], metrics: MetricPa
 def financial_valuation_dimension(metrics: MetricPack, model_score: float | None, model_confidence: float) -> DimensionScore:
     pieces: list[tuple[float, float]] = []
     if model_score is not None:
-        pieces.append((model_score, 0.50))
+        pieces.append((model_score, VALUATION_SCORE.bank_model_weight))
     pb, roe = metrics.get("price_to_book"), metrics.get("roe")
     if pb is not None:
-        pieces.append((1.0 - _normalize(pb, 0.7, 2.5), 0.25))
+        pieces.append((1.0 - _normalize(pb, 0.7, 2.8), VALUATION_SCORE.bank_price_to_book_weight))
     if roe is not None:
-        pieces.append((_normalize(roe, 0.08, 0.18), 0.25))
+        pieces.append((_normalize(roe, 0.08, 0.18), VALUATION_SCORE.bank_roe_weight))
+    if pb not in (None, 0) and roe is not None:
+        justified_pb = _justified_bank_price_to_book(roe)
+        relative_margin = (justified_pb / pb) - 1.0
+        pieces.append((_score_margin_of_safety(relative_margin), VALUATION_SCORE.bank_justified_price_to_book_weight))
     if not pieces:
         return DimensionScore("valuation", 0.0, 0.0, "No reliable bank valuation metrics available.")
     total_weight = sum(weight for _, weight in pieces)
@@ -103,7 +107,20 @@ def data_confidence_dimension(valuations: Iterable[ValuationResult], metrics: Me
     return DimensionScore("data_confidence", score, score, "Average confidence of sources and derived metrics.")
 
 
-def recommendation_from_score(score: float) -> str:
+def recommendation_from_score(score: float, dimensions: Mapping[str, DimensionScore] | None = None) -> str:
+    if dimensions:
+        valuation = dimensions.get("valuation")
+        quality = dimensions.get("quality")
+        valuation_score = valuation.score if valuation else 0.0
+        quality_score = quality.score if quality else 0.0
+        if score >= SCORE.buy_threshold and valuation_score < SCORE.min_valuation_score_for_buy:
+            return "Observar"
+        if (
+            score >= SCORE.watch_threshold
+            and valuation_score < SCORE.avoid_if_valuation_below
+            and quality_score < SCORE.avoid_if_quality_below
+        ):
+            return "Evitar"
     return "Comprar" if score >= SCORE.buy_threshold else "Observar" if score >= SCORE.watch_threshold else "Evitar"
 
 
@@ -118,6 +135,30 @@ def _metric_score(metric: MetricValue | None, low: float, high: float) -> float 
 
 def _normalize(value: float | None, low: float, high: float) -> float:
     return 0.0 if value is None else max(0.0, min(1.0, (value - low) / (high - low)))
+
+
+def _score_margin_of_safety(margin: float | None) -> float:
+    if margin is None:
+        return 0.0
+    curve = VALUATION_SCORE.margin_score_curve
+    if margin <= curve[0][0]:
+        return curve[0][1]
+    for (left_margin, left_score), (right_margin, right_score) in zip(curve, curve[1:]):
+        if margin <= right_margin:
+            span = right_margin - left_margin
+            if span == 0:
+                return right_score
+            progress = (margin - left_margin) / span
+            return left_score + progress * (right_score - left_score)
+    return curve[-1][1]
+
+
+def _justified_bank_price_to_book(roe: float) -> float:
+    ke = VALUATION_SCORE.bank_default_cost_of_equity
+    g = VALUATION_SCORE.bank_terminal_growth
+    if ke <= g:
+        return 1.0
+    return max(0.0, (roe - g) / (ke - g))
 
 
 def _average(values: list[float | None], default: float) -> float:
