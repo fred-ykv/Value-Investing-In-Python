@@ -52,6 +52,25 @@ class MarketAssumptions:
 
 
 @dataclass(frozen=True)
+class ValuationScoreAssumptions:
+    margin_score_curve: Tuple[Tuple[float, float], ...] = (
+        (-1.00, 0.00),
+        (-0.50, 0.15),
+        (-0.25, 0.35),
+        (0.00, 0.55),
+        (0.25, 0.75),
+        (0.50, 0.90),
+        (1.00, 1.00),
+    )
+    bank_model_weight: float = 0.35
+    bank_price_to_book_weight: float = 0.20
+    bank_roe_weight: float = 0.25
+    bank_justified_price_to_book_weight: float = 0.20
+    bank_default_cost_of_equity: float = 0.10
+    bank_terminal_growth: float = 0.02
+
+
+@dataclass(frozen=True)
 class ScoreWeights:
     valuation: float
     growth: float
@@ -86,39 +105,43 @@ class ScoreConfig:
     weights_by_type: Dict[CompanyType, ScoreWeights] = field(
         default_factory=lambda: {
             CompanyType.TRADITIONAL: ScoreWeights(
-                valuation=0.30,
+                valuation=0.25,
                 growth=0.15,
                 quality=0.25,
                 debt=0.15,
-                liquidity=0.05,
+                liquidity=0.10,
                 data_confidence=0.10,
             ),
             CompanyType.GROWTH_TECH: ScoreWeights(
-                valuation=0.20,
-                growth=0.30,
-                quality=0.20,
+                valuation=0.15,
+                growth=0.25,
+                quality=0.30,
                 debt=0.05,
                 liquidity=0.10,
                 data_confidence=0.15,
             ),
             CompanyType.FINANCIAL: ScoreWeights(
-                valuation=0.30,
+                valuation=0.25,
                 growth=0.10,
                 quality=0.30,
                 debt=0.05,
                 liquidity=0.05,
-                data_confidence=0.20,
+                data_confidence=0.25,
             ),
         }
     )
     buy_threshold: float = 0.70
     watch_threshold: float = 0.45
     max_single_valuation_method_weight: float = 0.50
+    min_valuation_score_for_buy: float = 0.45
+    avoid_if_valuation_below: float = 0.20
+    avoid_if_quality_below: float = 0.30
 
 
 DCF = DCFAssumptions()
 GROWTH_TECH = GrowthTechAssumptions()
 MARKET = MarketAssumptions()
+VALUATION_SCORE = ValuationScoreAssumptions()
 SCORE = ScoreConfig()
 
 DATA_SOURCE_CONFIDENCE = {
