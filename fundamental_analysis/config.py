@@ -173,6 +173,12 @@ class PeerUniverseAssumptions:
 
 
 @dataclass(frozen=True)
+class PeerEnrichmentAssumptions:
+    use_yahoo_info: bool = True
+    minimum_confidence_for_relative_valuation: float = 0.45
+
+
+@dataclass(frozen=True)
 class ScoreWeights:
     valuation: float
     growth: float
@@ -250,6 +256,7 @@ COMPARABLES = ComparableAssumptions()
 PEER_SELECTION = PeerSelectionAssumptions()
 PEER_DISCOVERY = PeerDiscoveryAssumptions()
 PEER_UNIVERSE = PeerUniverseAssumptions()
+PEER_ENRICHMENT = PeerEnrichmentAssumptions()
 
 DATA_SOURCE_CONFIDENCE = {
     "yfinance": 0.80,
