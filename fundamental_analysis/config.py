@@ -167,6 +167,12 @@ class PeerDiscoveryAssumptions:
 
 
 @dataclass(frozen=True)
+class PeerUniverseAssumptions:
+    use_builtin_seed_universe: bool = True
+    max_seed_candidates: int = 20
+
+
+@dataclass(frozen=True)
 class ScoreWeights:
     valuation: float
     growth: float
@@ -243,6 +249,7 @@ SCENARIOS = ScenarioAssumptions()
 COMPARABLES = ComparableAssumptions()
 PEER_SELECTION = PeerSelectionAssumptions()
 PEER_DISCOVERY = PeerDiscoveryAssumptions()
+PEER_UNIVERSE = PeerUniverseAssumptions()
 
 DATA_SOURCE_CONFIDENCE = {
     "yfinance": 0.80,
