@@ -138,8 +138,9 @@ def configured_universe(target_info: Mapping[str, object], market_data: Mapping[
         value = market_data.get("peer_universe_config")
     if isinstance(value, Mapping):
         selected: list[object] = []
+        normalized_mapping = {normalize(key): raw_value for key, raw_value in value.items()}
         for key in configured_lookup_keys(target_info):
-            raw = value.get(key)
+            raw = normalized_mapping.get(key)
             if isinstance(raw, Sequence) and not isinstance(raw, (str, bytes)):
                 selected.extend(raw)
         return normalize_candidates(selected, "configured_peer_universe")
