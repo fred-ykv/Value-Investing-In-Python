@@ -152,6 +152,25 @@ class PeerSelectionTests(unittest.TestCase):
         self.assertEqual(report.peer_medians, {})
         self.assertIn("abaixo do minimo", report.summary)
 
+    def test_sparse_peer_is_rejected_for_low_evidence(self):
+        report = build_peer_selection_report(
+            {
+                "sector": "Consumer Cyclical",
+                "industry": "Auto Manufacturers",
+            },
+            MetricPack({}),
+            [
+                {
+                    "ticker": "AUTO",
+                    "sector": "Consumer Cyclical",
+                    "industry": "Auto Manufacturers",
+                }
+            ],
+        )
+
+        self.assertEqual(report.rejected[0].status, "rejected_low_evidence")
+        self.assertEqual(report.approved, [])
+
     def test_empty_candidate_list_is_low_confidence(self):
         report = build_peer_selection_report({}, MetricPack({}), [])
 

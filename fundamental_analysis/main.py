@@ -9,6 +9,7 @@ from .config import CompanyType, MARKET
 from .data_sources import MetricValue, YahooFinanceClient, metric_value
 from .financial_statements import FinancialStatements, build_statement_metrics, update_market_from_info
 from .metrics import MetricPack, build_metrics
+from .peer_discovery import discover_peer_candidates
 from .peer_selection import PeerSelectionReport, build_peer_selection_report, merge_peer_medians
 from .reports import comparable_table, executive_summary, metric_lineage_table, peer_selection_table, render_markdown_report, risk_diagnostics, scenario_table, score_table, valuation_table
 from .scenarios import ScenarioResult, build_scenarios
@@ -42,7 +43,8 @@ def analyze_ticker_from_inputs(ticker: str, income_statement: Mapping[str, float
     dcf_input = DCFInput(values["fcff"], values["shares"], metric_value("wacc", cost_of_capital, source), metric_value("growth_years", market_data.get("growth_years"), source), metric_value("terminal_growth", market_data.get("terminal_growth"), source), values["total_debt"], values["cash"], values["price"])
     valuations = build_valuations(company_type, values, metrics, market_data, source, dcf_input)
     scenarios = build_scenarios(company_type, values, metrics, market_data, source, build_valuations, cost_of_capital)
-    peer_selection = build_peer_selection_report({**statements.info, **market_data}, metrics, market_data.get("peer_candidates"))
+    peer_candidates = discover_peer_candidates({**statements.info, **market_data}, metrics, market_data)
+    peer_selection = build_peer_selection_report({**statements.info, **market_data}, metrics, peer_candidates)
     comparable_market_data = merge_peer_medians(market_data, peer_selection)
     comparables = build_comparable_report(company_type, values, metrics, comparable_market_data)
     score = compute_score(company_type, valuations, metrics, values["price"])
