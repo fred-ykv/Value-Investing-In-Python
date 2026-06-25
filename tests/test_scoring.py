@@ -3,7 +3,7 @@ import unittest
 from fundamental_analysis.config import CompanyType
 from fundamental_analysis.data_sources import metric_value
 from fundamental_analysis.metrics import MetricPack
-from fundamental_analysis.scoring import compute_score, valuation_dimension
+from fundamental_analysis.scoring import compute_score, liquidity_dimension, valuation_dimension
 from fundamental_analysis.valuation import ValuationResult
 
 
@@ -58,6 +58,14 @@ class ScoringCalibrationTests(unittest.TestCase):
         dimension = valuation_dimension(valuations, metrics, CompanyType.FINANCIAL)
 
         self.assertGreater(dimension.score, 0.25)
+
+    def test_growth_tech_liquidity_penalizes_short_cash_runway(self):
+        metrics = metric_pack(current_ratio=3.0, cash_runway_years=0.75)
+
+        dimension = liquidity_dimension(metrics, CompanyType.GROWTH_TECH)
+
+        self.assertLess(dimension.score, 0.80)
+        self.assertIn("cash runway", dimension.explanation)
 
 
 if __name__ == "__main__":
