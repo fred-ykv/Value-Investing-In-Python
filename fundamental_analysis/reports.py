@@ -7,6 +7,7 @@ from typing import Iterable
 from .comparables import ComparableReport
 from .config import GROWTH_TECH, SCORE
 from .data_sources import MetricValue
+from .peer_selection import PeerSelectionReport
 from .scenarios import ScenarioResult
 from .scoring import ScoreReport
 from .valuation import ValuationResult
@@ -45,6 +46,21 @@ def comparable_table(comparables: ComparableReport) -> list[dict[str, object]]:
     ]
 
 
+def peer_selection_table(peer_selection: PeerSelectionReport) -> list[dict[str, object]]:
+    rows = []
+    for result in peer_selection.approved + peer_selection.rejected:
+        rows.append(
+            {
+                "ticker": result.ticker,
+                "status": result.status,
+                "score": result.score,
+                "reasons": "; ".join(result.reasons),
+                "vetoes": "; ".join(result.vetoes),
+            }
+        )
+    return rows
+
+
 def score_table(score: ScoreReport) -> list[dict[str, object]]:
     return [asdict(dimension) for dimension in score.dimensions.values()]
 
@@ -80,7 +96,7 @@ def risk_diagnostics(score: ScoreReport, valuations: Iterable[ValuationResult], 
     return risks or ["Nenhum risco critico detectado pela camada de validacao."]
 
 
-def render_markdown_report(ticker: str, score: ScoreReport, valuations: Iterable[ValuationResult], metrics: dict[str, MetricValue] | None = None, scenarios: Iterable[ScenarioResult] | None = None, comparables: ComparableReport | None = None) -> str:
+def render_markdown_report(ticker: str, score: ScoreReport, valuations: Iterable[ValuationResult], metrics: dict[str, MetricValue] | None = None, scenarios: Iterable[ScenarioResult] | None = None, comparables: ComparableReport | None = None, peer_selection: PeerSelectionReport | None = None) -> str:
     valuations = list(valuations)
     scenarios = list(scenarios or [])
     lines = [
@@ -105,6 +121,13 @@ def render_markdown_report(ticker: str, score: ScoreReport, valuations: Iterable
             lines.append(
                 f"| {row['scenario']} | {_fmt_money(row['fair_value_per_share'])} | {_fmt_pct(row['margin_of_safety'])} | "
                 f"{float(row['confidence'] or 0):.2f} | {scenario_assumption_text(assumptions)} |"
+            )
+    if peer_selection and (peer_selection.approved or peer_selection.rejected):
+        lines.extend(["", "## Selecao assistida de pares", peer_selection.summary, "", "| Ticker | Status | Score | Motivos | Vetos |", "|---|---|---:|---|---|"])
+        for row in peer_selection_table(peer_selection):
+            lines.append(
+                f"| {row['ticker']} | {row['status']} | {float(row['score'] or 0):.2f} | "
+                f"{str(row['reasons']).replace('|', '/')} | {str(row['vetoes']).replace('|', '/')} |"
             )
     if comparables:
         lines.extend(["", "## Comparaveis de mercado", comparables.summary, "", "| Multiplo | Empresa | Mediana pares | Premio/desconto | Score | Fonte | Leitura |", "|---|---:|---:|---:|---:|---|---|"])
