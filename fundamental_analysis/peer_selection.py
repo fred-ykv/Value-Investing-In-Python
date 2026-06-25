@@ -5,8 +5,8 @@ from dataclasses import dataclass, field
 from statistics import median
 from typing import Mapping, Sequence
 
-from .config import PEER_SELECTION
-from .data_sources import safe_float
+from .config import PEER_ENRICHMENT, PEER_SELECTION
+from .data_sources import confidence_for_source, safe_float
 from .metrics import MetricPack
 
 
@@ -19,6 +19,8 @@ class PeerCandidateResult:
     reasons: list[str] = field(default_factory=list)
     vetoes: list[str] = field(default_factory=list)
     metrics: dict[str, float] = field(default_factory=dict)
+    metric_sources: dict[str, str] = field(default_factory=dict)
+    data_confidence: float = 0.0
 
 
 @dataclass
@@ -91,7 +93,18 @@ def score_candidate(target: Mapping[str, object], candidate: Mapping[str, object
     total_weight = peer_selection_total_weight()
     score = sum(value * weight for value, weight in pieces) / total_weight if total_weight else 0.0
     status = peer_status(score, vetoes, evidence_weight)
-    return PeerCandidateResult(str(candidate.get("ticker") or candidate.get("symbol") or "UNKNOWN"), score, status, evidence_weight, reasons, vetoes, candidate_multiples(candidate))
+    data_confidence = safe_float(candidate.get("peer_data_confidence"))
+    return PeerCandidateResult(
+        str(candidate.get("ticker") or candidate.get("symbol") or "UNKNOWN"),
+        score,
+        status,
+        evidence_weight,
+        reasons,
+        vetoes,
+        candidate_multiples(candidate),
+        candidate_metric_sources(candidate),
+        data_confidence if data_confidence is not None else inferred_candidate_data_confidence(candidate),
+    )
 
 
 def categorical_piece(name: str, target: Mapping[str, object], candidate: Mapping[str, object], weight: float, reasons: list[str]) -> tuple[float, float]:
@@ -157,8 +170,13 @@ def peer_selection_total_weight() -> float:
 def median_multiples(approved: Sequence[PeerCandidateResult]) -> dict[str, float]:
     medians = {}
     for field_name in MULTIPLE_FIELDS:
-        values = [candidate.metrics[field_name] for candidate in approved if candidate.metrics.get(field_name) is not None]
-        if values:
+        values = [
+            candidate.metrics[field_name]
+            for candidate in approved
+            if candidate.metrics.get(field_name) is not None
+            and candidate.data_confidence >= PEER_ENRICHMENT.minimum_confidence_for_relative_valuation
+        ]
+        if len(values) >= PEER_SELECTION.min_approved_peers:
             medians[field_name] = median(values)
     return medians
 
@@ -171,6 +189,17 @@ def candidate_multiples(candidate: Mapping[str, object]) -> dict[str, float]:
         if numeric is not None and numeric > 0:
             metrics[field_name] = numeric
     return metrics
+
+
+def candidate_metric_sources(candidate: Mapping[str, object]) -> dict[str, str]:
+    sources = candidate.get("_peer_metric_sources")
+    return dict(sources) if isinstance(sources, Mapping) else {}
+
+
+def inferred_candidate_data_confidence(candidate: Mapping[str, object]) -> float:
+    if candidate_multiples(candidate):
+        return confidence_for_source(str(candidate.get("candidate_source") or "manual"))
+    return 0.0
 
 
 def merge_peer_medians(market_data: Mapping[str, object], peer_selection: PeerSelectionReport) -> dict[str, object]:
