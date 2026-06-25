@@ -4,11 +4,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Mapping
 
+from .comparables import ComparableReport, build_comparable_report
 from .config import CompanyType, MARKET
 from .data_sources import MetricValue, YahooFinanceClient, metric_value
 from .financial_statements import FinancialStatements, build_statement_metrics, update_market_from_info
 from .metrics import MetricPack, build_metrics
-from .reports import executive_summary, metric_lineage_table, render_markdown_report, risk_diagnostics, scenario_table, score_table, valuation_table
+from .reports import comparable_table, executive_summary, metric_lineage_table, render_markdown_report, risk_diagnostics, scenario_table, score_table, valuation_table
 from .scenarios import ScenarioResult, build_scenarios
 from .scoring import ScoreReport, compute_score
 from .sector_rules import classify_company
@@ -21,6 +22,7 @@ class AnalysisResult:
     company_type: str
     valuations: list[ValuationResult]
     scenarios: list[ScenarioResult]
+    comparables: ComparableReport
     metrics: MetricPack
     score: ScoreReport
     report: dict[str, object]
@@ -38,19 +40,21 @@ def analyze_ticker_from_inputs(ticker: str, income_statement: Mapping[str, float
     dcf_input = DCFInput(values["fcff"], values["shares"], metric_value("wacc", cost_of_capital, source), metric_value("growth_years", market_data.get("growth_years"), source), metric_value("terminal_growth", market_data.get("terminal_growth"), source), values["total_debt"], values["cash"], values["price"])
     valuations = build_valuations(company_type, values, metrics, market_data, source, dcf_input)
     scenarios = build_scenarios(company_type, values, metrics, market_data, source, build_valuations, cost_of_capital)
+    comparables = build_comparable_report(company_type, values, metrics, market_data)
     score = compute_score(company_type, valuations, metrics, values["price"])
     metric_lineage = {**values, **metrics.values}
     report = {
         "executive_summary": executive_summary(ticker, score, valuations),
         "valuation_table": valuation_table(valuations),
         "scenario_table": scenario_table(scenarios),
+        "comparable_table": comparable_table(comparables),
         "score_table": score_table(score),
         "metric_lineage_table": metric_lineage_table(metric_lineage),
         "risk_diagnostics": risk_diagnostics(score, valuations, metric_lineage),
         "recommendation": score.recommendation,
-        "markdown": render_markdown_report(ticker, score, valuations, metric_lineage, scenarios),
+        "markdown": render_markdown_report(ticker, score, valuations, metric_lineage, scenarios, comparables),
     }
-    return AnalysisResult(ticker, company_type.value, valuations, scenarios, metrics, score, report)
+    return AnalysisResult(ticker, company_type.value, valuations, scenarios, comparables, metrics, score, report)
 
 
 def analyze_ticker_live(ticker: str) -> AnalysisResult:
