@@ -152,6 +152,19 @@ class PeerSelectionAssumptions:
 
 
 @dataclass(frozen=True)
+class PeerDiscoveryAssumptions:
+    max_candidates: int = 12
+    min_candidate_score: float = 0.55
+    sector_weight: float = 0.20
+    industry_weight: float = 0.25
+    sic_weight: float = 0.15
+    business_model_weight: float = 0.20
+    size_weight: float = 0.10
+    growth_weight: float = 0.05
+    margin_weight: float = 0.05
+
+
+@dataclass(frozen=True)
 class ScoreWeights:
     valuation: float
     growth: float
@@ -227,6 +240,7 @@ SCORE = ScoreConfig()
 SCENARIOS = ScenarioAssumptions()
 COMPARABLES = ComparableAssumptions()
 PEER_SELECTION = PeerSelectionAssumptions()
+PEER_DISCOVERY = PeerDiscoveryAssumptions()
 
 DATA_SOURCE_CONFIDENCE = {
     "yfinance": 0.80,
