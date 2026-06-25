@@ -23,9 +23,10 @@ def discover_peer_candidates(target_info: Mapping[str, object], target_metrics: 
         ticker = normalized_text(first_present(candidate, "ticker", "symbol"))
         if ticker and target_ticker and ticker == target_ticker:
             continue
-        score, reasons = discovery_score(target, candidate)
-        if score >= PEER_DISCOVERY.min_candidate_score:
+        score, evidence_weight, reasons = discovery_score(target, candidate)
+        if score >= PEER_DISCOVERY.min_candidate_score and evidence_weight >= PEER_DISCOVERY.min_evidence_weight:
             candidate["discovery_score"] = score
+            candidate["discovery_evidence_weight"] = evidence_weight
             candidate["discovery_reasons"] = reasons
             candidate.setdefault("candidate_source", "peer_universe")
             discovered.append(candidate)
@@ -34,7 +35,7 @@ def discover_peer_candidates(target_info: Mapping[str, object], target_metrics: 
     return merge_candidates(explicit, ranked[: PEER_DISCOVERY.max_candidates])
 
 
-def discovery_score(target: Mapping[str, object], candidate: Mapping[str, object]) -> tuple[float, list[str]]:
+def discovery_score(target: Mapping[str, object], candidate: Mapping[str, object]) -> tuple[float, float, list[str]]:
     candidate_profile = company_profile(candidate, MetricPack({}))
     reasons: list[str] = []
     pieces = [
@@ -46,9 +47,22 @@ def discovery_score(target: Mapping[str, object], candidate: Mapping[str, object
         numeric_similarity("revenue_growth", target, candidate_profile, PEER_DISCOVERY.growth_weight, 0.20, reasons),
         numeric_similarity("operating_margin", target, candidate_profile, PEER_DISCOVERY.margin_weight, 0.20, reasons),
     ]
-    total_weight = sum(weight for _, weight in pieces)
+    evidence_weight = sum(weight for _, weight in pieces)
+    total_weight = peer_discovery_total_weight()
     score = sum(value * weight for value, weight in pieces) / total_weight if total_weight else 0.0
-    return score, reasons
+    return score, evidence_weight, reasons
+
+
+def peer_discovery_total_weight() -> float:
+    return (
+        PEER_DISCOVERY.sector_weight
+        + PEER_DISCOVERY.industry_weight
+        + PEER_DISCOVERY.sic_weight
+        + PEER_DISCOVERY.business_model_weight
+        + PEER_DISCOVERY.size_weight
+        + PEER_DISCOVERY.growth_weight
+        + PEER_DISCOVERY.margin_weight
+    )
 
 
 def categorical_score(name: str, target: Mapping[str, object], candidate: Mapping[str, object], weight: float, reasons: list[str]) -> tuple[float, float]:
