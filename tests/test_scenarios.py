@@ -1,6 +1,8 @@
 import unittest
 
 from fundamental_analysis.main import analyze_ticker_from_inputs
+from fundamental_analysis.scenarios import aggregate_fair_value, aggregate_margin_of_safety
+from fundamental_analysis.valuation import ValuationResult
 
 
 class ScenarioTests(unittest.TestCase):
@@ -35,6 +37,15 @@ class ScenarioTests(unittest.TestCase):
         self.assertIsNotNone(by_key["bull"].fair_value_per_share)
         self.assertLess(by_key["stress"].fair_value_per_share, by_key["bull"].fair_value_per_share)
         self.assertLess(by_key["stress"].margin_of_safety, by_key["bull"].margin_of_safety)
+
+    def test_scenario_aggregation_is_weighted_by_confidence(self):
+        valuations = [
+            ValuationResult("weak", 50.0, 0.20, margin_of_safety=-0.50),
+            ValuationResult("strong", 100.0, 0.80, margin_of_safety=0.20),
+        ]
+
+        self.assertAlmostEqual(aggregate_fair_value(valuations), 90.0)
+        self.assertAlmostEqual(aggregate_margin_of_safety(valuations), 0.06)
 
 
 if __name__ == "__main__":
