@@ -51,6 +51,21 @@ class ReportTests(unittest.TestCase):
         self.assertIn("nao subiu para Comprar", markdown)
         self.assertIn("abaixo do minimo exigido", markdown)
 
+    def test_growth_report_explains_short_cash_runway(self):
+        result = analyze_ticker_from_inputs(
+            "BURN",
+            {"revenue": 1_000_000, "ebit": -500_000, "net_income": -600_000},
+            {"total_assets": 2_000_000, "total_liabilities": 500_000, "equity": 1_500_000, "cash": 300_000, "total_debt": 100_000, "current_assets": 900_000, "current_liabilities": 200_000},
+            {"cfo": -250_000, "capex": -150_000},
+            {"shares": 100_000, "price": 20, "revenue_growth": 0.30},
+            {"sector": "Technology", "industry": "Software"},
+        )
+
+        markdown = result.report["markdown"]
+
+        self.assertIn("Runway de caixa", markdown)
+        self.assertIn("current ratio parece forte", markdown)
+
 
 if __name__ == "__main__":
     unittest.main()
