@@ -53,7 +53,8 @@ def build_peer_selection_report(target_info: Mapping[str, object], target_metric
     results = [score_candidate(target_profile, candidate) for candidate in candidates or []]
     approved = [result for result in results if result.status in {"strong", "acceptable"}]
     rejected = [result for result in results if result.status not in {"strong", "acceptable"}]
-    medians = median_multiples(approved)
+    has_minimum_peer_set = len(approved) >= PEER_SELECTION.min_approved_peers
+    medians = median_multiples(approved) if has_minimum_peer_set else {}
     confidence = min(1.0, len(approved) / max(1, PEER_SELECTION.min_approved_peers))
     return PeerSelectionReport(approved, rejected, medians, confidence, peer_selection_summary(approved, rejected, confidence))
 
@@ -166,6 +167,8 @@ def merge_peer_medians(market_data: Mapping[str, object], peer_selection: PeerSe
 def peer_selection_summary(approved: Sequence[PeerCandidateResult], rejected: Sequence[PeerCandidateResult], confidence: float) -> str:
     if not approved:
         return "Nenhum par aprovado pelo filtro de equivalencia."
+    if len(approved) < PEER_SELECTION.min_approved_peers:
+        return f"{len(approved)} par aprovado, abaixo do minimo de {PEER_SELECTION.min_approved_peers}; mediana de pares nao foi usada."
     return f"{len(approved)} pares aprovados, {len(rejected)} rejeitados; confianca da selecao {confidence:.2f}."
 
 
