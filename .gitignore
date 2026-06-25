@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local virtual environments and vendored dependencies
+.venv/
+venv/
+env/
+.vendor/
+
+# Generated analysis outputs
+work_outputs_live/
+calibration_outputs/
+*.log
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
