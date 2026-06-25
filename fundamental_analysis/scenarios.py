@@ -111,13 +111,13 @@ def adjusted_fcff(value: float, adjustment: float) -> float:
 
 
 def aggregate_fair_value(valuations: list[ValuationResult]) -> float | None:
-    available = [v.fair_value_per_share for v in valuations if v.fair_value_per_share is not None and v.confidence > 0]
-    return sum(available) / len(available) if available else None
+    available = [(v.fair_value_per_share, v.confidence) for v in valuations if v.fair_value_per_share is not None and v.confidence > 0]
+    return weighted_average(available)
 
 
 def aggregate_margin_of_safety(valuations: list[ValuationResult]) -> float | None:
-    available = [v.margin_of_safety for v in valuations if v.margin_of_safety is not None and v.confidence > 0]
-    return sum(available) / len(available) if available else None
+    available = [(v.margin_of_safety, v.confidence) for v in valuations if v.margin_of_safety is not None and v.confidence > 0]
+    return weighted_average(available)
 
 
 def aggregate_confidence(valuations: list[ValuationResult]) -> float:
@@ -130,3 +130,9 @@ def first_number(*values: object) -> float:
         if isinstance(value, (int, float)):
             return float(value)
     return 0.0
+
+
+def weighted_average(values: list[tuple[float | None, float]]) -> float | None:
+    available = [(float(value), weight) for value, weight in values if value is not None and weight > 0]
+    total_weight = sum(weight for _, weight in available)
+    return sum(value * weight for value, weight in available) / total_weight if total_weight else None
