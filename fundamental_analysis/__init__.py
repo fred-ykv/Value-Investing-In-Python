@@ -8,10 +8,12 @@ valuation, scoring, and reporting into auditable Python modules.
 from .main import analyze_ticker_from_inputs, analyze_ticker_live
 from .notebook_adapter import analyze_from_notebook_globals
 from .calibration import run_calibration
+from .scenarios import build_scenarios
 
 __all__ = [
     "analyze_ticker_from_inputs",
     "analyze_ticker_live",
     "analyze_from_notebook_globals",
     "run_calibration",
+    "build_scenarios",
 ]

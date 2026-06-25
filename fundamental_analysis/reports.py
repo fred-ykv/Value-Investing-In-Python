@@ -6,12 +6,27 @@ from typing import Iterable
 
 from .config import GROWTH_TECH, SCORE
 from .data_sources import MetricValue
+from .scenarios import ScenarioResult
 from .scoring import ScoreReport
 from .valuation import ValuationResult
 
 
 def valuation_table(valuations: Iterable[ValuationResult]) -> list[dict[str, object]]:
     return [{"method": v.method, "fair_value_per_share": v.fair_value_per_share, "margin_of_safety": v.margin_of_safety, "confidence": v.confidence, "source": v.source, "diagnostics": v.diagnostics} for v in valuations]
+
+
+def scenario_table(scenarios: Iterable[ScenarioResult]) -> list[dict[str, object]]:
+    return [
+        {
+            "scenario": scenario.label,
+            "fair_value_per_share": scenario.fair_value_per_share,
+            "margin_of_safety": scenario.margin_of_safety,
+            "confidence": scenario.confidence,
+            "assumptions": scenario.assumptions,
+            "description": scenario.description,
+        }
+        for scenario in scenarios
+    ]
 
 
 def score_table(score: ScoreReport) -> list[dict[str, object]]:
@@ -49,8 +64,9 @@ def risk_diagnostics(score: ScoreReport, valuations: Iterable[ValuationResult], 
     return risks or ["Nenhum risco critico detectado pela camada de validacao."]
 
 
-def render_markdown_report(ticker: str, score: ScoreReport, valuations: Iterable[ValuationResult], metrics: dict[str, MetricValue] | None = None) -> str:
+def render_markdown_report(ticker: str, score: ScoreReport, valuations: Iterable[ValuationResult], metrics: dict[str, MetricValue] | None = None, scenarios: Iterable[ScenarioResult] | None = None) -> str:
     valuations = list(valuations)
+    scenarios = list(scenarios or [])
     lines = [
         f"# Fundamental Analysis - {ticker.upper()}",
         "",
@@ -66,6 +82,14 @@ def render_markdown_report(ticker: str, score: ScoreReport, valuations: Iterable
     ]
     for row in valuation_table(valuations):
         lines.append(f"| {row['method']} | {_fmt_money(row['fair_value_per_share'])} | {_fmt_pct(row['margin_of_safety'])} | {row['source']} | {float(row['confidence'] or 0):.2f} |")
+    if scenarios:
+        lines.extend(["", "## Cenarios hipoteticos", "| Cenario | Preco justo medio | Margem de seguranca | Confianca | Premissas-chave |", "|---|---:|---:|---:|---|"])
+        for row in scenario_table(scenarios):
+            assumptions = row["assumptions"]
+            lines.append(
+                f"| {row['scenario']} | {_fmt_money(row['fair_value_per_share'])} | {_fmt_pct(row['margin_of_safety'])} | "
+                f"{float(row['confidence'] or 0):.2f} | {scenario_assumption_text(assumptions)} |"
+            )
     lines.extend(["", "## Score por dimensao", "| Dimensao | Score | Confianca | Explicacao |", "|---|---:|---:|---|"])
     for row in score_table(score):
         lines.append(f"| {row['name']} | {float(row['score']):.2f} | {float(row['confidence']):.2f} | {str(row['explanation']).replace('|', '/')} |")
@@ -147,6 +171,17 @@ def explanatory_notes(score: ScoreReport, valuations: Iterable[ValuationResult],
     if score.dimensions.get("data_confidence") and score.dimensions["data_confidence"].score < 0.60:
         notes.append("A confianca dos dados ficou abaixo de 0.60; revise demonstrativos e fontes antes de usar o resultado em decisao real.")
     return notes
+
+
+def scenario_assumption_text(assumptions: object) -> str:
+    if not isinstance(assumptions, dict):
+        return "-"
+    return (
+        f"crescimento {_fmt_pct(assumptions.get('growth_years'))}; "
+        f"desconto {_fmt_pct(assumptions.get('discount_rate'))}; "
+        f"g terminal {_fmt_pct(assumptions.get('terminal_growth'))}; "
+        f"ajuste FCFF {_fmt_pct(assumptions.get('fcff_adjustment'))}"
+    )
 
 
 def metric_number(metric: MetricValue | None) -> float | None:

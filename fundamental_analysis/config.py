@@ -71,6 +71,64 @@ class ValuationScoreAssumptions:
 
 
 @dataclass(frozen=True)
+class ScenarioCase:
+    key: str
+    label: str
+    growth_delta: float
+    discount_rate_delta: float
+    terminal_growth_delta: float
+    fcff_adjustment: float
+    target_fcf_margin_delta: float
+    description: str
+
+
+@dataclass(frozen=True)
+class ScenarioAssumptions:
+    cases: Tuple[ScenarioCase, ...] = (
+        ScenarioCase(
+            key="stress",
+            label="Stress",
+            growth_delta=-0.12,
+            discount_rate_delta=0.03,
+            terminal_growth_delta=-0.01,
+            fcff_adjustment=-0.35,
+            target_fcf_margin_delta=-0.06,
+            description="Recessao, compressao de margem, custo de capital maior e menor crescimento terminal.",
+        ),
+        ScenarioCase(
+            key="bear",
+            label="Pessimista",
+            growth_delta=-0.06,
+            discount_rate_delta=0.015,
+            terminal_growth_delta=-0.005,
+            fcff_adjustment=-0.20,
+            target_fcf_margin_delta=-0.03,
+            description="Crescimento menor, margem pressionada e taxa de desconto mais alta.",
+        ),
+        ScenarioCase(
+            key="base",
+            label="Base",
+            growth_delta=0.00,
+            discount_rate_delta=0.00,
+            terminal_growth_delta=0.00,
+            fcff_adjustment=0.00,
+            target_fcf_margin_delta=0.00,
+            description="Premissas centrais usadas no valuation principal.",
+        ),
+        ScenarioCase(
+            key="bull",
+            label="Otimista",
+            growth_delta=0.05,
+            discount_rate_delta=-0.005,
+            terminal_growth_delta=0.005,
+            fcff_adjustment=0.15,
+            target_fcf_margin_delta=0.03,
+            description="Execucao melhor, margem mais alta e custo de capital ligeiramente menor.",
+        ),
+    )
+
+
+@dataclass(frozen=True)
 class ScoreWeights:
     valuation: float
     growth: float
@@ -143,6 +201,7 @@ GROWTH_TECH = GrowthTechAssumptions()
 MARKET = MarketAssumptions()
 VALUATION_SCORE = ValuationScoreAssumptions()
 SCORE = ScoreConfig()
+SCENARIOS = ScenarioAssumptions()
 
 DATA_SOURCE_CONFIDENCE = {
     "yfinance": 0.80,
