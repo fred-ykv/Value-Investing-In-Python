@@ -129,6 +129,13 @@ class ScenarioAssumptions:
 
 
 @dataclass(frozen=True)
+class ComparableAssumptions:
+    discount_for_strong_score: float = -0.30
+    premium_for_weak_score: float = 0.30
+    minimum_peer_metrics: int = 2
+
+
+@dataclass(frozen=True)
 class ScoreWeights:
     valuation: float
     growth: float
@@ -202,6 +209,7 @@ MARKET = MarketAssumptions()
 VALUATION_SCORE = ValuationScoreAssumptions()
 SCORE = ScoreConfig()
 SCENARIOS = ScenarioAssumptions()
+COMPARABLES = ComparableAssumptions()
 
 DATA_SOURCE_CONFIDENCE = {
     "yfinance": 0.80,
