@@ -62,8 +62,10 @@ class ReportTests(unittest.TestCase):
         )
 
         markdown = result.report["markdown"]
+        risk_text = "\n".join(result.report["risk_diagnostics"])
 
         self.assertIn("Runway de caixa", markdown)
+        self.assertIn("Runway de caixa", risk_text)
         self.assertIn("current ratio parece forte", markdown)
 
 
