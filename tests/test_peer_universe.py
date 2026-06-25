@@ -29,9 +29,9 @@ class PeerUniverseTests(unittest.TestCase):
             {"ticker": "ABC", "industry": "Custom Industry"},
             {
                 "configured_peer_universe": {
-                    "abc": ["XYZ"],
-                    "custom industry": [{"ticker": "DEF", "sector": "Industrials"}],
-                    "default": ["QQQ"],
+                    "ABC": ["XYZ"],
+                    "Custom Industry": [{"ticker": "DEF", "sector": "Industrials"}],
+                    "Default": ["QQQ"],
                 }
             },
         )
