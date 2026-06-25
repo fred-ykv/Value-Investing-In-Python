@@ -42,7 +42,7 @@ def analyze_ticker_from_inputs(ticker: str, income_statement: Mapping[str, float
         "valuation_table": valuation_table(valuations),
         "score_table": score_table(score),
         "metric_lineage_table": metric_lineage_table(metric_lineage),
-        "risk_diagnostics": risk_diagnostics(score, valuations),
+        "risk_diagnostics": risk_diagnostics(score, valuations, metric_lineage),
         "recommendation": score.recommendation,
         "markdown": render_markdown_report(ticker, score, valuations, metric_lineage),
     }
