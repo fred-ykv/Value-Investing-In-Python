@@ -10,6 +10,7 @@ from .notebook_adapter import analyze_from_notebook_globals
 from .calibration import run_calibration
 from .scenarios import build_scenarios
 from .comparables import build_comparable_report
+from .peer_selection import build_peer_selection_report
 
 __all__ = [
     "analyze_ticker_from_inputs",
@@ -18,4 +19,5 @@ __all__ = [
     "run_calibration",
     "build_scenarios",
     "build_comparable_report",
+    "build_peer_selection_report",
 ]
