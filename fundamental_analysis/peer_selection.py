@@ -15,6 +15,7 @@ class PeerCandidateResult:
     ticker: str
     score: float
     status: str
+    evidence_weight: float = 0.0
     reasons: list[str] = field(default_factory=list)
     vetoes: list[str] = field(default_factory=list)
     metrics: dict[str, float] = field(default_factory=dict)
@@ -86,10 +87,11 @@ def score_candidate(target: Mapping[str, object], candidate: Mapping[str, object
         numeric_piece("operating_margin", target, candidate_profile, PEER_SELECTION.margin_weight, 0.20, reasons),
         numeric_piece("debt_to_equity", target, candidate_profile, PEER_SELECTION.leverage_weight, 2.0, reasons),
     ]
-    total_weight = sum(weight for _, weight in pieces)
+    evidence_weight = sum(weight for _, weight in pieces)
+    total_weight = peer_selection_total_weight()
     score = sum(value * weight for value, weight in pieces) / total_weight if total_weight else 0.0
-    status = peer_status(score, vetoes)
-    return PeerCandidateResult(str(candidate.get("ticker") or candidate.get("symbol") or "UNKNOWN"), score, status, reasons, vetoes, candidate_multiples(candidate))
+    status = peer_status(score, vetoes, evidence_weight)
+    return PeerCandidateResult(str(candidate.get("ticker") or candidate.get("symbol") or "UNKNOWN"), score, status, evidence_weight, reasons, vetoes, candidate_multiples(candidate))
 
 
 def categorical_piece(name: str, target: Mapping[str, object], candidate: Mapping[str, object], weight: float, reasons: list[str]) -> tuple[float, float]:
@@ -125,9 +127,11 @@ def model_vetoes(target_model: str, candidate_model: str) -> list[str]:
     return vetoes
 
 
-def peer_status(score: float, vetoes: list[str]) -> str:
+def peer_status(score: float, vetoes: list[str], evidence_weight: float) -> str:
     if vetoes:
         return "rejected_veto"
+    if evidence_weight < PEER_SELECTION.min_evidence_weight:
+        return "rejected_low_evidence"
     if score >= PEER_SELECTION.strong_threshold:
         return "strong"
     if score >= PEER_SELECTION.acceptable_threshold:
@@ -135,6 +139,19 @@ def peer_status(score: float, vetoes: list[str]) -> str:
     if score >= PEER_SELECTION.weak_threshold:
         return "weak_reference"
     return "rejected_low_similarity"
+
+
+def peer_selection_total_weight() -> float:
+    return (
+        PEER_SELECTION.sector_weight
+        + PEER_SELECTION.industry_weight
+        + PEER_SELECTION.sic_weight
+        + PEER_SELECTION.business_model_weight
+        + PEER_SELECTION.size_weight
+        + PEER_SELECTION.growth_weight
+        + PEER_SELECTION.margin_weight
+        + PEER_SELECTION.leverage_weight
+    )
 
 
 def median_multiples(approved: Sequence[PeerCandidateResult]) -> dict[str, float]:
