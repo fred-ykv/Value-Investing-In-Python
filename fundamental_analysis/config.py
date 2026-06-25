@@ -136,6 +136,22 @@ class ComparableAssumptions:
 
 
 @dataclass(frozen=True)
+class PeerSelectionAssumptions:
+    strong_threshold: float = 0.80
+    acceptable_threshold: float = 0.65
+    weak_threshold: float = 0.50
+    min_approved_peers: int = 2
+    sector_weight: float = 0.15
+    industry_weight: float = 0.20
+    sic_weight: float = 0.15
+    business_model_weight: float = 0.20
+    size_weight: float = 0.10
+    growth_weight: float = 0.08
+    margin_weight: float = 0.08
+    leverage_weight: float = 0.04
+
+
+@dataclass(frozen=True)
 class ScoreWeights:
     valuation: float
     growth: float
@@ -210,6 +226,7 @@ VALUATION_SCORE = ValuationScoreAssumptions()
 SCORE = ScoreConfig()
 SCENARIOS = ScenarioAssumptions()
 COMPARABLES = ComparableAssumptions()
+PEER_SELECTION = PeerSelectionAssumptions()
 
 DATA_SOURCE_CONFIDENCE = {
     "yfinance": 0.80,
