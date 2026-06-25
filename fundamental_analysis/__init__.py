@@ -12,6 +12,7 @@ from .scenarios import build_scenarios
 from .comparables import build_comparable_report
 from .peer_discovery import discover_peer_candidates
 from .peer_selection import build_peer_selection_report
+from .peer_universe import build_peer_universe
 
 __all__ = [
     "analyze_ticker_from_inputs",
@@ -22,4 +23,5 @@ __all__ = [
     "build_comparable_report",
     "discover_peer_candidates",
     "build_peer_selection_report",
+    "build_peer_universe",
 ]
