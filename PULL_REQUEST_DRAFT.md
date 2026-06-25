@@ -20,11 +20,12 @@ analysis toolkit for US stocks.
 - Calibrated valuation scoring so moderate overvaluation is not treated as near-zero value while Buy recommendations still require adequate valuation.
 - Fixed short-keyword sector classification so EV/AI acronyms do not match unrelated words such as beverages or defensive.
 - Improved report narrative with thesis-style explanation, recommendation gate notes, and explanatory notes for margin of safety, confidence, and negative-FCFF DCF cases.
+- Added cash burn/runway metrics and adjusted growth/tech liquidity so high current ratio does not hide short runway during cash burn.
 
 ## Validation
 
 - Unit test suite passes locally: `python -m unittest discover -s tests -v`.
-- Current local result: 17 tests passing.
+- Current local result: 19 tests passing.
 - Current suite covers:
   - traditional industrial company profile
   - big tech company profile
@@ -33,9 +34,10 @@ analysis toolkit for US stocks.
   - DCF sensitivity and negative-FCFF handling
   - 0% growth assumptions that must not be replaced by defaults
   - scoring calibration for valuation curve, bank P/B vs ROE, and avoid gates
+  - growth/tech liquidity calibration using cash runway
   - sector classification for consumer defensive and standalone EV acronyms
   - notebook adapter behavior
-  - Markdown report sections, metric lineage output, explanatory notes, and valuation-gate narrative
+  - Markdown report sections, metric lineage output, explanatory notes, valuation-gate narrative, and short-runway narrative
 - 30-ticker benchmark completed locally with 30 successes and 0 errors.
 - Live Yahoo Finance runs and batch calibration require network access and dependencies from
   `requirements.txt`; generated live outputs are intentionally not committed.
