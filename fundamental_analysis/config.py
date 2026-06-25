@@ -149,12 +149,14 @@ class PeerSelectionAssumptions:
     growth_weight: float = 0.08
     margin_weight: float = 0.08
     leverage_weight: float = 0.04
+    min_evidence_weight: float = 0.60
 
 
 @dataclass(frozen=True)
 class PeerDiscoveryAssumptions:
     max_candidates: int = 12
     min_candidate_score: float = 0.55
+    min_evidence_weight: float = 0.55
     sector_weight: float = 0.20
     industry_weight: float = 0.25
     sic_weight: float = 0.15
