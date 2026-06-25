@@ -45,6 +45,29 @@ class PeerDiscoveryTests(unittest.TestCase):
 
         self.assertEqual([candidate["ticker"] for candidate in candidates], ["GM"])
         self.assertGreaterEqual(candidates[0]["discovery_score"], 0.55)
+        self.assertGreaterEqual(candidates[0]["discovery_evidence_weight"], 0.55)
+
+    def test_rejects_sparse_candidate_even_when_sector_matches(self):
+        candidates = discover_peer_candidates(
+            {
+                "ticker": "F",
+                "sector": "Consumer Cyclical",
+                "industry": "Auto Manufacturers",
+                "market_cap": 50_000_000_000,
+            },
+            MetricPack({}),
+            {
+                "peer_universe": [
+                    {
+                        "ticker": "AUTO",
+                        "sector": "Consumer Cyclical",
+                        "industry": "Auto Manufacturers",
+                    }
+                ]
+            },
+        )
+
+        self.assertEqual(candidates, [])
 
     def test_analysis_uses_discovered_universe_when_no_manual_candidates(self):
         result = analyze_ticker_from_inputs(
