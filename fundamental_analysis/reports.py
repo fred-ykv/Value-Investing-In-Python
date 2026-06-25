@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import asdict
 from typing import Iterable
 
-from .config import SCORE
+from .config import GROWTH_TECH, SCORE
 from .data_sources import MetricValue
 from .scoring import ScoreReport
 from .valuation import ValuationResult
@@ -32,7 +32,7 @@ def executive_summary(ticker: str, score: ScoreReport, valuations: Iterable[Valu
     return f"{ticker.upper()} recebeu recomendacao **{score.recommendation}**. Score total: {score.total_score:.2f}. Modelos usados: {methods}."
 
 
-def risk_diagnostics(score: ScoreReport, valuations: Iterable[ValuationResult]) -> list[str]:
+def risk_diagnostics(score: ScoreReport, valuations: Iterable[ValuationResult], metrics: dict[str, MetricValue] | None = None) -> list[str]:
     risks: list[str] = []
     if score.dimensions.get("data_confidence") and score.dimensions["data_confidence"].score < 0.50:
         risks.append("Baixa confianca dos dados; revise fontes antes de usar a recomendacao.")
@@ -41,6 +41,11 @@ def risk_diagnostics(score: ScoreReport, valuations: Iterable[ValuationResult]) 
             risks.append("DCF usa FCFF negativo; a confianca do modelo foi reduzida.")
         if valuation.diagnostics.get("terminal_growth_adjusted") is not None:
             risks.append("Crescimento terminal foi ajustado para ficar abaixo da taxa de desconto.")
+    if metrics:
+        runway = metric_number(metrics.get("cash_runway_years"))
+        burn = metric_number(metrics.get("cash_burn"))
+        if burn is not None and runway is not None and runway < GROWTH_TECH.min_cash_runway_years:
+            risks.append(f"Runway de caixa estimado em {runway:.1f} anos, abaixo do minimo de {GROWTH_TECH.min_cash_runway_years:.1f} anos para growth/tech.")
     return risks or ["Nenhum risco critico detectado pela camada de validacao."]
 
 
@@ -69,9 +74,9 @@ def render_markdown_report(ticker: str, score: ScoreReport, valuations: Iterable
         for row in metric_lineage_table(metrics):
             lines.append(f"| {row['metric']} | {_fmt_number(row['value'])} | {row['source']} | {float(row['confidence'] or 0):.2f} | {str(row['note']).replace('|', '/')} |")
     lines.extend(["", "## Diagnostico de riscos"])
-    lines.extend(f"- {risk}" for risk in risk_diagnostics(score, valuations))
+    lines.extend(f"- {risk}" for risk in risk_diagnostics(score, valuations, metrics))
     lines.extend(["", "## Notas explicativas"])
-    lines.extend(f"- {note}" for note in explanatory_notes(score, valuations))
+    lines.extend(f"- {note}" for note in explanatory_notes(score, valuations, metrics))
     lines.extend(["", "## Recomendacao final", f"**{score.recommendation}**"])
     return "\n".join(lines)
 
@@ -119,7 +124,7 @@ def valuation_readthrough(valuations: Iterable[ValuationResult]) -> str:
     )
 
 
-def explanatory_notes(score: ScoreReport, valuations: Iterable[ValuationResult]) -> list[str]:
+def explanatory_notes(score: ScoreReport, valuations: Iterable[ValuationResult], metrics: dict[str, MetricValue] | None = None) -> list[str]:
     notes = [
         "Comprar exige score total elevado e valuation minimamente aceitavel; qualidade sozinha nao deve compensar preco excessivo.",
         "Observar indica assimetria incompleta: a empresa pode ter bons fundamentos, mas ainda exige preco melhor, dados melhores ou reducao de riscos.",
@@ -132,9 +137,25 @@ def explanatory_notes(score: ScoreReport, valuations: Iterable[ValuationResult])
         notes.insert(0, gate)
     if any(v.diagnostics.get("negative_fcff") for v in valuations):
         notes.append("FCFF negativo reduz a confianca do DCF porque empresas nessa fase dependem mais de premissas de reversao, runway e margem futura.")
+    if metrics:
+        runway = metric_number(metrics.get("cash_runway_years"))
+        burn = metric_number(metrics.get("cash_burn"))
+        if burn is not None and runway is not None:
+            notes.append(f"Cash runway compara caixa disponivel com queima anual estimada; neste caso, o runway estimado foi de {runway:.1f} anos.")
+            if runway < GROWTH_TECH.min_cash_runway_years:
+                notes.append(f"Runway abaixo de {GROWTH_TECH.min_cash_runway_years:.1f} anos reduz a leitura de liquidez para growth/tech, mesmo quando o current ratio parece forte.")
     if score.dimensions.get("data_confidence") and score.dimensions["data_confidence"].score < 0.60:
         notes.append("A confianca dos dados ficou abaixo de 0.60; revise demonstrativos e fontes antes de usar o resultado em decisao real.")
     return notes
+
+
+def metric_number(metric: MetricValue | None) -> float | None:
+    if metric is None or metric.value is None:
+        return None
+    try:
+        return float(metric.value)
+    except Exception:
+        return None
 
 
 def _fmt_money(value: object) -> str:
