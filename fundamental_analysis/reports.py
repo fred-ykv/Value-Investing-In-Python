@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import asdict
 from typing import Iterable
 
+from .comparables import ComparableReport
 from .config import GROWTH_TECH, SCORE
 from .data_sources import MetricValue
 from .scenarios import ScenarioResult
@@ -26,6 +27,21 @@ def scenario_table(scenarios: Iterable[ScenarioResult]) -> list[dict[str, object
             "description": scenario.description,
         }
         for scenario in scenarios
+    ]
+
+
+def comparable_table(comparables: ComparableReport) -> list[dict[str, object]]:
+    return [
+        {
+            "metric": metric.name,
+            "company_value": metric.company_value,
+            "peer_median": metric.peer_median,
+            "premium_discount": metric.premium_discount,
+            "score": metric.score,
+            "source": metric.source,
+            "interpretation": metric.interpretation,
+        }
+        for metric in comparables.metrics
     ]
 
 
@@ -64,7 +80,7 @@ def risk_diagnostics(score: ScoreReport, valuations: Iterable[ValuationResult], 
     return risks or ["Nenhum risco critico detectado pela camada de validacao."]
 
 
-def render_markdown_report(ticker: str, score: ScoreReport, valuations: Iterable[ValuationResult], metrics: dict[str, MetricValue] | None = None, scenarios: Iterable[ScenarioResult] | None = None) -> str:
+def render_markdown_report(ticker: str, score: ScoreReport, valuations: Iterable[ValuationResult], metrics: dict[str, MetricValue] | None = None, scenarios: Iterable[ScenarioResult] | None = None, comparables: ComparableReport | None = None) -> str:
     valuations = list(valuations)
     scenarios = list(scenarios or [])
     lines = [
@@ -89,6 +105,13 @@ def render_markdown_report(ticker: str, score: ScoreReport, valuations: Iterable
             lines.append(
                 f"| {row['scenario']} | {_fmt_money(row['fair_value_per_share'])} | {_fmt_pct(row['margin_of_safety'])} | "
                 f"{float(row['confidence'] or 0):.2f} | {scenario_assumption_text(assumptions)} |"
+            )
+    if comparables:
+        lines.extend(["", "## Comparaveis de mercado", comparables.summary, "", "| Multiplo | Empresa | Mediana pares | Premio/desconto | Score | Fonte | Leitura |", "|---|---:|---:|---:|---:|---|---|"])
+        for row in comparable_table(comparables):
+            lines.append(
+                f"| {row['metric']} | {_fmt_number(row['company_value'])} | {_fmt_number(row['peer_median'])} | "
+                f"{_fmt_pct(row['premium_discount'])} | {float(row['score'] or 0):.2f} | {row['source']} | {str(row['interpretation']).replace('|', '/')} |"
             )
     lines.extend(["", "## Score por dimensao", "| Dimensao | Score | Confianca | Explicacao |", "|---|---:|---:|---|"])
     for row in score_table(score):
