@@ -7,11 +7,14 @@ from .config import PEER_DISCOVERY
 from .data_sources import safe_float
 from .metrics import MetricPack
 from .peer_selection import company_profile, first_present, normalized_model, normalized_text
+from .peer_universe import build_peer_universe
 
 
 def discover_peer_candidates(target_info: Mapping[str, object], target_metrics: MetricPack, market_data: Mapping[str, object]) -> list[dict[str, object]]:
     explicit = [dict(candidate) for candidate in sequence_of_mappings(market_data.get("peer_candidates"))]
-    universe = sequence_of_mappings(first_present(market_data, "peer_universe", "candidate_universe", "comparable_universe"))
+    provided_universe = sequence_of_mappings(first_present(market_data, "peer_universe", "candidate_universe", "comparable_universe"))
+    provider_universe = build_peer_universe(target_info, market_data).candidates
+    universe = list(provided_universe) + provider_universe
     if not universe:
         return explicit
 
