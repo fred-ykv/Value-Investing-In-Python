@@ -9,6 +9,7 @@ from .main import analyze_ticker_from_inputs, analyze_ticker_live
 from .notebook_adapter import analyze_from_notebook_globals
 from .calibration import run_calibration
 from .scenarios import build_scenarios
+from .comparables import build_comparable_report
 
 __all__ = [
     "analyze_ticker_from_inputs",
@@ -16,4 +17,5 @@ __all__ = [
     "analyze_from_notebook_globals",
     "run_calibration",
     "build_scenarios",
+    "build_comparable_report",
 ]
