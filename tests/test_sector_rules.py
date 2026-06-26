@@ -15,6 +15,11 @@ class SectorRuleTests(unittest.TestCase):
 
         self.assertEqual(classify_company(info), CompanyType.GROWTH_TECH)
 
+    def test_traditional_auto_business_model_overrides_auto_manufacturer_label(self):
+        info = {"sector": "Consumer Cyclical", "industry": "Auto Manufacturers", "business_model": "traditional_auto"}
+
+        self.assertEqual(classify_company(info), CompanyType.TRADITIONAL)
+
 
 if __name__ == "__main__":
     unittest.main()
