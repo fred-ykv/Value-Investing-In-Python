@@ -52,7 +52,7 @@ def analyze_ticker_from_inputs(ticker: str, income_statement: Mapping[str, float
     peer_selection = build_peer_selection_report({**statements.info, **market_data}, metrics, peer_candidates)
     comparable_market_data = merge_peer_medians(market_data, peer_selection)
     comparables = build_comparable_report(company_type, values, metrics, comparable_market_data)
-    score = compute_score(company_type, valuations, metrics, values["price"])
+    score = compute_score(company_type, valuations, metrics, values["price"], comparables)
     metric_lineage = {**values, **metrics.values}
     report = {
         "executive_summary": executive_summary(ticker, score, valuations),

@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Iterable, Mapping
 
+from .comparables import ComparableReport
 from .config import CompanyType, GROWTH_TECH, SCORE, VALUATION_SCORE
 from .data_sources import MetricValue
 from .metrics import MetricPack
@@ -26,11 +27,11 @@ class ScoreReport:
     explanation: str = ""
 
 
-def compute_score(company_type: CompanyType, valuations: Iterable[ValuationResult], metrics: MetricPack, current_price: MetricValue) -> ScoreReport:
+def compute_score(company_type: CompanyType, valuations: Iterable[ValuationResult], metrics: MetricPack, current_price: MetricValue, comparables: ComparableReport | None = None) -> ScoreReport:
     weights = SCORE.weights_by_type[company_type].normalized()
     valuations = list(valuations)
     dimensions = {
-        "valuation": valuation_dimension(valuations, metrics, company_type),
+        "valuation": valuation_dimension(valuations, metrics, company_type, comparables),
         "growth": growth_dimension(metrics),
         "quality": quality_dimension(metrics),
         "debt": debt_dimension(metrics, company_type),
@@ -49,15 +50,35 @@ def compute_score(company_type: CompanyType, valuations: Iterable[ValuationResul
     return ScoreReport(total, recommendation, dimensions, explain_score(recommendation, dimensions))
 
 
-def valuation_dimension(valuations: Iterable[ValuationResult], metrics: MetricPack | None = None, company_type: CompanyType = CompanyType.TRADITIONAL) -> DimensionScore:
+def valuation_dimension(valuations: Iterable[ValuationResult], metrics: MetricPack | None = None, company_type: CompanyType = CompanyType.TRADITIONAL, comparables: ComparableReport | None = None) -> DimensionScore:
     available = [v for v in valuations if v.margin_of_safety is not None and v.confidence > 0]
     if not available:
-        return financial_valuation_dimension(metrics, None, 0.0) if company_type == CompanyType.FINANCIAL and metrics else DimensionScore("valuation", 0.0, 0.0, "No reliable valuation model available.")
+        base = financial_valuation_dimension(metrics, None, 0.0) if company_type == CompanyType.FINANCIAL and metrics else DimensionScore("valuation", 0.0, 0.0, "No reliable valuation model available.")
+        return blend_relative_valuation(base, comparables)
     weighted = [(_score_margin_of_safety(v.margin_of_safety), min(v.confidence, SCORE.max_single_valuation_method_weight)) for v in available]
     total_weight = sum(weight for _, weight in weighted)
     score = sum(value * weight for value, weight in weighted) / total_weight if total_weight else 0.0
     confidence = min(1.0, total_weight / max(1, len(available)))
-    return financial_valuation_dimension(metrics, score, confidence) if company_type == CompanyType.FINANCIAL and metrics else DimensionScore("valuation", score, confidence, "Upside/margin of safety across capped valuation models.")
+    base = financial_valuation_dimension(metrics, score, confidence) if company_type == CompanyType.FINANCIAL and metrics else DimensionScore("valuation", score, confidence, "Upside/margin of safety across capped valuation models.")
+    return blend_relative_valuation(base, comparables)
+
+
+def blend_relative_valuation(base: DimensionScore, comparables: ComparableReport | None = None) -> DimensionScore:
+    if comparables is None or comparables.confidence < VALUATION_SCORE.minimum_relative_confidence:
+        return base
+    intrinsic_weight = VALUATION_SCORE.intrinsic_weight * max(base.confidence, 0.0)
+    relative_weight = VALUATION_SCORE.relative_weight * comparables.confidence
+    total_weight = intrinsic_weight + relative_weight
+    if total_weight <= 0:
+        return DimensionScore("valuation", comparables.overall_score, comparables.confidence, "Relative valuation from peer multiples; intrinsic valuation was unavailable.")
+    score = ((base.score * intrinsic_weight) + (comparables.overall_score * relative_weight)) / total_weight
+    confidence = min(1.0, intrinsic_weight + relative_weight)
+    return DimensionScore(
+        "valuation",
+        score,
+        confidence,
+        "Blends intrinsic margin of safety with peer-relative multiples; peer signal is capped by sample confidence.",
+    )
 
 
 def financial_valuation_dimension(metrics: MetricPack, model_score: float | None, model_confidence: float) -> DimensionScore:

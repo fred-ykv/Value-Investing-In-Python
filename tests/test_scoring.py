@@ -1,6 +1,7 @@
 import unittest
 
 from fundamental_analysis.config import CompanyType
+from fundamental_analysis.comparables import ComparableReport
 from fundamental_analysis.data_sources import metric_value
 from fundamental_analysis.metrics import MetricPack
 from fundamental_analysis.scoring import compute_score, liquidity_dimension, valuation_dimension
@@ -66,6 +67,17 @@ class ScoringCalibrationTests(unittest.TestCase):
 
         self.assertLess(dimension.score, 0.80)
         self.assertIn("cash runway", dimension.explanation)
+
+    def test_relative_comparables_blend_into_valuation_without_overriding_intrinsic_value(self):
+        metrics = metric_pack()
+        valuations = [ValuationResult("dcf_fcff", 80.0, 0.80, margin_of_safety=-0.20)]
+        comparables = ComparableReport([], overall_score=0.90, confidence=1.0, summary="discount to peers")
+
+        dimension = valuation_dimension(valuations, metrics, CompanyType.TRADITIONAL, comparables)
+
+        self.assertGreater(dimension.score, valuation_dimension(valuations, metrics, CompanyType.TRADITIONAL).score)
+        self.assertLess(dimension.score, 0.90)
+        self.assertIn("peer-relative", dimension.explanation)
 
 
 if __name__ == "__main__":
