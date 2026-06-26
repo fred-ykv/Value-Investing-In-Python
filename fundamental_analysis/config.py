@@ -68,6 +68,9 @@ class ValuationScoreAssumptions:
     bank_justified_price_to_book_weight: float = 0.20
     bank_default_cost_of_equity: float = 0.10
     bank_terminal_growth: float = 0.02
+    intrinsic_weight: float = 0.70
+    relative_weight: float = 0.30
+    minimum_relative_confidence: float = 0.25
 
 
 @dataclass(frozen=True)
