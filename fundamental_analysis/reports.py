@@ -112,6 +112,9 @@ def render_markdown_report(ticker: str, score: ScoreReport, valuations: Iterable
         "## Tese da recomendacao",
         recommendation_summary(score, valuations),
         "",
+        "## Ponte para decisao",
+        *[f"- {item}" for item in decision_bridge(score, valuations)],
+        "",
         "## Valuation por metodo",
         "| Metodo | Preco justo | Margem de seguranca | Fonte | Confianca |",
         "|---|---:|---:|---|---:|",
@@ -170,6 +173,38 @@ def recommendation_summary(score: ScoreReport, valuations: Iterable[ValuationRes
     if valuation_read:
         lines.append(valuation_read)
     return " ".join(lines)
+
+
+def decision_bridge(score: ScoreReport, valuations: Iterable[ValuationResult] | None = None) -> list[str]:
+    dimensions = list(score.dimensions.values())
+    if not dimensions:
+        return ["Nao ha dimensoes suficientes para explicar a recomendacao."]
+    strongest = max(dimensions, key=lambda dimension: dimension.score)
+    weakest = min(dimensions, key=lambda dimension: dimension.score)
+    bridge = [
+        f"Principal motor positivo: {strongest.name} com score {strongest.score:.2f}; este fator sustentou a recomendacao.",
+        f"Principal gargalo: {weakest.name} com score {weakest.score:.2f}; este e o primeiro ponto a validar antes de aumentar exposicao.",
+    ]
+    gate = recommendation_gate_note(score)
+    if gate:
+        bridge.append(f"Para virar Comprar, a analise precisa primeiro resolver a trava indicada: {gate}")
+    elif score.recommendation == "Comprar":
+        bridge.append("A recomendacao de Comprar depende de manutencao simultanea de valuation aceitavel, qualidade operacional e confianca dos dados; perda relevante em qualquer um desses pilares deve rebaixar a leitura para Observar.")
+    elif score.recommendation == "Observar":
+        bridge.append(f"Para virar Comprar, o score total precisa superar {SCORE.buy_threshold:.2f} com valuation acima de {SCORE.min_valuation_score_for_buy:.2f}; enquanto isso nao ocorrer, a leitura correta e aguardar preco melhor, premissas melhores ou dados mais fortes.")
+    else:
+        bridge.append("Antes de reconsiderar a tese, o caso precisa sair da zona de risco combinando melhora de valuation, qualidade dos fundamentos e confianca das fontes.")
+
+    valuation_list = [valuation for valuation in list(valuations or []) if valuation.margin_of_safety is not None]
+    if valuation_list:
+        average_margin = sum(float(valuation.margin_of_safety or 0.0) for valuation in valuation_list) / len(valuation_list)
+        if average_margin < 0:
+            bridge.append(f"A margem de seguranca media ficou negativa ({_fmt_pct(average_margin)}), sinalizando que o preco atual ainda exige desconto ou premissas mais favoraveis.")
+        else:
+            bridge.append(f"A margem de seguranca media ficou positiva ({_fmt_pct(average_margin)}), mas deve ser confirmada contra qualidade, crescimento e riscos setoriais.")
+    else:
+        bridge.append("Como nao houve margem de seguranca conclusiva, a decisao deve dar peso maior a qualidade dos dados, liquidez e consistencia dos fundamentos.")
+    return bridge
 
 
 def recommendation_gate_note(score: ScoreReport) -> str:
