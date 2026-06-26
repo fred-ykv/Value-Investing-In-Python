@@ -8,6 +8,7 @@ from .comparables import ComparableReport, build_comparable_report
 from .config import CompanyType, MARKET
 from .data_sources import MetricValue, YahooFinanceClient, metric_value
 from .financial_statements import FinancialStatements, build_statement_metrics, update_market_from_info
+from .html_reports import render_html_report
 from .metrics import MetricPack, build_metrics
 from .peer_discovery import discover_peer_candidates
 from .peer_enrichment import enrich_peer_candidates
@@ -65,6 +66,7 @@ def analyze_ticker_from_inputs(ticker: str, income_statement: Mapping[str, float
         "risk_diagnostics": risk_diagnostics(score, valuations, metric_lineage),
         "recommendation": score.recommendation,
         "markdown": render_markdown_report(ticker, score, valuations, metric_lineage, scenarios, comparables, peer_selection),
+        "html": render_html_report(ticker, score, valuations, metric_lineage, scenarios, comparables, peer_selection),
     }
     return AnalysisResult(ticker, company_type.value, valuations, scenarios, peer_selection, comparables, metrics, score, report)
 
