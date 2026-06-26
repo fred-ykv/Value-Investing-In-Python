@@ -2,6 +2,9 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+import json
+from pathlib import Path
+import re
 from typing import Iterable
 
 from .comparables import ComparableReport
@@ -159,6 +162,35 @@ def render_markdown_report(ticker: str, score: ScoreReport, valuations: Iterable
     return "\n".join(lines)
 
 
+def save_report_artifacts(ticker: str, report: dict[str, object], output_dir: str | Path) -> dict[str, str]:
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+    prefix = _safe_filename(ticker)
+    artifacts = {
+        "markdown": output_path / f"{prefix}_analysis.md",
+        "html": output_path / f"{prefix}_analysis.html",
+        "tables_json": output_path / f"{prefix}_tables.json",
+    }
+    artifacts["markdown"].write_text(str(report.get("markdown", "")), encoding="utf-8")
+    artifacts["html"].write_text(str(report.get("html", "")), encoding="utf-8")
+    table_payload = {
+        key: report.get(key)
+        for key in (
+            "executive_summary",
+            "recommendation",
+            "valuation_table",
+            "scenario_table",
+            "peer_selection_table",
+            "comparable_table",
+            "score_table",
+            "metric_lineage_table",
+            "risk_diagnostics",
+        )
+    }
+    artifacts["tables_json"].write_text(json.dumps(table_payload, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+    return {name: str(path) for name, path in artifacts.items()}
+
+
 def recommendation_summary(score: ScoreReport, valuations: Iterable[ValuationResult] | None = None) -> str:
     best = max(score.dimensions.values(), key=lambda d: d.score)
     worst = min(score.dimensions.values(), key=lambda d: d.score)
@@ -298,3 +330,8 @@ def _fmt_number(value: object) -> str:
         return "-" if value is None else f"{float(value):,.4f}"
     except Exception:
         return "-"
+
+
+def _safe_filename(ticker: str) -> str:
+    safe = re.sub(r"[^A-Za-z0-9._-]+", "_", ticker.strip().upper())
+    return safe.strip("._-") or "ANALYSIS"
