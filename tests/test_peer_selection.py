@@ -94,6 +94,7 @@ class PeerSelectionTests(unittest.TestCase):
                         "operating_margin": 0.08,
                         "debt_to_equity": 0.45,
                         "price_to_earnings": 8.0,
+                        "ev_to_ebitda": 6.0,
                         "ev_to_ebit": 7.0,
                     },
                     {
@@ -107,6 +108,7 @@ class PeerSelectionTests(unittest.TestCase):
                         "operating_margin": 0.09,
                         "debt_to_equity": 0.50,
                         "price_to_earnings": 10.0,
+                        "ev_to_ebitda": 7.0,
                         "ev_to_ebit": 8.0,
                     }
                 ],
@@ -121,6 +123,8 @@ class PeerSelectionTests(unittest.TestCase):
         )
 
         self.assertEqual([peer.ticker for peer in result.peer_selection.approved], ["GM", "STLA"])
+        self.assertEqual(result.peer_selection.peer_medians["ev_to_ebitda"], 6.5)
+        self.assertEqual(result.peer_selection.peer_median_counts["ev_to_ebitda"], 2)
         self.assertIn("Selecao assistida de pares", result.report["markdown"])
         self.assertTrue(result.report["comparable_table"])
         self.assertTrue(any(metric.source == "peer_medians" for metric in result.comparables.metrics))

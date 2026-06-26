@@ -37,6 +37,7 @@ def comparable_table(comparables: ComparableReport) -> list[dict[str, object]]:
             "metric": metric.name,
             "company_value": metric.company_value,
             "peer_median": metric.peer_median,
+            "peer_count": metric.peer_count,
             "premium_discount": metric.premium_discount,
             "score": metric.score,
             "source": metric.source,
@@ -134,10 +135,10 @@ def render_markdown_report(ticker: str, score: ScoreReport, valuations: Iterable
                 f"{str(row['reasons']).replace('|', '/')} | {str(row['vetoes']).replace('|', '/')} |"
             )
     if comparables:
-        lines.extend(["", "## Comparaveis de mercado", comparables.summary, "", "| Multiplo | Empresa | Mediana pares | Premio/desconto | Score | Fonte | Leitura |", "|---|---:|---:|---:|---:|---|---|"])
+        lines.extend(["", "## Comparaveis de mercado", comparables.summary, "", "| Multiplo | Empresa | Mediana pares | N pares | Premio/desconto | Score | Fonte | Leitura |", "|---|---:|---:|---:|---:|---:|---|---|"])
         for row in comparable_table(comparables):
             lines.append(
-                f"| {row['metric']} | {_fmt_number(row['company_value'])} | {_fmt_number(row['peer_median'])} | "
+                f"| {row['metric']} | {_fmt_number(row['company_value'])} | {_fmt_number(row['peer_median'])} | {int(row['peer_count'] or 0)} | "
                 f"{_fmt_pct(row['premium_discount'])} | {float(row['score'] or 0):.2f} | {row['source']} | {str(row['interpretation']).replace('|', '/')} |"
             )
     lines.extend(["", "## Score por dimensao", "| Dimensao | Score | Confianca | Explicacao |", "|---|---:|---:|---|"])

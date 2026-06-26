@@ -14,21 +14,24 @@ class ComparableTests(unittest.TestCase):
             "CMP",
             {"revenue": 1_000_000, "ebit": 200_000, "net_income": 100_000},
             {"total_assets": 1_500_000, "total_liabilities": 500_000, "equity": 1_000_000, "cash": 100_000, "total_debt": 200_000, "current_assets": 500_000, "current_liabilities": 250_000},
-            {"cfo": 140_000, "capex": -40_000},
+            {"cfo": 140_000, "capex": -40_000, "depreciation_amortization": 50_000},
             {
                 "shares": 10_000,
                 "price": 50,
                 "wacc": 0.10,
                 "growth_years": 0.04,
                 "terminal_growth": 0.02,
-                "peer_medians": {"price_to_earnings": 8.0, "ev_to_ebit": 5.0, "ev_to_sales": 0.8, "price_to_book": 0.8},
+                "peer_medians": {"price_to_earnings": 8.0, "ev_to_ebitda": 4.0, "ev_to_ebit": 5.0, "ev_to_sales": 0.8, "price_to_book": 0.8},
             },
             {"sector": "Industrials"},
         )
 
         table = result.report["comparable_table"]
+        names = [row["metric"] for row in table]
         self.assertTrue(table)
+        self.assertIn("ev_to_ebitda", names)
         self.assertIn("Comparaveis de mercado", result.report["markdown"])
+        self.assertIn("N pares", result.report["markdown"])
         self.assertGreater(result.comparables.confidence, 0.0)
         self.assertGreater(result.comparables.overall_score, 0.50)
 
@@ -45,6 +48,38 @@ class ComparableTests(unittest.TestCase):
         names = [row["metric"] for row in result.report["comparable_table"]]
 
         self.assertEqual(names, ["price_to_book", "price_to_earnings"])
+
+    def test_growth_tech_comparables_prioritize_sales_multiples(self):
+        result = analyze_ticker_from_inputs(
+            "SaaS",
+            {"revenue": 1_000_000, "ebit": -50_000, "net_income": -80_000},
+            {"total_assets": 1_500_000, "total_liabilities": 300_000, "equity": 1_200_000, "cash": 500_000, "total_debt": 100_000, "current_assets": 900_000, "current_liabilities": 200_000},
+            {"cfo": 50_000, "capex": -20_000},
+            {"shares": 100_000, "price": 20, "revenue_growth": 0.30, "peer_medians": {"ev_to_sales": 8.0, "price_to_sales": 7.0, "price_to_earnings": 40.0}},
+            {"sector": "Technology", "industry": "Software"},
+        )
+
+        names = [row["metric"] for row in result.report["comparable_table"]]
+
+        self.assertEqual(names, ["ev_to_sales", "price_to_sales", "price_to_earnings"])
+
+    def test_low_peer_sample_penalizes_relative_confidence(self):
+        result = analyze_ticker_from_inputs(
+            "THIN",
+            {"revenue": 1_000_000, "ebit": 200_000, "net_income": 100_000},
+            {"total_assets": 1_500_000, "total_liabilities": 500_000, "equity": 1_000_000, "cash": 100_000, "total_debt": 200_000, "current_assets": 500_000, "current_liabilities": 250_000},
+            {"cfo": 140_000, "capex": -40_000},
+            {
+                "shares": 10_000,
+                "price": 50,
+                "peer_medians": {"price_to_earnings": 8.0},
+                "peer_median_counts": {"price_to_earnings": 1},
+            },
+            {"sector": "Industrials"},
+        )
+
+        self.assertLess(result.comparables.confidence, 0.50)
+        self.assertIn("rebaixada por amostra limitada", result.comparables.summary)
 
     def test_comparable_report_handles_missing_peers(self):
         report = build_comparable_report(CompanyType.TRADITIONAL, {}, {}, {})
