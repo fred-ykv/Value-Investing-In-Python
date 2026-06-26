@@ -14,6 +14,7 @@ from .peer_discovery import discover_peer_candidates
 from .peer_enrichment import enrich_peer_candidates
 from .peer_selection import build_peer_selection_report
 from .peer_universe import build_peer_universe
+from .reports import save_report_artifacts
 
 __all__ = [
     "analyze_ticker_from_inputs",
@@ -26,4 +27,5 @@ __all__ = [
     "enrich_peer_candidates",
     "build_peer_selection_report",
     "build_peer_universe",
+    "save_report_artifacts",
 ]
