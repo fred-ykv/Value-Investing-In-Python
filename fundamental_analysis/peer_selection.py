@@ -30,12 +30,14 @@ class PeerSelectionReport:
     peer_medians: dict[str, float]
     confidence: float
     summary: str
+    peer_median_counts: dict[str, int] = field(default_factory=dict)
 
 
 MULTIPLE_FIELDS = (
     "price_to_earnings",
     "price_to_book",
     "ev_to_sales",
+    "ev_to_ebitda",
     "ev_to_ebit",
     "price_to_sales",
 )
@@ -58,8 +60,9 @@ def build_peer_selection_report(target_info: Mapping[str, object], target_metric
     rejected = [result for result in results if result.status not in {"strong", "acceptable"}]
     has_minimum_peer_set = len(approved) >= PEER_SELECTION.min_approved_peers
     medians = median_multiples(approved) if has_minimum_peer_set else {}
+    counts = median_multiple_counts(approved) if has_minimum_peer_set else {}
     confidence = min(1.0, len(approved) / max(1, PEER_SELECTION.min_approved_peers))
-    return PeerSelectionReport(approved, rejected, medians, confidence, peer_selection_summary(approved, rejected, confidence))
+    return PeerSelectionReport(approved, rejected, medians, confidence, peer_selection_summary(approved, rejected, confidence), counts)
 
 
 def company_profile(info: Mapping[str, object], metrics: MetricPack) -> dict[str, object]:
@@ -170,15 +173,23 @@ def peer_selection_total_weight() -> float:
 def median_multiples(approved: Sequence[PeerCandidateResult]) -> dict[str, float]:
     medians = {}
     for field_name in MULTIPLE_FIELDS:
-        values = [
-            candidate.metrics[field_name]
-            for candidate in approved
-            if candidate.metrics.get(field_name) is not None
-            and candidate.data_confidence >= PEER_ENRICHMENT.minimum_confidence_for_relative_valuation
-        ]
+        values = usable_multiple_values(approved, field_name)
         if len(values) >= PEER_SELECTION.min_approved_peers:
             medians[field_name] = median(values)
     return medians
+
+
+def median_multiple_counts(approved: Sequence[PeerCandidateResult]) -> dict[str, int]:
+    return {field_name: len(usable_multiple_values(approved, field_name)) for field_name in MULTIPLE_FIELDS}
+
+
+def usable_multiple_values(approved: Sequence[PeerCandidateResult], field_name: str) -> list[float]:
+    return [
+        candidate.metrics[field_name]
+        for candidate in approved
+        if candidate.metrics.get(field_name) is not None
+        and candidate.data_confidence >= PEER_ENRICHMENT.minimum_confidence_for_relative_valuation
+    ]
 
 
 def candidate_multiples(candidate: Mapping[str, object]) -> dict[str, float]:
@@ -207,6 +218,7 @@ def merge_peer_medians(market_data: Mapping[str, object], peer_selection: PeerSe
     if merged.get("peer_medians") or not peer_selection.peer_medians:
         return merged
     merged["peer_medians"] = peer_selection.peer_medians
+    merged["peer_median_counts"] = peer_selection.peer_median_counts
     return merged
 
 
