@@ -54,6 +54,9 @@ def peer_selection_table(peer_selection: PeerSelectionReport) -> list[dict[str, 
                 "ticker": result.ticker,
                 "status": result.status,
                 "score": result.score,
+                "evidence_weight": result.evidence_weight,
+                "data_confidence": result.data_confidence,
+                "metric_sources": "; ".join(f"{key}:{value}" for key, value in sorted(result.metric_sources.items())),
                 "reasons": "; ".join(result.reasons),
                 "vetoes": "; ".join(result.vetoes),
             }
@@ -123,10 +126,11 @@ def render_markdown_report(ticker: str, score: ScoreReport, valuations: Iterable
                 f"{float(row['confidence'] or 0):.2f} | {scenario_assumption_text(assumptions)} |"
             )
     if peer_selection and (peer_selection.approved or peer_selection.rejected):
-        lines.extend(["", "## Selecao assistida de pares", peer_selection.summary, "", "| Ticker | Status | Score | Motivos | Vetos |", "|---|---|---:|---|---|"])
+        lines.extend(["", "## Selecao assistida de pares", peer_selection.summary, "", "| Ticker | Status | Score | Confianca dados | Fontes | Motivos | Vetos |", "|---|---|---:|---:|---|---|---|"])
         for row in peer_selection_table(peer_selection):
             lines.append(
-                f"| {row['ticker']} | {row['status']} | {float(row['score'] or 0):.2f} | "
+                f"| {row['ticker']} | {row['status']} | {float(row['score'] or 0):.2f} | {float(row['data_confidence'] or 0):.2f} | "
+                f"{str(row['metric_sources']).replace('|', '/')} | "
                 f"{str(row['reasons']).replace('|', '/')} | {str(row['vetoes']).replace('|', '/')} |"
             )
     if comparables:

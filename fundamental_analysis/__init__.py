@@ -11,6 +11,7 @@ from .calibration import run_calibration
 from .scenarios import build_scenarios
 from .comparables import build_comparable_report
 from .peer_discovery import discover_peer_candidates
+from .peer_enrichment import enrich_peer_candidates
 from .peer_selection import build_peer_selection_report
 from .peer_universe import build_peer_universe
 
@@ -22,6 +23,7 @@ __all__ = [
     "build_scenarios",
     "build_comparable_report",
     "discover_peer_candidates",
+    "enrich_peer_candidates",
     "build_peer_selection_report",
     "build_peer_universe",
 ]
