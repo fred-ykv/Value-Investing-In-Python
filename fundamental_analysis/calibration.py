@@ -9,6 +9,7 @@ from pathlib import Path
 from statistics import mean
 from typing import Callable, Iterable, Mapping
 
+from .config import SCORE
 from .main import AnalysisResult, analyze_ticker_live
 
 
@@ -21,6 +22,36 @@ class CalibrationRow:
     dimension_scores: Mapping[str, float]
     dimension_confidence: Mapping[str, float]
     error: str = ""
+
+    @property
+    def valuation_score(self) -> float:
+        return self.dimension_scores.get("valuation", 0.0)
+
+    @property
+    def quality_score(self) -> float:
+        return self.dimension_scores.get("quality", 0.0)
+
+    @property
+    def data_confidence(self) -> float:
+        return self.dimension_scores.get("data_confidence", 0.0)
+
+    @property
+    def valuation_gate(self) -> bool:
+        return (
+            self.total_score >= SCORE.buy_threshold
+            and self.recommendation == "Observar"
+            and self.valuation_score < SCORE.min_valuation_score_for_buy
+        )
+
+
+@dataclass(frozen=True)
+class CalibrationSummary:
+    rows: list[CalibrationRow]
+    recommendation_counts: dict[str, int]
+    average_score: float
+    min_score: float
+    max_score: float
+    valuation_gate_count: int
 
 
 def run_calibration(
@@ -61,6 +92,24 @@ def row_from_result(result: AnalysisResult) -> CalibrationRow:
     )
 
 
+def build_calibration_summary(results: Iterable[AnalysisResult]) -> CalibrationSummary:
+    return calibration_summary_from_rows(row_from_result(result) for result in results)
+
+
+def calibration_summary_from_rows(rows: Iterable[CalibrationRow]) -> CalibrationSummary:
+    rows = list(rows)
+    successful = [row for row in rows if not row.error]
+    scores = [row.total_score for row in successful]
+    return CalibrationSummary(
+        rows=rows,
+        recommendation_counts=dict(Counter(row.recommendation for row in successful)),
+        average_score=mean(scores) if scores else 0.0,
+        min_score=min(scores) if scores else 0.0,
+        max_score=max(scores) if scores else 0.0,
+        valuation_gate_count=sum(1 for row in successful if row.valuation_gate),
+    )
+
+
 def summarize_calibration(rows: Iterable[CalibrationRow]) -> dict[str, object]:
     rows = list(rows)
     successful = [row for row in rows if not row.error]
@@ -78,6 +127,7 @@ def summarize_calibration(rows: Iterable[CalibrationRow]) -> dict[str, object]:
             for company_type, type_rows in by_type.items()
         },
         "weakest_dimensions": weakest_dimensions(successful),
+        "valuation_gate_count": sum(1 for row in successful if row.valuation_gate),
     }
 
 
@@ -101,6 +151,7 @@ def write_calibration_csv(rows: Iterable[CalibrationRow], path: str | Path) -> N
                 "company_type",
                 "recommendation",
                 "total_score",
+                "valuation_gate",
                 "error",
                 *[f"{name}_score" for name in dimensions],
                 *[f"{name}_confidence" for name in dimensions],
@@ -113,6 +164,7 @@ def write_calibration_csv(rows: Iterable[CalibrationRow], path: str | Path) -> N
                 "company_type": row.company_type,
                 "recommendation": row.recommendation,
                 "total_score": f"{row.total_score:.4f}",
+                "valuation_gate": "1" if row.valuation_gate else "0",
                 "error": row.error,
             }
             for name in dimensions:
@@ -132,6 +184,7 @@ def render_calibration_markdown(rows: Iterable[CalibrationRow]) -> str:
         f"- Erros: {summary['errors']}",
         f"- Score medio: {float(summary['average_score']):.3f}",
         f"- Recomendacoes: {summary['recommendations']}",
+        f"- Casos bloqueados pela trava de valuation: {summary['valuation_gate_count']}",
         "",
         "## Score medio por tipo",
     ]
@@ -141,15 +194,17 @@ def render_calibration_markdown(rows: Iterable[CalibrationRow]) -> str:
         [
             "",
             "## Tickers",
-            "| Ticker | Tipo | Recomendacao | Score | Dimensao mais fraca | Erro |",
-            "|---|---|---|---:|---|---|",
+            "| Ticker | Tipo | Recomendacao | Score | Valuation | Qualidade | Confianca dados | Trava valuation | Dimensao mais fraca | Erro |",
+            "|---|---|---|---:|---:|---:|---:|---|---|---|",
         ]
     )
     weakest = dict(summary["weakest_dimensions"])
     for row in rows:
         lines.append(
             f"| {row.ticker} | {row.company_type} | {row.recommendation} | "
-            f"{row.total_score:.3f} | {weakest.get(row.ticker, '-')} | {row.error} |"
+            f"{row.total_score:.3f} | {row.valuation_score:.3f} | {row.quality_score:.3f} | "
+            f"{row.data_confidence:.3f} | {'sim' if row.valuation_gate else 'nao'} | "
+            f"{weakest.get(row.ticker, '-')} | {row.error} |"
         )
     return "\n".join(lines)
 
