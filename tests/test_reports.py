@@ -1,8 +1,11 @@
+import json
+from pathlib import Path
+from tempfile import TemporaryDirectory
 import unittest
 
 from fundamental_analysis.main import analyze_ticker_from_inputs
 from fundamental_analysis.html_reports import render_html_report
-from fundamental_analysis.reports import render_markdown_report
+from fundamental_analysis.reports import render_markdown_report, save_report_artifacts
 from fundamental_analysis.scoring import DimensionScore, ScoreReport
 from fundamental_analysis.valuation import ValuationResult
 
@@ -106,6 +109,33 @@ class ReportTests(unittest.TestCase):
         self.assertIn("Runway de caixa", markdown)
         self.assertIn("Runway de caixa", risk_text)
         self.assertIn("current ratio parece forte", markdown)
+
+    def test_report_artifacts_are_saved_for_review(self):
+        result = analyze_ticker_from_inputs(
+            "Save/Me",
+            {"revenue": 1_000_000, "ebit": 200_000, "net_income": 120_000},
+            {"total_assets": 1_500_000, "total_liabilities": 600_000, "equity": 900_000, "cash": 100_000, "total_debt": 250_000, "current_assets": 500_000, "current_liabilities": 250_000},
+            {"cfo": 150_000, "capex": -40_000},
+            {"shares": 10_000, "price": 60, "wacc": 0.10, "growth_years": 0.04, "terminal_growth": 0.02},
+            {"sector": "Industrials"},
+        )
+
+        with TemporaryDirectory() as tmpdir:
+            artifacts = save_report_artifacts(result.ticker, result.report, tmpdir)
+            markdown_path = Path(artifacts["markdown"])
+            html_path = Path(artifacts["html"])
+            json_path = Path(artifacts["tables_json"])
+
+            self.assertTrue(markdown_path.exists())
+            self.assertTrue(html_path.exists())
+            self.assertTrue(json_path.exists())
+            self.assertEqual(markdown_path.name, "SAVE_ME_analysis.md")
+            self.assertIn("Ponte para decisao", markdown_path.read_text(encoding="utf-8"))
+            self.assertIn("<!doctype html>", html_path.read_text(encoding="utf-8"))
+
+            payload = json.loads(json_path.read_text(encoding="utf-8"))
+            self.assertEqual(payload["recommendation"], result.score.recommendation)
+            self.assertTrue(payload["valuation_table"])
 
 
 if __name__ == "__main__":
