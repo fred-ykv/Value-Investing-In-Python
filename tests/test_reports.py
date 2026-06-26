@@ -20,6 +20,7 @@ class ReportTests(unittest.TestCase):
         markdown = result.report["markdown"]
         self.assertIn("Resumo executivo", markdown)
         self.assertIn("Tese da recomendacao", markdown)
+        self.assertIn("Ponte para decisao", markdown)
         self.assertIn("Valuation por metodo", markdown)
         self.assertIn("Score por dimensao", markdown)
         self.assertIn("Fontes e confianca das metricas", markdown)
@@ -55,6 +56,7 @@ class ReportTests(unittest.TestCase):
         self.assertIn("<!doctype html>", html)
         self.assertIn("Recomendacao", html)
         self.assertIn("Score total", html)
+        self.assertIn("Ponte para decisao", html)
         self.assertIn("Score por dimensao", html)
         self.assertIn("Valuation por metodo", html)
         self.assertIn("Cenarios", html)
@@ -82,9 +84,11 @@ class ReportTests(unittest.TestCase):
 
         self.assertIn("nao subiu para Comprar", markdown)
         self.assertIn("abaixo do minimo exigido", markdown)
+        self.assertIn("Para virar Comprar", markdown)
 
         html = render_html_report("GATE", score, valuations)
         self.assertIn("nao subiu para Comprar", html)
+        self.assertIn("Para virar Comprar", html)
 
     def test_growth_report_explains_short_cash_runway(self):
         result = analyze_ticker_from_inputs(
