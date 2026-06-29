@@ -13,7 +13,7 @@ from .metrics import MetricPack, build_metrics
 from .peer_discovery import discover_peer_candidates
 from .peer_enrichment import enrich_peer_candidates
 from .peer_selection import PeerSelectionReport, build_peer_selection_report, merge_peer_medians
-from .reports import comparable_table, executive_summary, metric_lineage_table, peer_selection_table, render_markdown_report, risk_diagnostics, scenario_table, score_table, valuation_table
+from .reports import comparable_table, executive_summary, key_indicator_table, metric_lineage_table, peer_selection_table, render_markdown_report, risk_diagnostics, scenario_table, score_table, valuation_table
 from .scenarios import ScenarioResult, build_scenarios
 from .scoring import ScoreReport, compute_score
 from .sector_rules import classify_company
@@ -61,6 +61,7 @@ def analyze_ticker_from_inputs(ticker: str, income_statement: Mapping[str, float
         "scenario_table": scenario_table(scenarios),
         "peer_selection_table": peer_selection_table(peer_selection),
         "comparable_table": comparable_table(comparables),
+        "key_indicator_table": key_indicator_table(metric_lineage),
         "score_table": score_table(score),
         "metric_lineage_table": metric_lineage_table(metric_lineage),
         "risk_diagnostics": risk_diagnostics(score, valuations, metric_lineage),
@@ -80,7 +81,7 @@ def analyze_ticker_live(ticker: str) -> AnalysisResult:
 
 
 def enrich_metrics_with_market_inputs(metrics: MetricPack, market_data: Mapping[str, float], source: str) -> None:
-    for name in ("revenue_growth", "fcff_growth", "rule_of_40", "gross_margin", "cash_runway_years"):
+    for name in ("revenue_growth", "fcff_growth", "rule_of_40", "gross_margin", "cash_runway_years", "dividend_per_share", "revenue_cagr_5y", "earnings_cagr_5y"):
         if name in market_data:
             metrics.values[name] = metric_value(name, market_data[name], source)
 
