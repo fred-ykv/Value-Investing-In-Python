@@ -16,8 +16,51 @@ from .scoring import ScoreReport
 from .valuation import ValuationResult
 
 
+VALUATION_METHOD_LABELS = {
+    "dcf_fcff": (
+        "Fluxo de Caixa Descontado (DCF/FCFF)",
+        "Estima o valor da empresa descontando o fluxo de caixa livre para a firma.",
+    ),
+    "graham": (
+        "Valor Intrinseco de Graham",
+        "Modelo conservador que combina lucro por acao e valor patrimonial por acao.",
+    ),
+    "eva": (
+        "Valor Economico Agregado (EVA)",
+        "Avalia se o retorno sobre o capital supera o custo de capital.",
+    ),
+    "residual_income": (
+        "Lucro Residual para Bancos",
+        "Modelo usado em financeiras, comparando ROE, custo de capital e valor patrimonial.",
+    ),
+    "ddm": (
+        "Modelo de Dividendos (DDM)",
+        "Estima valor a partir de dividendos esperados e custo de capital.",
+    ),
+    "growth_tech": (
+        "Modelo Growth/Tech",
+        "Valoriza empresas de crescimento por receita, margem futura e caixa liquido.",
+    ),
+}
+
+
 def valuation_table(valuations: Iterable[ValuationResult]) -> list[dict[str, object]]:
-    return [{"method": v.method, "fair_value_per_share": v.fair_value_per_share, "margin_of_safety": v.margin_of_safety, "confidence": v.confidence, "source": v.source, "diagnostics": v.diagnostics} for v in valuations]
+    rows = []
+    for valuation in valuations:
+        label, description = valuation_method_label(valuation.method)
+        rows.append(
+            {
+                "method": valuation.method,
+                "display_method": label,
+                "method_description": description,
+                "fair_value_per_share": valuation.fair_value_per_share,
+                "margin_of_safety": valuation.margin_of_safety,
+                "confidence": valuation.confidence,
+                "source": valuation.source,
+                "diagnostics": valuation.diagnostics,
+            }
+        )
+    return rows
 
 
 def scenario_table(scenarios: Iterable[ScenarioResult]) -> list[dict[str, object]]:
@@ -80,9 +123,81 @@ def metric_lineage_table(metrics: dict[str, MetricValue]) -> list[dict[str, obje
     return rows
 
 
+def current_price_summary(metrics: dict[str, MetricValue] | None = None) -> dict[str, object]:
+    metric = (metrics or {}).get("price")
+    return {
+        "indicator": "Preco atual da acao",
+        "value": metric.value if metric else None,
+        "source": metric.source if metric else "missing",
+        "confidence": metric.confidence if metric else 0.0,
+    }
+
+
+def key_indicator_table(metrics: dict[str, MetricValue] | None = None) -> list[dict[str, object]]:
+    metrics = metrics or {}
+    price = metric_number(metrics.get("price"))
+    shares = metric_number(metrics.get("shares"))
+    market_cap = metric_number(metrics.get("market_cap"))
+    revenue = metric_number(metrics.get("revenue"))
+    ebit = metric_number(metrics.get("ebit"))
+    net_income = metric_number(metrics.get("net_income"))
+    equity = metric_number(metrics.get("equity"))
+    assets = metric_number(metrics.get("total_assets"))
+    liabilities = metric_number(metrics.get("total_liabilities"))
+    cash = metric_number(metrics.get("cash"))
+    debt = metric_number(metrics.get("total_debt"))
+    current_assets = metric_number(metrics.get("current_assets"))
+    current_liabilities = metric_number(metrics.get("current_liabilities"))
+    depreciation = metric_number(metrics.get("depreciation_amortization"))
+    bvps = metric_number(metrics.get("book_value_per_share"))
+    ebitda = None if ebit is None else ebit + (depreciation or 0.0)
+    market_cap = market_cap if market_cap is not None else _safe_mul(price, shares)
+    enterprise_value = None if market_cap is None else market_cap + (debt or 0.0) - (cash or 0.0)
+    net_debt = None if debt is None and cash is None else (debt or 0.0) - (cash or 0.0)
+    working_capital = None if current_assets is None or current_liabilities is None else current_assets - current_liabilities
+    ncav = None if current_assets is None or liabilities is None else current_assets - liabilities
+    eps = _safe_div(net_income, shares)
+    revenue_per_share = _safe_div(revenue, shares)
+    dividend_per_share = metric_number(metrics.get("dividend_per_share"))
+    gross_margin = metric_number(metrics.get("gross_margin"))
+    rows = [
+        _indicator_row("Valuation", "D.Y", _safe_div(dividend_per_share, price), metrics, ("dividend_per_share", "price"), "Dividend yield: dividendos anuais por acao divididos pelo preco atual.", "percent"),
+        _indicator_row("Valuation", "P/L", _safe_div(price, eps), metrics, ("price", "net_income", "shares"), "Preco dividido pelo lucro por acao.", "number"),
+        _indicator_row("Valuation", "PEG Ratio", _safe_div(_safe_div(price, eps), _percent_points(metrics.get("revenue_growth"))), metrics, ("price", "net_income", "shares", "revenue_growth"), "P/L dividido pelo crescimento esperado; menor tende a indicar preco mais razoavel para o crescimento.", "number"),
+        _indicator_row("Valuation", "P/VP", _safe_div(price, bvps), metrics, ("price", "book_value_per_share"), "Preco dividido pelo valor patrimonial por acao.", "number"),
+        _indicator_row("Valuation", "EV/EBITDA", _safe_div(enterprise_value, ebitda), metrics, ("market_cap", "total_debt", "cash", "ebit", "depreciation_amortization"), "Valor da firma dividido pelo EBITDA.", "number"),
+        _indicator_row("Valuation", "EV/EBIT", _safe_div(enterprise_value, ebit), metrics, ("market_cap", "total_debt", "cash", "ebit"), "Valor da firma dividido pelo EBIT.", "number"),
+        _indicator_row("Valuation", "P/EBITDA", _safe_div(market_cap, ebitda), metrics, ("market_cap", "ebit", "depreciation_amortization"), "Valor de mercado dividido pelo EBITDA.", "number"),
+        _indicator_row("Valuation", "P/EBIT", _safe_div(market_cap, ebit), metrics, ("market_cap", "ebit"), "Valor de mercado dividido pelo EBIT.", "number"),
+        _indicator_row("Valuation", "VPA", bvps, metrics, ("book_value_per_share",), "Valor patrimonial por acao.", "money"),
+        _indicator_row("Valuation", "P/Ativo", _safe_div(market_cap, assets), metrics, ("market_cap", "total_assets"), "Valor de mercado dividido pelos ativos totais.", "number"),
+        _indicator_row("Valuation", "LPA", eps, metrics, ("net_income", "shares"), "Lucro por acao.", "money"),
+        _indicator_row("Valuation", "P/SR", _safe_div(price, revenue_per_share), metrics, ("price", "revenue", "shares"), "Preco dividido pela receita por acao.", "number"),
+        _indicator_row("Valuation", "P/Cap. Giro", _safe_div(market_cap, working_capital), metrics, ("market_cap", "current_assets", "current_liabilities"), "Valor de mercado dividido pelo capital de giro.", "number"),
+        _indicator_row("Valuation", "P/Ativo Circ. Liq.", _safe_div(market_cap, ncav), metrics, ("market_cap", "current_assets", "total_liabilities"), "Valor de mercado dividido pelo ativo circulante liquido.", "number"),
+        _indicator_row("Endividamento", "Div. liquida/PL", _safe_div(net_debt, equity), metrics, ("total_debt", "cash", "equity"), "Divida liquida dividida pelo patrimonio liquido.", "number"),
+        _indicator_row("Endividamento", "Div. liquida/EBITDA", _safe_div(net_debt, ebitda), metrics, ("total_debt", "cash", "ebit", "depreciation_amortization"), "Divida liquida dividida pelo EBITDA.", "number"),
+        _indicator_row("Endividamento", "Div. liquida/EBIT", _safe_div(net_debt, ebit), metrics, ("total_debt", "cash", "ebit"), "Divida liquida dividida pelo EBIT.", "number"),
+        _indicator_row("Endividamento", "PL/Ativos", _safe_div(equity, assets), metrics, ("equity", "total_assets"), "Patrimonio liquido dividido pelos ativos.", "percent"),
+        _indicator_row("Endividamento", "Passivos/Ativos", _safe_div(liabilities, assets), metrics, ("total_liabilities", "total_assets"), "Passivos totais divididos pelos ativos.", "percent"),
+        _indicator_row("Endividamento", "Liq. corrente", metric_number(metrics.get("current_ratio")), metrics, ("current_ratio",), "Ativos circulantes divididos por passivos circulantes.", "number"),
+        _indicator_row("Eficiencia", "M. Bruta", gross_margin, metrics, ("gross_margin",), "Margem bruta informada ou calculada quando disponivel.", "percent"),
+        _indicator_row("Eficiencia", "M. EBITDA", _safe_div(ebitda, revenue), metrics, ("ebit", "depreciation_amortization", "revenue"), "EBITDA dividido pela receita.", "percent"),
+        _indicator_row("Eficiencia", "M. EBIT", metric_number(metrics.get("operating_margin")), metrics, ("operating_margin",), "EBIT dividido pela receita.", "percent"),
+        _indicator_row("Eficiencia", "M. Liquida", metric_number(metrics.get("net_margin")), metrics, ("net_margin",), "Lucro liquido dividido pela receita.", "percent"),
+        _indicator_row("Rentabilidade", "ROE", metric_number(metrics.get("roe")), metrics, ("roe",), "Lucro liquido dividido pelo patrimonio liquido.", "percent"),
+        _indicator_row("Rentabilidade", "ROA", metric_number(metrics.get("roa")), metrics, ("roa",), "Lucro liquido dividido pelos ativos.", "percent"),
+        _indicator_row("Rentabilidade", "ROIC", metric_number(metrics.get("roic_proxy")), metrics, ("roic_proxy",), "Proxy de ROIC: EBIT dividido por capital investido simplificado.", "percent"),
+        _indicator_row("Rentabilidade", "Giro ativos", _safe_div(revenue, assets), metrics, ("revenue", "total_assets"), "Receita dividida pelos ativos.", "number"),
+        _indicator_row("Crescimento", "CAGR Receitas 5 anos", metric_number(metrics.get("revenue_cagr_5y")), metrics, ("revenue_cagr_5y",), "Crescimento anual composto da receita em 5 anos, quando informado.", "percent"),
+        _indicator_row("Crescimento", "CAGR Lucros 5 anos", metric_number(metrics.get("earnings_cagr_5y")), metrics, ("earnings_cagr_5y",), "Crescimento anual composto do lucro em 5 anos, quando informado.", "percent"),
+    ]
+    return rows
+
+
 def executive_summary(ticker: str, score: ScoreReport, valuations: Iterable[ValuationResult]) -> str:
     available = [v.method for v in valuations if v.fair_value_per_share is not None]
-    methods = ", ".join(available) or "nenhum modelo conclusivo"
+    methods = ", ".join(valuation_method_label(method)[0] for method in available) or "nenhum modelo conclusivo"
     return f"{ticker.upper()} recebeu recomendacao **{score.recommendation}**. Score total: {score.total_score:.2f}. Modelos usados: {methods}."
 
 
@@ -118,12 +233,24 @@ def render_markdown_report(ticker: str, score: ScoreReport, valuations: Iterable
         "## Ponte para decisao",
         *[f"- {item}" for item in decision_bridge(score, valuations)],
         "",
-        "## Valuation por metodo",
-        "| Metodo | Preco justo | Margem de seguranca | Fonte | Confianca |",
-        "|---|---:|---:|---|---:|",
+        "## Preco atual e Indicadores principais",
+        f"Preco atual da acao: **{_fmt_money(current_price_summary(metrics)['value'])}**.",
+        "",
+        "| Grupo | Indicador | Valor | Fonte | Confianca | Leitura |",
+        "|---|---|---:|---|---:|---|",
     ]
+    for row in key_indicator_table(metrics):
+        lines.append(f"| {row['group']} | {row['indicator']} | {_fmt_indicator(row)} | {row['source']} | {float(row['confidence'] or 0):.2f} | {str(row['explanation']).replace('|', '/')} |")
+    lines.extend(
+        [
+            "",
+            "## Valuation por metodo",
+            "| Metodo | Preco justo | Margem de seguranca | Fonte | Confianca |",
+            "|---|---:|---:|---|---:|",
+        ]
+    )
     for row in valuation_table(valuations):
-        lines.append(f"| {row['method']} | {_fmt_money(row['fair_value_per_share'])} | {_fmt_pct(row['margin_of_safety'])} | {row['source']} | {float(row['confidence'] or 0):.2f} |")
+        lines.append(f"| {row['display_method']} | {_fmt_money(row['fair_value_per_share'])} | {_fmt_pct(row['margin_of_safety'])} | {row['source']} | {float(row['confidence'] or 0):.2f} |")
     if scenarios:
         lines.extend(["", "## Cenarios hipoteticos", "| Cenario | Preco justo medio | Margem de seguranca | Confianca | Premissas-chave |", "|---|---:|---:|---:|---|"])
         for row in scenario_table(scenarios):
@@ -147,7 +274,7 @@ def render_markdown_report(ticker: str, score: ScoreReport, valuations: Iterable
                 f"| {row['metric']} | {_fmt_number(row['company_value'])} | {_fmt_number(row['peer_median'])} | {int(row['peer_count'] or 0)} | "
                 f"{_fmt_pct(row['premium_discount'])} | {float(row['score'] or 0):.2f} | {row['source']} | {str(row['interpretation']).replace('|', '/')} |"
             )
-    lines.extend(["", "## Score por dimensao", "| Dimensao | Score | Confianca | Explicacao |", "|---|---:|---:|---|"])
+    lines.extend(["", "## Score por dimensao", score_scale_note(), "", "| Dimensao | Score | Confianca | Explicacao |", "|---|---:|---:|---|"])
     for row in score_table(score):
         lines.append(f"| {row['name']} | {float(row['score']):.2f} | {float(row['confidence']):.2f} | {str(row['explanation']).replace('|', '/')} |")
     if metrics:
@@ -185,6 +312,7 @@ def save_report_artifacts(ticker: str, report: dict[str, object], output_dir: st
             "score_table",
             "metric_lineage_table",
             "risk_diagnostics",
+            "key_indicator_table",
         )
     }
     artifacts["tables_json"].write_text(json.dumps(table_payload, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
@@ -261,13 +389,14 @@ def valuation_readthrough(valuations: Iterable[ValuationResult]) -> str:
     worst = min(available, key=lambda v: float(v.margin_of_safety or 999.0))
     return (
         f"A margem de seguranca media dos modelos foi {_fmt_pct(average_margin)}; "
-        f"o metodo mais favoravel foi {best.method} ({_fmt_pct(best.margin_of_safety)}) "
-        f"e o mais conservador foi {worst.method} ({_fmt_pct(worst.margin_of_safety)})."
+        f"o metodo mais favoravel foi {valuation_method_label(best.method)[0]} ({_fmt_pct(best.margin_of_safety)}) "
+        f"e o mais conservador foi {valuation_method_label(worst.method)[0]} ({_fmt_pct(worst.margin_of_safety)})."
     )
 
 
 def explanatory_notes(score: ScoreReport, valuations: Iterable[ValuationResult], metrics: dict[str, MetricValue] | None = None) -> list[str]:
     notes = [
+        score_scale_note(),
         "Comprar exige score total elevado e valuation minimamente aceitavel; qualidade sozinha nao deve compensar preco excessivo.",
         "Observar indica assimetria incompleta: a empresa pode ter bons fundamentos, mas ainda exige preco melhor, dados melhores ou reducao de riscos.",
         "Evitar indica baixa atratividade relativa, risco fundamental elevado ou combinacao fraca de valuation e qualidade.",
@@ -291,6 +420,10 @@ def explanatory_notes(score: ScoreReport, valuations: Iterable[ValuationResult],
     return notes
 
 
+def score_scale_note() -> str:
+    return "Escala do score: quanto mais perto de 1, melhor a leitura daquela dimensao; quanto mais perto de 0, pior ou mais arriscada."
+
+
 def scenario_assumption_text(assumptions: object) -> str:
     if not isinstance(assumptions, dict):
         return "-"
@@ -309,6 +442,10 @@ def metric_number(metric: MetricValue | None) -> float | None:
         return float(metric.value)
     except Exception:
         return None
+
+
+def valuation_method_label(method: str) -> tuple[str, str]:
+    return VALUATION_METHOD_LABELS.get(method, (method.replace("_", " ").title(), "Metodo de valuation calculado pelo modelo."))
 
 
 def _fmt_money(value: object) -> str:
@@ -332,6 +469,44 @@ def _fmt_number(value: object) -> str:
         return "-"
 
 
+def _fmt_indicator(row: dict[str, object]) -> str:
+    kind = row.get("format")
+    value = row.get("value")
+    if kind == "percent":
+        return _fmt_pct(value)
+    if kind == "money":
+        return _fmt_money(value)
+    return _fmt_number(value)
+
+
 def _safe_filename(ticker: str) -> str:
     safe = re.sub(r"[^A-Za-z0-9._-]+", "_", ticker.strip().upper())
     return safe.strip("._-") or "ANALYSIS"
+
+
+def _safe_div(num: float | None, den: float | None) -> float | None:
+    return None if num is None or den in (None, 0) else num / den
+
+
+def _safe_mul(left: float | None, right: float | None) -> float | None:
+    return None if left is None or right is None else left * right
+
+
+def _percent_points(metric: MetricValue | None) -> float | None:
+    value = metric_number(metric)
+    return None if value is None else value * 100.0
+
+
+def _indicator_row(group: str, indicator: str, value: float | None, metrics: dict[str, MetricValue], dependencies: tuple[str, ...], explanation: str, fmt: str) -> dict[str, object]:
+    used = [metrics[name] for name in dependencies if name in metrics and metrics[name].is_available]
+    source = ", ".join(sorted({metric.source for metric in used})) if used else "missing"
+    confidence = sum(metric.confidence for metric in used) / len(used) if used else 0.0
+    return {
+        "group": group,
+        "indicator": indicator,
+        "value": value,
+        "source": source,
+        "confidence": confidence if value is not None else 0.0,
+        "explanation": explanation,
+        "format": fmt,
+    }
