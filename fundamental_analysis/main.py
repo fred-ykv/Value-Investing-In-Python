@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Mapping
 
 from .comparables import ComparableReport, build_comparable_report
-from .config import CompanyType, MARKET
+from .config import CompanyType, MARKET, PEER_ENRICHMENT
 from .data_sources import MetricValue, YahooFinanceClient, metric_value
 from .financial_statements import FinancialStatements, build_statement_metrics, update_market_from_info
 from .html_reports import render_html_report
@@ -45,7 +45,7 @@ def analyze_ticker_from_inputs(ticker: str, income_statement: Mapping[str, float
     dcf_input = DCFInput(values["fcff"], values["shares"], metric_value("wacc", cost_of_capital, source), metric_value("growth_years", market_data.get("growth_years"), source), metric_value("terminal_growth", market_data.get("terminal_growth"), source), values["total_debt"], values["cash"], values["price"])
     valuations = build_valuations(company_type, values, metrics, market_data, source, dcf_input)
     scenarios = build_scenarios(company_type, values, metrics, market_data, source, build_valuations, cost_of_capital)
-    use_peer_yahoo = bool(market_data.get("enable_peer_yahoo_enrichment", source == "yfinance"))
+    use_peer_yahoo = peer_yahoo_enrichment_enabled(market_data)
     peer_candidates = enrich_peer_candidates(
         discover_peer_candidates({**statements.info, **market_data}, metrics, market_data),
         use_yahoo=use_peer_yahoo,
@@ -84,6 +84,12 @@ def enrich_metrics_with_market_inputs(metrics: MetricPack, market_data: Mapping[
     for name in ("revenue_growth", "fcff_growth", "rule_of_40", "gross_margin", "cash_runway_years", "dividend_per_share", "revenue_cagr_5y", "earnings_cagr_5y"):
         if name in market_data:
             metrics.values[name] = metric_value(name, market_data[name], source)
+
+
+def peer_yahoo_enrichment_enabled(market_data: Mapping[str, object]) -> bool:
+    if "enable_peer_yahoo_enrichment" in market_data:
+        return bool(market_data.get("enable_peer_yahoo_enrichment"))
+    return PEER_ENRICHMENT.use_yahoo_info
 
 
 def build_valuations(company_type: CompanyType, values: Mapping[str, MetricValue], metrics: MetricPack, market_data: Mapping[str, float], source: str, dcf_input: DCFInput) -> list[ValuationResult]:
