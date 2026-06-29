@@ -17,14 +17,21 @@ class ReportTests(unittest.TestCase):
             {"revenue": 1_000_000, "ebit": 200_000, "net_income": 120_000},
             {"total_assets": 1_500_000, "total_liabilities": 600_000, "equity": 900_000, "cash": 100_000, "total_debt": 250_000, "current_assets": 500_000, "current_liabilities": 250_000},
             {"cfo": 150_000, "capex": -40_000},
-            {"shares": 10_000, "price": 60, "wacc": 0.10, "growth_years": 0.04, "terminal_growth": 0.02},
+            {"shares": 10_000, "price": 60, "wacc": 0.10, "growth_years": 0.04, "terminal_growth": 0.02, "dividend_per_share": 0.60, "revenue_cagr_5y": 0.1175, "earnings_cagr_5y": 0.4055},
             {"sector": "Industrials"},
         )
         markdown = result.report["markdown"]
         self.assertIn("Resumo executivo", markdown)
         self.assertIn("Tese da recomendacao", markdown)
         self.assertIn("Ponte para decisao", markdown)
+        self.assertIn("Preco atual da acao", markdown)
+        self.assertIn("Indicadores principais", markdown)
+        self.assertIn("| Valuation | P/L |", markdown)
+        self.assertIn("| Endividamento | Liq. corrente |", markdown)
+        self.assertIn("CAGR Receitas 5 anos", markdown)
+        self.assertIn("Escala do score", markdown)
         self.assertIn("Valuation por metodo", markdown)
+        self.assertIn("Fluxo de Caixa Descontado (DCF/FCFF)", markdown)
         self.assertIn("Score por dimensao", markdown)
         self.assertIn("Fontes e confianca das metricas", markdown)
         self.assertIn("Notas explicativas", markdown)
@@ -48,6 +55,7 @@ class ReportTests(unittest.TestCase):
                 "wacc": 0.10,
                 "growth_years": 0.04,
                 "terminal_growth": 0.02,
+                "dividend_per_share": 0.60,
                 "peer_medians": {"price_to_earnings": 8.0, "ev_to_ebitda": 5.0, "ev_to_ebit": 6.0, "ev_to_sales": 1.2, "price_to_book": 1.0},
                 "peer_median_counts": {"price_to_earnings": 4, "ev_to_ebitda": 4, "ev_to_ebit": 4, "ev_to_sales": 4, "price_to_book": 4},
             },
@@ -59,9 +67,14 @@ class ReportTests(unittest.TestCase):
         self.assertIn("<!doctype html>", html)
         self.assertIn("Recomendacao", html)
         self.assertIn("Score total", html)
+        self.assertIn("Preco atual", html)
         self.assertIn("Ponte para decisao", html)
+        self.assertIn("Indicadores principais", html)
+        self.assertIn("P/L", html)
+        self.assertIn("Escala do score", html)
         self.assertIn("Score por dimensao", html)
         self.assertIn("Valuation por metodo", html)
+        self.assertIn("Fluxo de Caixa Descontado (DCF/FCFF)", html)
         self.assertIn("Cenarios", html)
         self.assertIn("Comparaveis", html)
         self.assertIn("Riscos principais", html)
