@@ -15,6 +15,7 @@ from .peer_enrichment import enrich_peer_candidates
 from .peer_selection import build_peer_selection_report
 from .peer_universe import build_peer_universe
 from .reports import save_report_artifacts
+from .colab import prompt_for_ticker, run_colab_analysis
 
 __all__ = [
     "analyze_ticker_from_inputs",
@@ -28,4 +29,6 @@ __all__ = [
     "build_peer_selection_report",
     "build_peer_universe",
     "save_report_artifacts",
+    "prompt_for_ticker",
+    "run_colab_analysis",
 ]

@@ -19,14 +19,19 @@ Use as celulas abaixo na ordem.
 
 ## 3. Rodar uma acao com dados do Yahoo Finance
 
-Troque `AAPL` pelo ticker desejado.
+Execute a celula abaixo e digite o ticker quando o Colab perguntar.
 
 ```python
-from fundamental_analysis import analyze_ticker_live
+from fundamental_analysis import run_colab_analysis
 
-result = analyze_ticker_live("AAPL")
-print(result.report["markdown"])
+LAST = {}
+run = run_colab_analysis(default_ticker="MLI", state=LAST)
+result = run["result"]
+artifacts = run["artifacts"]
 ```
+
+Se voce apertar Enter sem digitar nada, o fallback sera `MLI`. O ticker fica
+salvo em `LAST["ticker"]` para reuso nas proximas celulas.
 
 ## 4. Ver o relatorio HTML no proprio Colab
 
@@ -37,6 +42,9 @@ display(HTML(result.report["html"]))
 ```
 
 ## 5. Salvar Markdown, HTML e JSON auditavel
+
+O passo 3 ja salva os arquivos em `outputs`. Se quiser salvar novamente em outra
+pasta, rode:
 
 ```python
 from fundamental_analysis import save_report_artifacts
