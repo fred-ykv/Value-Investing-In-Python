@@ -12,12 +12,15 @@ from .reports import (
     _fmt_number,
     _fmt_pct,
     comparable_table,
+    current_price_summary,
     decision_bridge,
     explanatory_notes,
+    key_indicator_table,
     recommendation_summary,
     risk_diagnostics,
     scenario_assumption_text,
     scenario_table,
+    score_scale_note,
     score_table,
     valuation_table,
 )
@@ -31,11 +34,14 @@ def render_html_report(ticker: str, score: ScoreReport, valuations: Iterable[Val
     scenarios = list(scenarios or [])
     risks = risk_diagnostics(score, valuations, metrics)
     valuation_rows = valuation_table(valuations)
+    indicator_rows = key_indicator_table(metrics)
     scenario_rows = scenario_table(scenarios)
     comparable_rows = comparable_table(comparables) if comparables else []
+    price = current_price_summary(metrics)
     cards = [
         ("Recomendacao", score.recommendation, "Decisao final do modelo"),
         ("Score total", f"{score.total_score:.2f}", "Composicao multifatorial"),
+        ("Preco atual", _fmt_money(price["value"]), f"Fonte: {price['source']}"),
         ("Valuation", f"{score.dimensions.get('valuation').score:.2f}" if score.dimensions.get("valuation") else "-", "Preco vs valor justo"),
         ("Confianca", f"{score.dimensions.get('data_confidence').score:.2f}" if score.dimensions.get("data_confidence") else "-", "Qualidade dos dados"),
     ]
@@ -63,7 +69,15 @@ def render_html_report(ticker: str, score: ScoreReport, valuations: Iterable[Val
         "</ul>",
         "</section>",
         '<section class="panel">',
+        "<h2>Indicadores principais</h2>",
+        _html_table(
+            ["Grupo", "Indicador", "Valor", "Fonte", "Confianca", "Leitura"],
+            [[row["group"], row["indicator"], _fmt_indicator(row), row["source"], f"{float(row['confidence'] or 0):.2f}", row["explanation"]] for row in indicator_rows],
+        ),
+        "</section>",
+        '<section class="panel">',
         "<h2>Score por dimensao</h2>",
+        f"<p>{escape(score_scale_note())}</p>",
         '<div class="score-grid">',
         *[_dimension_bar(row) for row in score_table(score)],
         "</div>",
@@ -72,7 +86,7 @@ def render_html_report(ticker: str, score: ScoreReport, valuations: Iterable[Val
         "<h2>Valuation por metodo</h2>",
         _html_table(
             ["Metodo", "Preco justo", "Margem", "Fonte", "Confianca"],
-            [[row["method"], _fmt_money(row["fair_value_per_share"]), _fmt_pct(row["margin_of_safety"]), row["source"], f"{float(row['confidence'] or 0):.2f}"] for row in valuation_rows],
+            [[row["display_method"], _fmt_money(row["fair_value_per_share"]), _fmt_pct(row["margin_of_safety"]), row["source"], f"{float(row['confidence'] or 0):.2f}"] for row in valuation_rows],
         ),
         "</section>",
     ]
@@ -202,3 +216,13 @@ def _html_table(headers: list[str], rows: list[list[object]]) -> str:
     for row in rows:
         row_html.append("<tr>" + "".join(f"<td>{escape(str(value))}</td>" for value in row) + "</tr>")
     return f"<table><thead><tr>{header_html}</tr></thead><tbody>{''.join(row_html)}</tbody></table>"
+
+
+def _fmt_indicator(row: dict[str, object]) -> str:
+    kind = row.get("format")
+    value = row.get("value")
+    if kind == "percent":
+        return _fmt_pct(value)
+    if kind == "money":
+        return _fmt_money(value)
+    return _fmt_number(value)
