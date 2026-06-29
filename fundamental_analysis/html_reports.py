@@ -102,7 +102,7 @@ def render_html_report(ticker: str, score: ScoreReport, valuations: Iterable[Val
                 "</section>",
             ]
         )
-    if comparable_rows:
+    if comparables:
         body.extend(
             [
                 '<section class="panel">',

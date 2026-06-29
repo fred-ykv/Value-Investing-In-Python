@@ -58,6 +58,24 @@ class PeerUniverseTests(unittest.TestCase):
         self.assertIn("STLA", tickers)
         self.assertTrue(all(candidate["candidate_source"].startswith("builtin_seed:") for candidate in candidates))
 
+    def test_metal_fabrication_universe_supports_mli_style_analysis(self):
+        result = build_peer_universe(
+            {
+                "ticker": "MLI",
+                "sector": "Industrials",
+                "industry": "Metal Fabrication",
+                "sic": "3350",
+                "business_model": "metal_fabrication",
+            },
+            {},
+        )
+
+        tickers = [candidate["ticker"] for candidate in result.candidates]
+        self.assertNotIn("MLI", tickers)
+        self.assertIn("ATI", tickers)
+        self.assertIn("CRS", tickers)
+        self.assertIn("builtin_seed:metal_fabrication", result.sources)
+
 
 if __name__ == "__main__":
     unittest.main()
