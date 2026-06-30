@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from statistics import median
 from typing import Mapping
 
-from .config import COMPARABLES, CompanyType
+from .config import COMPARABLES, DAMODARAN_SECTOR_BENCHMARKS, CompanyType
 from .data_sources import MetricValue, safe_float
 from .metrics import MetricPack, safe_div
 
@@ -54,7 +54,8 @@ def build_comparable_report(company_type: CompanyType, values: Mapping[str, Metr
     sample_confidence = average_sample_confidence(usable)
     confidence = breadth_confidence * sample_confidence
     overall = sum(row.score for row in usable) / len(usable) if usable else 0.0
-    return ComparableReport(rows, overall, confidence, comparable_summary(overall, confidence, len(usable), sample_confidence))
+    uses_benchmark = any(row.source == "damodaran_sector_benchmark" for row in usable)
+    return ComparableReport(rows, overall, confidence, comparable_summary(overall, confidence, len(usable), sample_confidence, uses_benchmark))
 
 
 def company_multiple_values(values: Mapping[str, MetricValue], metrics: MetricPack) -> dict[str, float | None]:
@@ -83,10 +84,13 @@ def company_multiple_values(values: Mapping[str, MetricValue], metrics: MetricPa
 def peer_multiple_values(market_data: Mapping[str, object]) -> dict[str, float | None]:
     peer_medians = market_data.get("peer_medians")
     nested = peer_medians if isinstance(peer_medians, Mapping) else {}
-    return {
+    values = {
         name: first_number(nested.get(name), *(market_data.get(alias) for alias in aliases))
         for name, aliases in PEER_ALIASES.items()
     }
+    if any(value is not None for value in values.values()):
+        return values
+    return damodaran_fallback_multiple_values(market_data)
 
 
 def compare_multiple(name: str, company_value: float | None, peer_median: float | None, count: int, source: str) -> ComparableMetric:
@@ -115,9 +119,11 @@ def score_premium_discount(premium: float | None) -> float:
     return 1.0 - ((premium - low) / (high - low))
 
 
-def comparable_summary(score: float, confidence: float, usable_count: int, sample_confidence: float = 1.0) -> str:
+def comparable_summary(score: float, confidence: float, usable_count: int, sample_confidence: float = 1.0, uses_benchmark: bool = False) -> str:
     if usable_count == 0 or confidence == 0:
         return "Sem medianas de pares suficientes para leitura relativa."
+    if uses_benchmark:
+        return "Leitura relativa baseada em benchmark setorial Damodaran; use como referencia de segunda linha, nao como cesta de pares aprovada."
     if sample_confidence < 1.0:
         return "Leitura relativa disponivel, mas rebaixada por amostra limitada de pares."
     if score >= 0.65:
@@ -146,6 +152,8 @@ def peer_source(name: str, market_data: Mapping[str, object]) -> str:
     for alias in PEER_ALIASES[name]:
         if market_data.get(alias) is not None:
             return alias
+    if damodaran_fallback_multiple_values(market_data).get(name) is not None:
+        return "damodaran_sector_benchmark"
     return "missing"
 
 
@@ -157,6 +165,8 @@ def peer_count(name: str, market_data: Mapping[str, object]) -> int:
     peer_medians = market_data.get("peer_medians")
     if isinstance(peer_medians, Mapping) and peer_medians.get(name) is not None:
         return COMPARABLES.minimum_peer_metrics
+    if peer_source(name, market_data) == "damodaran_sector_benchmark":
+        return 1
     return 1 if peer_source(name, market_data) != "missing" else 0
 
 
@@ -180,3 +190,30 @@ def first_number(*values: object) -> float | None:
     parsed = [safe_float(value) for value in values]
     available = [value for value in parsed if value is not None and value > 0]
     return median(available) if len(available) > 1 else available[0] if available else None
+
+
+def damodaran_fallback_multiple_values(market_data: Mapping[str, object]) -> dict[str, float | None]:
+    benchmark = DAMODARAN_SECTOR_BENCHMARKS.get(damodaran_benchmark_key(market_data) or "", {})
+    return {name: safe_float(benchmark.get(name)) for name in PEER_ALIASES}
+
+
+def damodaran_benchmark_key(market_data: Mapping[str, object]) -> str | None:
+    text = " ".join(
+        str(market_data.get(name, "") or "").lower()
+        for name in ("business_model", "industry", "sector", "sic_description")
+    )
+    if any(term in text for term in ("bank", "financial", "credit", "insurance")):
+        return "bank"
+    if any(term in text for term in ("metal", "steel", "copper", "fabrication", "industrial machinery")):
+        return "metal_fabrication"
+    if any(term in text for term in ("software", "saas", "cloud", "application")):
+        return "software"
+    if any(term in text for term in ("semiconductor", "chip", "semiconductors")):
+        return "semiconductor"
+    if any(term in text for term in ("auto", "automobile", "vehicle", "car manufacturer", "truck")):
+        return "auto_manufacturers"
+    if any(term in text for term in ("retail", "e-commerce", "internet retail", "marketplace")):
+        return "retail"
+    if any(term in text for term in ("pharma", "biotech", "drug", "healthcare")):
+        return "pharma"
+    return None
