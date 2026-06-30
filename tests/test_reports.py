@@ -70,6 +70,8 @@ class ReportTests(unittest.TestCase):
         self.assertIn("Preco atual", html)
         self.assertIn("Ponte para decisao", html)
         self.assertIn("Indicadores principais", html)
+        self.assertIn("indicator-table", html)
+        self.assertIn("signal positive", html)
         self.assertIn("P/L", html)
         self.assertIn("Escala do score", html)
         self.assertIn("Score por dimensao", html)

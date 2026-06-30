@@ -70,10 +70,7 @@ def render_html_report(ticker: str, score: ScoreReport, valuations: Iterable[Val
         "</section>",
         '<section class="panel">',
         "<h2>Indicadores principais</h2>",
-        _html_table(
-            ["Grupo", "Indicador", "Valor", "Fonte", "Confianca", "Leitura"],
-            [[row["group"], row["indicator"], _fmt_indicator(row), row["source"], f"{float(row['confidence'] or 0):.2f}", row["explanation"]] for row in indicator_rows],
-        ),
+        _indicator_table(indicator_rows),
         "</section>",
         '<section class="panel">',
         "<h2>Score por dimensao</h2>",
@@ -176,6 +173,12 @@ table { width: 100%; border-collapse: collapse; font-size: 14px; }
 th { text-align: left; color: #526071; background: #f2f5f8; }
 th, td { padding: 10px 8px; border-bottom: 1px solid #e3e8ef; vertical-align: top; }
 td:not(:first-child), th:not(:first-child) { text-align: right; }
+.indicator-table td:nth-child(1), .indicator-table th:nth-child(1), .indicator-table td:nth-child(2), .indicator-table th:nth-child(2), .indicator-table td:nth-child(4), .indicator-table th:nth-child(4), .indicator-table td:nth-child(5), .indicator-table th:nth-child(5), .indicator-table td:nth-child(7), .indicator-table th:nth-child(7) { text-align: left; }
+.signal { display: inline-flex; align-items: center; justify-content: center; min-width: 84px; padding: 4px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; }
+.signal.positive { color: #176b43; background: #e7f4ec; border: 1px solid #b9dfc8; }
+.signal.neutral { color: #6b5600; background: #fff7d6; border: 1px solid #ead47a; }
+.signal.negative { color: #9c2f2f; background: #fdeaea; border: 1px solid #efb6b6; }
+.signal.missing { color: #667385; background: #eef2f6; border: 1px solid #d6dde6; }
 ul { margin: 0; padding-left: 20px; }
 li { margin: 8px 0; }
 @media (max-width: 720px) {
@@ -216,6 +219,111 @@ def _html_table(headers: list[str], rows: list[list[object]]) -> str:
     for row in rows:
         row_html.append("<tr>" + "".join(f"<td>{escape(str(value))}</td>" for value in row) + "</tr>")
     return f"<table><thead><tr>{header_html}</tr></thead><tbody>{''.join(row_html)}</tbody></table>"
+
+
+def _indicator_table(rows: list[dict[str, object]]) -> str:
+    if not rows:
+        return "<p>Sem dados disponiveis.</p>"
+    headers = ["Grupo", "Indicador", "Valor", "Sinal", "Fonte", "Confianca", "Leitura"]
+    header_html = "".join(f"<th>{escape(str(header))}</th>" for header in headers)
+    row_html = []
+    for row in rows:
+        signal, label = _indicator_signal(str(row.get("indicator", "")), row.get("value"))
+        signal = str(row.get("signal") or signal)
+        label = str(row.get("signal_label") or label)
+        cells = [
+            escape(str(row.get("group", "-"))),
+            escape(str(row.get("indicator", "-"))),
+            escape(_fmt_indicator(row)),
+            f'<span class="signal {escape(signal)}">{escape(label)}</span>',
+            escape(str(row.get("source", "-"))),
+            escape(f"{float(row.get('confidence') or 0):.2f}"),
+            escape(str(row.get("explanation", "-"))),
+        ]
+        row_html.append("<tr>" + "".join(f"<td>{cell}</td>" for cell in cells) + "</tr>")
+    return f'<table class="indicator-table"><thead><tr>{header_html}</tr></thead><tbody>{"".join(row_html)}</tbody></table>'
+
+
+def _indicator_signal(indicator: str, value: object) -> tuple[str, str]:
+    try:
+        numeric = None if value is None else float(value)
+    except Exception:
+        numeric = None
+    if numeric is None:
+        return "missing", "Indisponivel"
+    if indicator in {"D.Y", "PL/Ativos", "M. Bruta", "M. EBITDA", "M. EBIT", "M. Liquida", "ROE", "ROA", "ROIC", "CAGR Receitas 5 anos", "CAGR Lucros 5 anos"}:
+        return _high_good_signal(numeric, *_indicator_thresholds(indicator))
+    if indicator == "Liq. corrente":
+        if numeric >= 1.5:
+            return "positive", "Favoravel"
+        if numeric < 1.0:
+            return "negative", "Atencao"
+        return "neutral", "Neutro"
+    if indicator == "Giro ativos":
+        if numeric >= 1.0:
+            return "positive", "Favoravel"
+        if numeric < 0.5:
+            return "negative", "Atencao"
+        return "neutral", "Neutro"
+    if indicator in {"Div. liquida/PL", "Div. liquida/EBITDA", "Div. liquida/EBIT"}:
+        return _low_good_signal(numeric, *_indicator_thresholds(indicator))
+    if indicator in {"P/L", "PEG Ratio", "P/VP", "EV/EBITDA", "EV/EBIT", "P/EBITDA", "P/EBIT", "P/Ativo", "P/SR", "P/Cap. Giro", "P/Ativo Circ. Liq."}:
+        if numeric < 0:
+            return "negative", "Atencao"
+        return _low_good_signal(numeric, *_indicator_thresholds(indicator))
+    if indicator in {"VPA", "LPA"}:
+        if numeric > 0:
+            return "positive", "Favoravel"
+        if numeric < 0:
+            return "negative", "Atencao"
+    return "neutral", "Neutro"
+
+
+def _indicator_thresholds(indicator: str) -> tuple[float, float]:
+    thresholds = {
+        "D.Y": (0.02, 0.00),
+        "P/L": (15.0, 30.0),
+        "PEG Ratio": (1.0, 2.0),
+        "P/VP": (1.5, 4.0),
+        "EV/EBITDA": (10.0, 18.0),
+        "EV/EBIT": (12.0, 22.0),
+        "P/EBITDA": (10.0, 18.0),
+        "P/EBIT": (12.0, 22.0),
+        "P/Ativo": (1.5, 4.0),
+        "P/SR": (2.0, 6.0),
+        "P/Cap. Giro": (5.0, 15.0),
+        "P/Ativo Circ. Liq.": (2.0, 8.0),
+        "Div. liquida/PL": (0.5, 1.5),
+        "Div. liquida/EBITDA": (2.0, 4.0),
+        "Div. liquida/EBIT": (3.0, 6.0),
+        "PL/Ativos": (0.50, 0.20),
+        "M. Bruta": (0.30, 0.10),
+        "M. EBITDA": (0.20, 0.08),
+        "M. EBIT": (0.15, 0.05),
+        "M. Liquida": (0.10, 0.02),
+        "ROE": (0.15, 0.05),
+        "ROA": (0.08, 0.02),
+        "ROIC": (0.12, 0.04),
+        "CAGR Receitas 5 anos": (0.08, 0.00),
+        "CAGR Lucros 5 anos": (0.08, 0.00),
+    }
+    return thresholds.get(indicator, (0.0, 0.0))
+
+
+def _high_good_signal(value: float, good: float, bad: float) -> tuple[str, str]:
+    if value >= good:
+        return "positive", "Favoravel"
+    if value <= bad:
+        return "negative", "Atencao"
+    return "neutral", "Neutro"
+
+
+def _low_good_signal(value: float, good: float, bad: float) -> tuple[str, str]:
+    if value <= good:
+        return "positive", "Favoravel"
+    if value >= bad:
+        return "negative", "Atencao"
+    return "neutral", "Neutro"
 
 
 def _fmt_indicator(row: dict[str, object]) -> str:
