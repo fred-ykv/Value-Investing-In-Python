@@ -261,6 +261,56 @@ PEER_DISCOVERY = PeerDiscoveryAssumptions()
 PEER_UNIVERSE = PeerUniverseAssumptions()
 PEER_ENRICHMENT = PeerEnrichmentAssumptions()
 
+# Fallback de segunda linha para comparaveis quando a cesta de pares aprovada
+# nao tiver medianas suficientes. Deve ser tratado como benchmark setorial,
+# nao como pares empresa-a-empresa.
+DAMODARAN_SECTOR_BENCHMARKS = {
+    "bank": {
+        "price_to_book": 1.25,
+        "price_to_earnings": 11.0,
+    },
+    "metal_fabrication": {
+        "price_to_earnings": 18.0,
+        "ev_to_ebitda": 10.0,
+        "ev_to_ebit": 13.0,
+        "ev_to_sales": 1.6,
+        "price_to_book": 2.2,
+    },
+    "software": {
+        "price_to_earnings": 35.0,
+        "ev_to_sales": 7.0,
+        "price_to_sales": 6.5,
+    },
+    "semiconductor": {
+        "price_to_earnings": 28.0,
+        "ev_to_ebitda": 16.0,
+        "ev_to_ebit": 20.0,
+        "ev_to_sales": 5.5,
+        "price_to_book": 5.0,
+    },
+    "auto_manufacturers": {
+        "price_to_earnings": 12.0,
+        "ev_to_ebitda": 8.0,
+        "ev_to_ebit": 11.0,
+        "ev_to_sales": 0.9,
+        "price_to_book": 1.5,
+    },
+    "retail": {
+        "price_to_earnings": 22.0,
+        "ev_to_ebitda": 12.0,
+        "ev_to_ebit": 16.0,
+        "ev_to_sales": 1.2,
+        "price_to_book": 3.0,
+    },
+    "pharma": {
+        "price_to_earnings": 24.0,
+        "ev_to_ebitda": 14.0,
+        "ev_to_ebit": 18.0,
+        "ev_to_sales": 4.5,
+        "price_to_book": 4.0,
+    },
+}
+
 DATA_SOURCE_CONFIDENCE = {
     "yfinance": 0.80,
     "finviz": 0.65,
