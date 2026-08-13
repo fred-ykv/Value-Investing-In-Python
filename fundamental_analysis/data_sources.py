@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import math
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime
 from typing import Any, Dict, Mapping, Optional, Sequence
 
@@ -126,17 +126,29 @@ def get_mapping_value(data: Mapping[str, Any], *names: str, source: str = "manua
     for name in names:
         key = name.strip().lower()
         if key in normalized:
-            return metric_value(name, normalized[key], source)
+            raw_value = normalized[key]
+            if isinstance(raw_value, MetricValue):
+                return replace(raw_value, name=names[0])
+            return metric_value(name, raw_value, source)
     return MetricValue(names[0], None, "missing", 0.0, "not found")
 
 
-def parse_finviz_snapshot(html: str) -> Dict[str, MetricValue]:
+def parse_finviz_snapshot(html: str, source_url: str | None = None, as_of: datetime | None = None) -> Dict[str, MetricValue]:
     pairs: Dict[str, MetricValue] = {}
     pattern = r">([^<>]{1,40})</td>\s*<td[^>]*>([^<>]{1,80})</td>"
     for label, raw_value in re.findall(pattern, html):
         value = safe_float(raw_value)
         if value is not None:
-            pairs[label.strip()] = metric_value(label.strip(), value, "finviz", raw_value.strip())
+            pairs[label.strip()] = metric_value(
+                label.strip(),
+                value,
+                "finviz",
+                raw_value.strip(),
+                source_url=source_url,
+                source_document="finviz snapshot",
+                as_of=as_of or datetime.utcnow(),
+                basis="reported",
+            )
     return pairs
 
 
@@ -159,65 +171,104 @@ class YahooFinanceClient:
 
             ticker = yf.Ticker(self.ticker)
             info = getattr(ticker, "info", {}) or {}
+            currency = safe_text(info.get("financialCurrency") or info.get("currency"))
+            quote_currency = safe_text(info.get("currency") or info.get("financialCurrency"))
+            source_url = f"https://finance.yahoo.com/quote/{self.ticker}"
             financials = getattr(ticker, "financials", None)
             balance_sheet = getattr(ticker, "balance_sheet", None)
             cashflow = getattr(ticker, "cashflow", None)
             income = {
-                "revenue": _latest_statement_value(financials, ("Total Revenue", "Operating Revenue", "Revenue")),
-                "ebit": _latest_statement_value(financials, ("Operating Income", "EBIT")),
-                "net_income": _latest_statement_value(financials, ("Net Income", "Net Income Common Stockholders")),
-                "tax_provision": _latest_statement_value(financials, ("Tax Provision", "Income Tax Expense")),
-                "interest_expense": _latest_statement_value(financials, ("Interest Expense",)),
+                "revenue": _latest_statement_metric(financials, ("Total Revenue", "Operating Revenue", "Revenue"), source_url=source_url, source_document="Yahoo Finance income statement", currency=currency),
+                "ebit": _latest_statement_metric(financials, ("Operating Income", "EBIT"), source_url=source_url, source_document="Yahoo Finance income statement", currency=currency),
+                "net_income": _latest_statement_metric(financials, ("Net Income", "Net Income Common Stockholders"), source_url=source_url, source_document="Yahoo Finance income statement", currency=currency),
+                "tax_provision": _latest_statement_metric(financials, ("Tax Provision", "Income Tax Expense"), source_url=source_url, source_document="Yahoo Finance income statement", currency=currency),
+                "interest_expense": _latest_statement_metric(financials, ("Interest Expense",), source_url=source_url, source_document="Yahoo Finance income statement", currency=currency),
             }
             balance = {
-                "total_assets": _latest_statement_value(balance_sheet, ("Total Assets",)),
-                "total_liabilities": _latest_statement_value(balance_sheet, ("Total Liabilities Net Minority Interest", "Total Liabilities")),
-                "equity": _latest_statement_value(balance_sheet, ("Common Stock Equity", "Stockholders Equity", "Total Equity Gross Minority Interest")),
-                "cash": _latest_statement_value(balance_sheet, ("Cash And Cash Equivalents", "Cash Cash Equivalents And Short Term Investments")),
-                "total_debt": _latest_statement_value(balance_sheet, ("Total Debt", "Long Term Debt")),
-                "current_assets": _latest_statement_value(balance_sheet, ("Current Assets", "Total Current Assets")),
-                "current_liabilities": _latest_statement_value(balance_sheet, ("Current Liabilities", "Total Current Liabilities")),
+                "total_assets": _latest_statement_metric(balance_sheet, ("Total Assets",), source_url=source_url, source_document="Yahoo Finance balance sheet", currency=currency),
+                "total_liabilities": _latest_statement_metric(balance_sheet, ("Total Liabilities Net Minority Interest", "Total Liabilities"), source_url=source_url, source_document="Yahoo Finance balance sheet", currency=currency),
+                "equity": _latest_statement_metric(balance_sheet, ("Common Stock Equity", "Stockholders Equity", "Total Equity Gross Minority Interest"), source_url=source_url, source_document="Yahoo Finance balance sheet", currency=currency),
+                "cash": _latest_statement_metric(balance_sheet, ("Cash And Cash Equivalents", "Cash Cash Equivalents And Short Term Investments"), source_url=source_url, source_document="Yahoo Finance balance sheet", currency=currency),
+                "total_debt": _latest_statement_metric(balance_sheet, ("Total Debt", "Long Term Debt"), source_url=source_url, source_document="Yahoo Finance balance sheet", currency=currency),
+                "current_assets": _latest_statement_metric(balance_sheet, ("Current Assets", "Total Current Assets"), source_url=source_url, source_document="Yahoo Finance balance sheet", currency=currency),
+                "current_liabilities": _latest_statement_metric(balance_sheet, ("Current Liabilities", "Total Current Liabilities"), source_url=source_url, source_document="Yahoo Finance balance sheet", currency=currency),
             }
             cash_flow = {
-                "cfo": _latest_statement_value(cashflow, ("Operating Cash Flow", "Total Cash From Operating Activities")),
-                "capex": _latest_statement_value(cashflow, ("Capital Expenditure", "Capital Expenditures")),
-                "depreciation_amortization": _latest_statement_value(cashflow, ("Depreciation And Amortization", "Depreciation")),
-                "change_in_nwc": _latest_statement_value(cashflow, ("Change In Working Capital", "Change In Other Working Capital")),
+                "cfo": _latest_statement_metric(cashflow, ("Operating Cash Flow", "Total Cash From Operating Activities"), source_url=source_url, source_document="Yahoo Finance cash flow statement", currency=currency),
+                "capex": _latest_statement_metric(cashflow, ("Capital Expenditure", "Capital Expenditures"), source_url=source_url, source_document="Yahoo Finance cash flow statement", currency=currency),
+                "depreciation_amortization": _latest_statement_metric(cashflow, ("Depreciation And Amortization", "Depreciation"), source_url=source_url, source_document="Yahoo Finance cash flow statement", currency=currency),
+                "change_in_nwc": _latest_statement_metric(cashflow, ("Change In Working Capital", "Change In Other Working Capital"), source_url=source_url, source_document="Yahoo Finance cash flow statement", currency=currency),
             }
             market = {
-                "price": safe_float(info.get("currentPrice") or info.get("regularMarketPrice")),
-                "shares": safe_float(info.get("sharesOutstanding")),
-                "market_cap": safe_float(info.get("marketCap")),
-                "beta": safe_float(info.get("beta")),
-                "revenue_growth": safe_float(info.get("revenueGrowth")),
-                "dividend_per_share": safe_float(info.get("dividendRate")),
+                "price": _info_metric("price", info.get("currentPrice") or info.get("regularMarketPrice"), info, source_url, quote_currency),
+                "shares": _info_metric("shares", info.get("sharesOutstanding"), info, source_url, None, scale="shares"),
+                "market_cap": _info_metric("market_cap", info.get("marketCap"), info, source_url, quote_currency),
+                "beta": _info_metric("beta", info.get("beta"), info, source_url, None),
+                "revenue_growth": _info_metric("revenue_growth", info.get("revenueGrowth"), info, source_url, None),
+                "dividend_per_share": _info_metric("dividend_per_share", info.get("dividendRate"), info, source_url, quote_currency),
             }
-            if market["revenue_growth"] is None:
-                market["revenue_growth"] = _growth_from_statement(financials, ("Total Revenue", "Operating Revenue", "Revenue"))
+            if not market["revenue_growth"].is_available:
+                market["revenue_growth"] = _growth_from_statement(financials, ("Total Revenue", "Operating Revenue", "Revenue"), source_url=source_url)
             statements = FinancialStatements(self.ticker, _drop_none(income), _drop_none(balance), _drop_none(cash_flow), _drop_none(market), info, "yfinance")
             return FetchResult("yfinance", True, statements, confidence_for_source("yfinance"))
         except Exception as exc:
             return FetchResult("yfinance", False, error=str(exc))
 
 
-def _latest_statement_value(statement: Any, aliases: Sequence[str]) -> Optional[float]:
+def _latest_statement_metric(
+    statement: Any,
+    aliases: Sequence[str],
+    *,
+    source_url: str | None = None,
+    source_document: str | None = None,
+    currency: str | None = None,
+) -> MetricValue:
     row = _find_statement_row(statement, aliases)
     if row is None:
-        return None
-    for value in row.dropna().tolist():
+        return MetricValue(aliases[0], None, "missing", 0.0, "not found")
+    row_label = str(getattr(row, "name", aliases[0]))
+    for period, value in _iter_row_items(row):
         numeric = safe_float(value)
         if numeric is not None:
-            return numeric
-    return None
+            return metric_value(
+                aliases[0],
+                numeric,
+                "yfinance",
+                f"statement row: {row_label}",
+                source_url=source_url,
+                source_document=source_document,
+                period_end=_period_to_date(period),
+                currency=currency,
+                scale="raw",
+                basis="reported",
+            )
+    return MetricValue(aliases[0], None, "missing", 0.0, "not found")
 
 
-def _growth_from_statement(statement: Any, aliases: Sequence[str]) -> Optional[float]:
+def _latest_statement_value(statement: Any, aliases: Sequence[str]) -> Optional[float]:
+    return _latest_statement_metric(statement, aliases).value
+
+
+def _growth_from_statement(statement: Any, aliases: Sequence[str], source_url: str | None = None) -> MetricValue:
     row = _find_statement_row(statement, aliases)
     if row is None:
-        return None
-    values = [safe_float(v) for v in row.dropna().tolist()]
-    values = [v for v in values if v is not None]
-    return None if len(values) < 2 or values[1] == 0 else (values[0] / values[1]) - 1.0
+        return MetricValue("revenue_growth", None, "missing", 0.0, "not found")
+    items = [(period, safe_float(value)) for period, value in _iter_row_items(row)]
+    items = [(period, value) for period, value in items if value is not None]
+    if len(items) < 2 or items[1][1] == 0:
+        return MetricValue("revenue_growth", None, "missing", 0.0, "requires two revenue periods")
+    growth = (items[0][1] / items[1][1]) - 1.0
+    return metric_value(
+        "revenue_growth",
+        growth,
+        "derived",
+        "latest revenue period divided by previous revenue period minus one",
+        source_url=source_url,
+        source_document="Yahoo Finance income statement",
+        period_end=_period_to_date(items[0][0]),
+        basis="derived",
+        formula="latest_revenue_divided_by_prior_revenue_minus_one",
+    )
 
 
 def _find_statement_row(statement: Any, aliases: Sequence[str]) -> Any:
@@ -240,5 +291,58 @@ def _normalize_label(label: Any) -> str:
     return re.sub(r"[^a-z0-9]+", " ", str(label).lower()).strip()
 
 
-def _drop_none(values: Mapping[str, Optional[float]]) -> dict[str, float]:
-    return {k: v for k, v in values.items() if v is not None}
+def _iter_row_items(row: Any) -> list[tuple[Any, Any]]:
+    if hasattr(row, "dropna") and hasattr(row, "items"):
+        return list(row.dropna().items())
+    if isinstance(row, Mapping):
+        return [(key, value) for key, value in row.items() if value is not None]
+    values = getattr(row, "tolist", lambda: [])()
+    return list(enumerate(values))
+
+
+def _period_to_date(value: Any) -> date | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    if hasattr(value, "to_pydatetime"):
+        try:
+            return value.to_pydatetime().date()
+        except Exception:
+            return None
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00")).date()
+    except Exception:
+        return None
+
+
+def _info_metric(name: str, value: Any, info: Mapping[str, Any], source_url: str, currency: str | None, scale: str = "raw") -> MetricValue:
+    return metric_value(
+        name,
+        value,
+        "yfinance",
+        "Yahoo Finance quote/profile info",
+        source_url=source_url,
+        source_document="Yahoo Finance quote/profile info",
+        as_of=datetime.utcnow(),
+        currency=currency,
+        scale=scale,
+        basis="reported",
+    )
+
+
+def safe_text(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _drop_none(values: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        k: v
+        for k, v in values.items()
+        if not (v is None or (isinstance(v, MetricValue) and v.value is None))
+    }
