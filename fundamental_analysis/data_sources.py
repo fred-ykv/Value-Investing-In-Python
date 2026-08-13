@@ -4,6 +4,7 @@ from __future__ import annotations
 import math
 import re
 from dataclasses import dataclass
+from datetime import date, datetime
 from typing import Any, Dict, Mapping, Optional, Sequence
 
 from .config import DATA_SOURCE_CONFIDENCE
@@ -16,10 +17,24 @@ class MetricValue:
     source: str
     confidence: float
     note: str = ""
+    source_url: str | None = None
+    source_document: str | None = None
+    period_start: date | None = None
+    period_end: date | None = None
+    filing_date: date | None = None
+    as_of: datetime | None = None
+    currency: str | None = None
+    scale: str | None = None
+    basis: str = "reported"
+    is_fallback: bool = False
+    formula: str | None = None
 
     @property
     def is_available(self) -> bool:
         return self.value is not None and math.isfinite(self.value)
+
+
+MetricObservation = MetricValue
 
 
 @dataclass(frozen=True)
@@ -55,9 +70,46 @@ def safe_float(value: Any, default: Optional[float] = None) -> Optional[float]:
         return default
 
 
-def metric_value(name: str, value: Any, source: str, note: str = "") -> MetricValue:
+def metric_value(
+    name: str,
+    value: Any,
+    source: str,
+    note: str = "",
+    *,
+    source_url: str | None = None,
+    source_document: str | None = None,
+    period_start: date | None = None,
+    period_end: date | None = None,
+    filing_date: date | None = None,
+    as_of: datetime | None = None,
+    currency: str | None = None,
+    scale: str | None = None,
+    basis: str | None = None,
+    is_fallback: bool | None = None,
+    formula: str | None = None,
+    confidence: float | None = None,
+) -> MetricValue:
     numeric = safe_float(value)
-    return MetricValue(name, numeric, source if numeric is not None else "missing", confidence_for_source(source) if numeric is not None else 0.0, note)
+    resolved_source = source if numeric is not None else "missing"
+    fallback = bool(is_fallback) or source == "fallback"
+    return MetricValue(
+        name,
+        numeric,
+        resolved_source,
+        confidence if confidence is not None and numeric is not None else confidence_for_source(source) if numeric is not None else 0.0,
+        note,
+        source_url=source_url,
+        source_document=source_document,
+        period_start=period_start,
+        period_end=period_end,
+        filing_date=filing_date,
+        as_of=as_of,
+        currency=currency,
+        scale=scale,
+        basis=basis or ("fallback" if fallback else "reported"),
+        is_fallback=fallback,
+        formula=formula,
+    )
 
 
 def clamp(value: float, lower: float, upper: float) -> float:
@@ -130,6 +182,7 @@ class YahooFinanceClient:
                 "cfo": _latest_statement_value(cashflow, ("Operating Cash Flow", "Total Cash From Operating Activities")),
                 "capex": _latest_statement_value(cashflow, ("Capital Expenditure", "Capital Expenditures")),
                 "depreciation_amortization": _latest_statement_value(cashflow, ("Depreciation And Amortization", "Depreciation")),
+                "change_in_nwc": _latest_statement_value(cashflow, ("Change In Working Capital", "Change In Other Working Capital")),
             }
             market = {
                 "price": safe_float(info.get("currentPrice") or info.get("regularMarketPrice")),

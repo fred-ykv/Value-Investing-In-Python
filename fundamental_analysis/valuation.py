@@ -42,11 +42,17 @@ def dcf_fcff(inputs: DCFInput) -> ValuationResult:
     wacc = inputs.wacc.value if inputs.wacc.value is not None else DCF.default_wacc
     growth = clamp(inputs.growth_years.value if inputs.growth_years.value is not None else DCF.default_growth_years, DCF.min_growth_years, DCF.max_growth_years)
     terminal_growth = clamp(inputs.terminal_growth.value if inputs.terminal_growth.value is not None else DCF.default_terminal_growth, DCF.min_terminal_growth, DCF.max_terminal_growth)
-    diagnostics: dict[str, object] = {}
+    diagnostics: dict[str, object] = {
+        "fcff_definition": inputs.fcff.formula or "unknown",
+        "fcff_note": inputs.fcff.note,
+        "fallback_assumptions": fallback_assumptions(inputs),
+    }
     if wacc <= terminal_growth:
         terminal_growth = max(0.0, wacc - DCF.min_spread_wacc_terminal)
         diagnostics["terminal_growth_adjusted"] = terminal_growth
     confidence = weighted_confidence(inputs.fcff, inputs.shares, inputs.wacc, inputs.growth_years, inputs.terminal_growth)
+    if inputs.fcff.is_fallback:
+        confidence = max(0.0, confidence - 0.10)
     if fcff0 < 0:
         confidence = max(0.0, confidence - DCF.negative_fcff_confidence_penalty)
         diagnostics["negative_fcff"] = True
@@ -57,11 +63,24 @@ def dcf_fcff(inputs: DCFInput) -> ValuationResult:
         projected.append(value)
     pv_stage = sum(cf / ((1.0 + wacc) ** year) for year, cf in enumerate(projected, start=1))
     terminal = projected[-1] * (1.0 + terminal_growth) / (wacc - terminal_growth)
-    ev = pv_stage + terminal / ((1.0 + wacc) ** DCF.horizon_years)
+    pv_terminal = terminal / ((1.0 + wacc) ** DCF.horizon_years)
+    ev = pv_stage + pv_terminal
     equity = ev - (inputs.debt.value or 0.0) + (inputs.cash.value or 0.0)
     fair = equity / shares
     margin = None if inputs.current_price.value in (None, 0) else (fair / inputs.current_price.value) - 1.0
-    diagnostics.update({"growth_years": growth, "terminal_growth": terminal_growth, "wacc": wacc, "sensitivity": dcf_sensitivity(inputs)})
+    diagnostics.update(
+        {
+            "growth_years": growth,
+            "terminal_growth": terminal_growth,
+            "wacc": wacc,
+            "pv_explicit_stage": pv_stage,
+            "pv_terminal_value": pv_terminal,
+            "terminal_value_share": None if ev == 0 else pv_terminal / ev,
+            "explicit_stage_share": None if ev == 0 else pv_stage / ev,
+            "net_debt_adjustment": (inputs.debt.value or 0.0) - (inputs.cash.value or 0.0),
+            "sensitivity": dcf_sensitivity(inputs),
+        }
+    )
     return ValuationResult("dcf_fcff", fair, confidence, enterprise_value=ev, equity_value=equity, margin_of_safety=margin, diagnostics=diagnostics)
 
 
@@ -77,6 +96,14 @@ def dcf_sensitivity(inputs: DCFInput) -> dict[str, dict[str, Optional[float]]]:
             row[f"{g:.1%}"] = _dcf_fair_value(temp)
         matrix[f"{wacc:.1%}"] = row
     return matrix
+
+
+def fallback_assumptions(inputs: DCFInput) -> list[str]:
+    assumptions = []
+    for metric in (inputs.fcff, inputs.wacc, inputs.growth_years, inputs.terminal_growth):
+        if metric.is_fallback:
+            assumptions.append(f"{metric.name}: {metric.note or metric.source}")
+    return assumptions
 
 
 def _dcf_fair_value(inputs: DCFInput) -> Optional[float]:

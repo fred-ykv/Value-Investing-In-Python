@@ -26,7 +26,7 @@ class AcceptanceProfileTests(unittest.TestCase):
         self.assertEqual(result.valuations[0].method, "residual_income")
 
     def test_negative_fcf_company_runs(self):
-        cash_flow = dict(BASE_CASH_FLOW, cfo=-200_000_000, capex=-300_000_000)
+        cash_flow = dict(BASE_CASH_FLOW, cfo=-200_000_000, capex=-2_000_000_000)
         result = analyze_ticker_from_inputs("NEG", BASE_INCOME, BASE_BALANCE, cash_flow, dict(BASE_MARKET, revenue_growth=0.30), {"sector": "Technology", "industry": "Software"})
         self.assertEqual(result.company_type, "growth_tech")
         self.assertTrue(any(v.diagnostics.get("negative_fcff") for v in result.valuations))

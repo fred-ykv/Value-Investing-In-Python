@@ -119,7 +119,22 @@ def metric_lineage_table(metrics: dict[str, MetricValue]) -> list[dict[str, obje
     rows = []
     for name in sorted(metrics):
         metric = metrics[name]
-        rows.append({"metric": name, "value": metric.value, "source": metric.source, "confidence": metric.confidence, "note": metric.note})
+        rows.append(
+            {
+                "metric": name,
+                "value": metric.value,
+                "source": metric.source,
+                "confidence": metric.confidence,
+                "basis": metric.basis,
+                "is_fallback": metric.is_fallback,
+                "period_end": metric.period_end,
+                "filing_date": metric.filing_date,
+                "currency": metric.currency,
+                "scale": metric.scale,
+                "formula": metric.formula,
+                "note": metric.note,
+            }
+        )
     return rows
 
 
@@ -149,6 +164,8 @@ def key_indicator_table(metrics: dict[str, MetricValue] | None = None) -> list[d
     current_assets = metric_number(metrics.get("current_assets"))
     current_liabilities = metric_number(metrics.get("current_liabilities"))
     depreciation = metric_number(metrics.get("depreciation_amortization"))
+    cfo = metric_number(metrics.get("cfo"))
+    capex = metric_number(metrics.get("capex"))
     bvps = metric_number(metrics.get("book_value_per_share"))
     ebitda = None if ebit is None else ebit + (depreciation or 0.0)
     market_cap = market_cap if market_cap is not None else _safe_mul(price, shares)
@@ -208,6 +225,8 @@ def risk_diagnostics(score: ScoreReport, valuations: Iterable[ValuationResult], 
     for valuation in valuations:
         if valuation.diagnostics.get("negative_fcff"):
             risks.append("DCF usa FCFF negativo; a confianca do modelo foi reduzida.")
+        if valuation.diagnostics.get("fallback_assumptions"):
+            risks.append("DCF usou premissas ou aproximacoes fallback; revise a definicao do fluxo e as premissas antes de usar a recomendacao.")
         if valuation.diagnostics.get("terminal_growth_adjusted") is not None:
             risks.append("Crescimento terminal foi ajustado para ficar abaixo da taxa de desconto.")
     if metrics:
@@ -236,17 +255,17 @@ def render_markdown_report(ticker: str, score: ScoreReport, valuations: Iterable
         "## Preco atual e Indicadores principais",
         f"Preco atual da acao: **{_fmt_money(current_price_summary(metrics)['value'])}**.",
         "",
-        "| Grupo | Indicador | Valor | Fonte | Confianca | Leitura |",
-        "|---|---|---:|---|---:|---|",
+        "| Grupo | Indicador | Valor | Sinal | Fonte | Confianca | Leitura |",
+        "|---|---|---:|---|---|---:|---|",
     ]
     for row in key_indicator_table(metrics):
-        lines.append(f"| {row['group']} | {row['indicator']} | {_fmt_indicator(row)} | {row['source']} | {float(row['confidence'] or 0):.2f} | {str(row['explanation']).replace('|', '/')} |")
+        lines.append(f"| {row['group']} | {row['indicator']} | {_fmt_indicator(row)} | {row['signal_label']} | {row['source']} | {float(row['confidence'] or 0):.2f} | {str(row['explanation']).replace('|', '/')} |")
     lines.extend(
         [
             "",
-            "## Valuation por metodo",
-            "| Metodo | Preco justo | Margem de seguranca | Fonte | Confianca |",
-            "|---|---:|---:|---|---:|",
+        "## Valuation por metodo",
+        "| Metodo | Preco justo | Margem de seguranca | Fonte | Confianca |",
+        "|---|---:|---:|---|---:|",
         ]
     )
     for row in valuation_table(valuations):
@@ -278,9 +297,16 @@ def render_markdown_report(ticker: str, score: ScoreReport, valuations: Iterable
     for row in score_table(score):
         lines.append(f"| {row['name']} | {float(row['score']):.2f} | {float(row['confidence']):.2f} | {str(row['explanation']).replace('|', '/')} |")
     if metrics:
-        lines.extend(["", "## Fontes e confianca das metricas", "| Metrica | Valor usado | Fonte | Confianca | Observacao |", "|---|---:|---|---:|---|"])
+        lines.extend(["", "## Fontes e confianca das metricas", "| Metrica | Valor usado | Fonte | Base | Fallback | Periodo | Moeda | Confianca | Formula | Observacao |", "|---|---:|---|---|---|---|---|---:|---|---|"])
         for row in metric_lineage_table(metrics):
-            lines.append(f"| {row['metric']} | {_fmt_number(row['value'])} | {row['source']} | {float(row['confidence'] or 0):.2f} | {str(row['note']).replace('|', '/')} |")
+            period = row["period_end"] or "-"
+            currency = row["currency"] or "-"
+            formula = row["formula"] or "-"
+            fallback = "sim" if row["is_fallback"] else "nao"
+            lines.append(
+                f"| {row['metric']} | {_fmt_number(row['value'])} | {row['source']} | {row['basis']} | {fallback} | {period} | {currency} | "
+                f"{float(row['confidence'] or 0):.2f} | {str(formula).replace('|', '/')} | {str(row['note']).replace('|', '/')} |"
+            )
     lines.extend(["", "## Diagnostico de riscos"])
     lines.extend(f"- {risk}" for risk in risk_diagnostics(score, valuations, metrics))
     lines.extend(["", "## Notas explicativas"])
@@ -389,8 +415,8 @@ def valuation_readthrough(valuations: Iterable[ValuationResult]) -> str:
     worst = min(available, key=lambda v: float(v.margin_of_safety or 999.0))
     return (
         f"A margem de seguranca media dos modelos foi {_fmt_pct(average_margin)}; "
-        f"o metodo mais favoravel foi {valuation_method_label(best.method)[0]} ({_fmt_pct(best.margin_of_safety)}) "
-        f"e o mais conservador foi {valuation_method_label(worst.method)[0]} ({_fmt_pct(worst.margin_of_safety)})."
+        f"o metodo mais favoravel foi {best.method} ({_fmt_pct(best.margin_of_safety)}) "
+        f"e o mais conservador foi {worst.method} ({_fmt_pct(worst.margin_of_safety)})."
     )
 
 
@@ -408,6 +434,8 @@ def explanatory_notes(score: ScoreReport, valuations: Iterable[ValuationResult],
         notes.insert(0, gate)
     if any(v.diagnostics.get("negative_fcff") for v in valuations):
         notes.append("FCFF negativo reduz a confianca do DCF porque empresas nessa fase dependem mais de premissas de reversao, runway e margem futura.")
+    if any(v.diagnostics.get("fallback_assumptions") for v in valuations):
+        notes.append("Fallbacks e aproximacoes materiais aparecem na tabela de fontes; eles reduzem a confianca e devem ser substituidos por dados observados quando possivel.")
     if metrics:
         runway = metric_number(metrics.get("cash_runway_years"))
         burn = metric_number(metrics.get("cash_burn"))
@@ -501,6 +529,7 @@ def _indicator_row(group: str, indicator: str, value: float | None, metrics: dic
     used = [metrics[name] for name in dependencies if name in metrics and metrics[name].is_available]
     source = ", ".join(sorted({metric.source for metric in used})) if used else "missing"
     confidence = sum(metric.confidence for metric in used) / len(used) if used else 0.0
+    signal, signal_label = indicator_signal(indicator, value)
     return {
         "group": group,
         "indicator": indicator,
@@ -509,4 +538,84 @@ def _indicator_row(group: str, indicator: str, value: float | None, metrics: dic
         "confidence": confidence if value is not None else 0.0,
         "explanation": explanation,
         "format": fmt,
+        "signal": signal,
+        "signal_label": signal_label,
     }
+
+
+def indicator_signal(indicator: str, value: float | None) -> tuple[str, str]:
+    if value is None:
+        return "missing", "Indisponivel"
+    if indicator in {"D.Y", "PL/Ativos", "M. Bruta", "M. EBITDA", "M. EBIT", "M. Liquida", "ROE", "ROA", "ROIC", "CAGR Receitas 5 anos", "CAGR Lucros 5 anos"}:
+        return _high_good_signal(value, *_indicator_thresholds(indicator))
+    if indicator == "Liq. corrente":
+        if value >= 1.5:
+            return "positive", "Favoravel"
+        if value < 1.0:
+            return "negative", "Atencao"
+        return "neutral", "Neutro"
+    if indicator == "Giro ativos":
+        if value >= 1.0:
+            return "positive", "Favoravel"
+        if value < 0.5:
+            return "negative", "Atencao"
+        return "neutral", "Neutro"
+    if indicator in {"Div. liquida/PL", "Div. liquida/EBITDA", "Div. liquida/EBIT"}:
+        return _low_good_signal(value, *_indicator_thresholds(indicator))
+    if indicator in {"P/L", "PEG Ratio", "P/VP", "EV/EBITDA", "EV/EBIT", "P/EBITDA", "P/EBIT", "P/Ativo", "P/SR", "P/Cap. Giro", "P/Ativo Circ. Liq."}:
+        if value < 0:
+            return "negative", "Atencao"
+        return _low_good_signal(value, *_indicator_thresholds(indicator))
+    if indicator in {"VPA", "LPA"}:
+        if value > 0:
+            return "positive", "Favoravel"
+        if value < 0:
+            return "negative", "Atencao"
+    return "neutral", "Neutro"
+
+
+def _indicator_thresholds(indicator: str) -> tuple[float, float]:
+    thresholds = {
+        "D.Y": (0.02, 0.00),
+        "P/L": (15.0, 30.0),
+        "PEG Ratio": (1.0, 2.0),
+        "P/VP": (1.5, 4.0),
+        "EV/EBITDA": (10.0, 18.0),
+        "EV/EBIT": (12.0, 22.0),
+        "P/EBITDA": (10.0, 18.0),
+        "P/EBIT": (12.0, 22.0),
+        "P/Ativo": (1.5, 4.0),
+        "P/SR": (2.0, 6.0),
+        "P/Cap. Giro": (5.0, 15.0),
+        "P/Ativo Circ. Liq.": (2.0, 8.0),
+        "Div. liquida/PL": (0.5, 1.5),
+        "Div. liquida/EBITDA": (2.0, 4.0),
+        "Div. liquida/EBIT": (3.0, 6.0),
+        "PL/Ativos": (0.50, 0.20),
+        "M. Bruta": (0.30, 0.10),
+        "M. EBITDA": (0.20, 0.08),
+        "M. EBIT": (0.15, 0.05),
+        "M. Liquida": (0.10, 0.02),
+        "ROE": (0.15, 0.05),
+        "ROA": (0.08, 0.02),
+        "ROIC": (0.12, 0.04),
+        "CAGR Receitas 5 anos": (0.08, 0.00),
+        "CAGR Lucros 5 anos": (0.08, 0.00),
+    }
+    return thresholds.get(indicator, (0.0, 0.0))
+
+
+def _high_good_signal(value: float, good: float, bad: float) -> tuple[str, str]:
+    if value >= good:
+        return "positive", "Favoravel"
+    if value <= bad:
+        return "negative", "Atencao"
+    return "neutral", "Neutro"
+
+
+def _low_good_signal(value: float, good: float, bad: float) -> tuple[str, str]:
+    if value <= good:
+        return "positive", "Favoravel"
+    if value >= bad:
+        return "negative", "Atencao"
+    return "neutral", "Neutro"
