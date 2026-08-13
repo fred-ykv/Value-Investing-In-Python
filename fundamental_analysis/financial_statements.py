@@ -45,31 +45,84 @@ def build_statement_metrics(statements: FinancialStatements) -> StatementMetrics
         "cfo": get_mapping_value(cf, "cfo", "Operating Cash Flow", source=source),
         "capex": get_mapping_value(cf, "capex", "Capital Expenditure", source=source),
         "depreciation_amortization": get_mapping_value(cf, "depreciation_amortization", "Depreciation And Amortization", source=source),
+        "change_in_nwc": get_mapping_value(cf, "change_in_nwc", "Change In Working Capital", "Change In Other Working Capital", source=source),
         "shares": get_mapping_value(md, "shares", "shares_outstanding", "Shares Outstanding", source=source),
         "price": get_mapping_value(md, "price", "current_price", "Current Price", source=source),
         "market_cap": get_mapping_value(md, "market_cap", "Market Cap", source=source),
         "beta": get_mapping_value(md, "beta", "Beta", source=source),
     }
-    values["fcff"] = compute_fcff(values)
     values["tax_rate"] = compute_tax_rate(values)
+    values["free_cash_flow_after_capex"] = compute_free_cash_flow_after_capex(values)
+    values["fcff"] = compute_fcff(values)
     values["book_value_per_share"] = compute_bvps(values)
     values["ncav_per_share"] = compute_ncav(values)
     return StatementMetrics(values)
 
 
-def compute_fcff(values: Mapping[str, MetricValue]) -> MetricValue:
+def compute_free_cash_flow_after_capex(values: Mapping[str, MetricValue]) -> MetricValue:
     cfo, capex = values["cfo"].value, values["capex"].value
     if cfo is None or capex is None:
-        return MetricValue("fcff", None, "missing", 0.0, "requires CFO and capex")
-    return MetricValue("fcff", cfo - abs(capex), "derived", (values["cfo"].confidence + values["capex"].confidence) / 2, "CFO - abs(CAPEX)")
+        return MetricValue("free_cash_flow_after_capex", None, "missing", 0.0, "requires CFO and capex", basis="derived")
+    return MetricValue(
+        "free_cash_flow_after_capex",
+        cfo - abs(capex),
+        "derived",
+        (values["cfo"].confidence + values["capex"].confidence) / 2,
+        "CFO - abs(CAPEX); levered cash-flow proxy, not unlevered FCFF",
+        basis="derived",
+        formula="cfo_minus_capex",
+    )
+
+
+def compute_fcff(values: Mapping[str, MetricValue]) -> MetricValue:
+    ebit = values["ebit"].value
+    tax_rate = values["tax_rate"].value
+    depreciation = values["depreciation_amortization"].value
+    capex = values["capex"].value
+    if ebit is None or tax_rate is None or depreciation is None or capex is None:
+        return MetricValue("fcff", None, "missing", 0.0, "requires EBIT, tax rate, D&A, and capex", basis="derived")
+
+    change_in_nwc = values["change_in_nwc"].value
+    used_nwc_fallback = change_in_nwc is None
+    if used_nwc_fallback:
+        change_in_nwc = 0.0
+
+    normalized_capex = abs(capex)
+    fcff = ebit * (1.0 - tax_rate) + depreciation - normalized_capex - change_in_nwc
+    inputs = [values["ebit"], values["tax_rate"], values["depreciation_amortization"], values["capex"]]
+    if values["change_in_nwc"].is_available:
+        inputs.append(values["change_in_nwc"])
+    confidence = sum(item.confidence for item in inputs if item.is_available) / len(inputs)
+    if used_nwc_fallback:
+        confidence = max(0.0, confidence - 0.15)
+    if values["tax_rate"].is_fallback:
+        confidence = max(0.0, confidence - 0.10)
+    note = "FCFF = EBIT * (1 - tax_rate) + D&A - abs(CAPEX) - change_in_nwc"
+    if used_nwc_fallback:
+        note += "; change_in_nwc unavailable, used explicit 0 approximation with confidence penalty"
+    return MetricValue(
+        "fcff",
+        fcff,
+        "derived",
+        confidence,
+        note,
+        basis="derived",
+        is_fallback=used_nwc_fallback or values["tax_rate"].is_fallback,
+        formula="nopat_plus_da_minus_capex_minus_delta_nwc",
+    )
 
 
 def compute_tax_rate(values: Mapping[str, MetricValue]) -> MetricValue:
     tax, ebit = values["tax_provision"].value, values["ebit"].value
     pre_tax = None if ebit is None else ebit - abs(values["interest_expense"].value or 0.0)
     if tax is None or pre_tax in (None, 0):
-        return metric_value("tax_rate", 0.21, "fallback", "default tax rate")
-    return metric_value("tax_rate", max(0.0, min(0.45, abs(tax) / abs(pre_tax))), "derived")
+        return metric_value("tax_rate", 0.21, "fallback", "default tax rate", basis="fallback", is_fallback=True, formula="default_tax_rate")
+    raw_tax_rate = abs(tax) / abs(pre_tax)
+    normalized = max(0.0, min(0.45, raw_tax_rate))
+    note = "tax_provision / pretax_income"
+    if normalized != raw_tax_rate:
+        note += f"; clamped from {raw_tax_rate:.4f}"
+    return metric_value("tax_rate", normalized, "derived", note, basis="derived", formula="tax_provision_divided_by_pretax_income")
 
 
 def compute_bvps(values: Mapping[str, MetricValue]) -> MetricValue:
