@@ -472,9 +472,9 @@ def metric_source_text(metric: MetricValue | None) -> str:
     if metric.source_document:
         parts.append(str(metric.source_document))
     if metric.period_end:
-        parts.append(f"periodo {metric.period_end}")
+        parts.append(f"periodo {_format_date_like(metric.period_end)}")
     elif metric.as_of:
-        parts.append(f"coletado em {metric.as_of:%Y-%m-%d}")
+        parts.append(f"coletado em {_format_date_like(metric.as_of)}")
     if metric.currency:
         parts.append(f"moeda {metric.currency}")
     if metric.scale and metric.scale not in {"raw", "reported"}:
@@ -482,6 +482,15 @@ def metric_source_text(metric: MetricValue | None) -> str:
     if metric.is_fallback:
         parts.append("usa fallback")
     return ", ".join(parts)
+
+
+def _format_date_like(value: object) -> str:
+    if hasattr(value, "strftime"):
+        try:
+            return value.strftime("%Y-%m-%d")
+        except Exception:
+            return str(value)
+    return str(value)
 
 
 def scenario_assumption_text(assumptions: object) -> str:
