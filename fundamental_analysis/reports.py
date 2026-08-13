@@ -124,6 +124,9 @@ def metric_lineage_table(metrics: dict[str, MetricValue]) -> list[dict[str, obje
                 "metric": name,
                 "value": metric.value,
                 "source": metric.source,
+                "source_detail": metric_source_text(metric),
+                "source_url": metric.source_url,
+                "source_document": metric.source_document,
                 "confidence": metric.confidence,
                 "basis": metric.basis,
                 "is_fallback": metric.is_fallback,
@@ -144,6 +147,7 @@ def current_price_summary(metrics: dict[str, MetricValue] | None = None) -> dict
         "indicator": "Preco atual da acao",
         "value": metric.value if metric else None,
         "source": metric.source if metric else "missing",
+        "source_detail": metric_source_text(metric) if metric else "Fonte indisponivel",
         "confidence": metric.confidence if metric else 0.0,
     }
 
@@ -297,14 +301,14 @@ def render_markdown_report(ticker: str, score: ScoreReport, valuations: Iterable
     for row in score_table(score):
         lines.append(f"| {row['name']} | {float(row['score']):.2f} | {float(row['confidence']):.2f} | {str(row['explanation']).replace('|', '/')} |")
     if metrics:
-        lines.extend(["", "## Fontes e confianca das metricas", "| Metrica | Valor usado | Fonte | Base | Fallback | Periodo | Moeda | Confianca | Formula | Observacao |", "|---|---:|---|---|---|---|---|---:|---|---|"])
+        lines.extend(["", "## Fontes e confianca das metricas", "| Metrica | Valor usado | Fonte legivel | Fonte tecnica | Base | Fallback | Periodo | Moeda | Confianca | Formula | Observacao |", "|---|---:|---|---|---|---|---|---|---:|---|---|"])
         for row in metric_lineage_table(metrics):
             period = row["period_end"] or "-"
             currency = row["currency"] or "-"
             formula = row["formula"] or "-"
             fallback = "sim" if row["is_fallback"] else "nao"
             lines.append(
-                f"| {row['metric']} | {_fmt_number(row['value'])} | {row['source']} | {row['basis']} | {fallback} | {period} | {currency} | "
+                f"| {row['metric']} | {_fmt_number(row['value'])} | {str(row['source_detail']).replace('|', '/')} | {row['source']} | {row['basis']} | {fallback} | {period} | {currency} | "
                 f"{float(row['confidence'] or 0):.2f} | {str(formula).replace('|', '/')} | {str(row['note']).replace('|', '/')} |"
             )
     lines.extend(["", "## Diagnostico de riscos"])
@@ -415,8 +419,8 @@ def valuation_readthrough(valuations: Iterable[ValuationResult]) -> str:
     worst = min(available, key=lambda v: float(v.margin_of_safety or 999.0))
     return (
         f"A margem de seguranca media dos modelos foi {_fmt_pct(average_margin)}; "
-        f"o metodo mais favoravel foi {best.method} ({_fmt_pct(best.margin_of_safety)}) "
-        f"e o mais conservador foi {worst.method} ({_fmt_pct(worst.margin_of_safety)})."
+        f"o metodo mais favoravel foi {valuation_method_label(best.method)[0]} ({_fmt_pct(best.margin_of_safety)}) "
+        f"e o mais conservador foi {valuation_method_label(worst.method)[0]} ({_fmt_pct(worst.margin_of_safety)})."
     )
 
 
@@ -450,6 +454,43 @@ def explanatory_notes(score: ScoreReport, valuations: Iterable[ValuationResult],
 
 def score_scale_note() -> str:
     return "Escala do score: quanto mais perto de 1, melhor a leitura daquela dimensao; quanto mais perto de 0, pior ou mais arriscada."
+
+
+def metric_source_text(metric: MetricValue | None) -> str:
+    if metric is None:
+        return "Fonte indisponivel"
+    source_names = {
+        "yfinance": "Yahoo Finance",
+        "finviz": "Finviz",
+        "manual": "Entrada manual",
+        "derived": "Calculado pelo modelo",
+        "scenario": "Cenario hipotetico",
+        "fallback": "Premissa padrao",
+        "missing": "Fonte indisponivel",
+    }
+    parts = [source_names.get(metric.source, metric.source or "Fonte indisponivel")]
+    if metric.source_document:
+        parts.append(str(metric.source_document))
+    if metric.period_end:
+        parts.append(f"periodo {_format_date_like(metric.period_end)}")
+    elif metric.as_of:
+        parts.append(f"coletado em {_format_date_like(metric.as_of)}")
+    if metric.currency:
+        parts.append(f"moeda {metric.currency}")
+    if metric.scale and metric.scale not in {"raw", "reported"}:
+        parts.append(f"escala {metric.scale}")
+    if metric.is_fallback:
+        parts.append("usa fallback")
+    return ", ".join(parts)
+
+
+def _format_date_like(value: object) -> str:
+    if hasattr(value, "strftime"):
+        try:
+            return value.strftime("%Y-%m-%d")
+        except Exception:
+            return str(value)
+    return str(value)
 
 
 def scenario_assumption_text(assumptions: object) -> str:
@@ -527,7 +568,7 @@ def _percent_points(metric: MetricValue | None) -> float | None:
 
 def _indicator_row(group: str, indicator: str, value: float | None, metrics: dict[str, MetricValue], dependencies: tuple[str, ...], explanation: str, fmt: str) -> dict[str, object]:
     used = [metrics[name] for name in dependencies if name in metrics and metrics[name].is_available]
-    source = ", ".join(sorted({metric.source for metric in used})) if used else "missing"
+    source = indicator_source_text(used)
     confidence = sum(metric.confidence for metric in used) / len(used) if used else 0.0
     signal, signal_label = indicator_signal(indicator, value)
     return {
@@ -541,6 +582,21 @@ def _indicator_row(group: str, indicator: str, value: float | None, metrics: dic
         "signal": signal,
         "signal_label": signal_label,
     }
+
+
+def indicator_source_text(metrics: list[MetricValue]) -> str:
+    if not metrics:
+        return "Fonte indisponivel"
+    descriptions = []
+    seen = set()
+    for metric in metrics:
+        text = metric_source_text(metric)
+        if text not in seen:
+            descriptions.append(text)
+            seen.add(text)
+    if len(descriptions) <= 2:
+        return "; ".join(descriptions)
+    return "; ".join(descriptions[:2]) + f"; +{len(descriptions) - 2} fontes"
 
 
 def indicator_signal(indicator: str, value: float | None) -> tuple[str, str]:

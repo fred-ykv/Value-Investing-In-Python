@@ -16,6 +16,7 @@ from .reports import (
     decision_bridge,
     explanatory_notes,
     key_indicator_table,
+    metric_lineage_table,
     recommendation_summary,
     risk_diagnostics,
     scenario_assumption_text,
@@ -41,7 +42,7 @@ def render_html_report(ticker: str, score: ScoreReport, valuations: Iterable[Val
     cards = [
         ("Recomendacao", score.recommendation, "Decisao final do modelo"),
         ("Score total", f"{score.total_score:.2f}", "Composicao multifatorial"),
-        ("Preco atual", _fmt_money(price["value"]), f"Fonte: {price['source']}"),
+        ("Preco atual", _fmt_money(price["value"]), f"Fonte: {price.get('source_detail', price['source'])}"),
         ("Valuation", f"{score.dimensions.get('valuation').score:.2f}" if score.dimensions.get("valuation") else "-", "Preco vs valor justo"),
         ("Confianca", f"{score.dimensions.get('data_confidence').score:.2f}" if score.dimensions.get("data_confidence") else "-", "Qualidade dos dados"),
     ]
@@ -71,6 +72,10 @@ def render_html_report(ticker: str, score: ScoreReport, valuations: Iterable[Val
         '<section class="panel">',
         "<h2>Indicadores principais</h2>",
         _indicator_table(indicator_rows),
+        "</section>",
+        '<section class="panel">',
+        "<h2>Fontes dos dados principais</h2>",
+        _source_table(metric_lineage_table(metrics or {})),
         "</section>",
         '<section class="panel">',
         "<h2>Score por dimensao</h2>",
@@ -242,6 +247,38 @@ def _indicator_table(rows: list[dict[str, object]]) -> str:
         ]
         row_html.append("<tr>" + "".join(f"<td>{cell}</td>" for cell in cells) + "</tr>")
     return f'<table class="indicator-table"><thead><tr>{header_html}</tr></thead><tbody>{"".join(row_html)}</tbody></table>'
+
+
+def _source_table(rows: list[dict[str, object]]) -> str:
+    if not rows:
+        return "<p>Sem fontes disponiveis.</p>"
+    preferred = {
+        "price",
+        "revenue",
+        "ebit",
+        "net_income",
+        "fcff",
+        "free_cash_flow_after_capex",
+        "total_assets",
+        "total_debt",
+        "cash",
+        "shares",
+    }
+    selected = [row for row in rows if row.get("metric") in preferred]
+    selected = selected or rows[:10]
+    return _html_table(
+        ["Metrica", "Valor", "Fonte", "Base", "Confianca"],
+        [
+            [
+                row.get("metric", "-"),
+                _fmt_number(row.get("value")),
+                row.get("source_detail") or row.get("source", "-"),
+                row.get("basis", "-"),
+                f"{float(row.get('confidence') or 0):.2f}",
+            ]
+            for row in selected[:12]
+        ],
+    )
 
 
 def _indicator_signal(indicator: str, value: object) -> tuple[str, str]:

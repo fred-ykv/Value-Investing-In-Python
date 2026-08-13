@@ -3,6 +3,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
+from fundamental_analysis.data_sources import MetricValue
 from fundamental_analysis.main import analyze_ticker_from_inputs
 from fundamental_analysis.html_reports import render_html_report
 from fundamental_analysis.reports import render_markdown_report, save_report_artifacts
@@ -79,9 +80,42 @@ class ReportTests(unittest.TestCase):
         self.assertIn("Fluxo de Caixa Descontado (DCF/FCFF)", html)
         self.assertIn("Cenarios", html)
         self.assertIn("Comparaveis", html)
+        self.assertIn("Fontes dos dados principais", html)
         self.assertIn("Riscos principais", html)
         self.assertIn("card", html)
         self.assertIn("bar", html)
+
+    def test_reports_show_readable_source_lineage(self):
+        result = analyze_ticker_from_inputs(
+            "SRC",
+            {
+                "revenue": MetricValue(
+                    "revenue",
+                    1_000_000,
+                    "yfinance",
+                    0.85,
+                    source_document="Yahoo Finance income statement",
+                    period_end="2025-12-31",
+                    currency="USD",
+                    scale="raw",
+                    basis="reported",
+                ),
+                "ebit": 200_000,
+                "net_income": 120_000,
+            },
+            {"total_assets": 1_500_000, "total_liabilities": 600_000, "equity": 900_000, "cash": 100_000, "total_debt": 250_000, "current_assets": 500_000, "current_liabilities": 250_000},
+            {"cfo": 150_000, "capex": -40_000, "depreciation_amortization": 20_000},
+            {"shares": 10_000, "price": 60, "wacc": 0.10, "growth_years": 0.04, "terminal_growth": 0.02},
+            {"sector": "Industrials"},
+        )
+
+        markdown = result.report["markdown"]
+        html = result.report["html"]
+
+        self.assertIn("Fonte legivel", markdown)
+        self.assertIn("Yahoo Finance, Yahoo Finance income statement, periodo 2025-12-31, moeda USD", markdown)
+        self.assertIn("Fontes dos dados principais", html)
+        self.assertIn("Yahoo Finance income statement", html)
 
     def test_report_explains_buy_gate_when_valuation_blocks_buy(self):
         score = ScoreReport(
