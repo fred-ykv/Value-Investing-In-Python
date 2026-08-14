@@ -13,7 +13,8 @@ from .metrics import MetricPack, build_metrics
 from .peer_discovery import discover_peer_candidates
 from .peer_enrichment import enrich_peer_candidates
 from .peer_selection import PeerSelectionReport, build_peer_selection_report, merge_peer_medians
-from .reports import comparable_table, executive_summary, key_indicator_table, metric_lineage_table, peer_selection_table, render_markdown_report, reverse_dcf_table, risk_diagnostics, scenario_table, score_table, valuation_table
+from .reports import comparable_table, executive_summary, key_indicator_table, metric_lineage_table, peer_selection_table, render_markdown_report, risk_diagnostics, scenario_table, score_table, valuation_table
+from .reverse_dcf_reporting import append_reverse_dcf_to_html, append_reverse_dcf_to_markdown, reverse_dcf_table
 from .scenarios import ReverseDCFResult, ScenarioResult, build_reverse_dcf, build_scenarios
 from .scoring import ScoreReport, compute_score
 from .sector_rules import classify_company
@@ -57,6 +58,8 @@ def analyze_ticker_from_inputs(ticker: str, income_statement: Mapping[str, float
     comparables = build_comparable_report(company_type, values, metrics, comparable_market_data)
     score = compute_score(company_type, valuations, metrics, values["price"], comparables)
     metric_lineage = {**values, **metrics.values}
+    markdown = append_reverse_dcf_to_markdown(render_markdown_report(ticker, score, valuations, metric_lineage, scenarios, comparables, peer_selection), reverse_dcf)
+    html = append_reverse_dcf_to_html(render_html_report(ticker, score, valuations, metric_lineage, scenarios, comparables, peer_selection), reverse_dcf)
     report = {
         "executive_summary": executive_summary(ticker, score, valuations),
         "valuation_table": valuation_table(valuations),
@@ -69,8 +72,8 @@ def analyze_ticker_from_inputs(ticker: str, income_statement: Mapping[str, float
         "metric_lineage_table": metric_lineage_table(metric_lineage),
         "risk_diagnostics": risk_diagnostics(score, valuations, metric_lineage),
         "recommendation": score.recommendation,
-        "markdown": render_markdown_report(ticker, score, valuations, metric_lineage, scenarios, comparables, peer_selection, reverse_dcf),
-        "html": render_html_report(ticker, score, valuations, metric_lineage, scenarios, comparables, peer_selection, reverse_dcf),
+        "markdown": markdown,
+        "html": html,
     }
     return AnalysisResult(ticker, company_type.value, valuations, scenarios, reverse_dcf, peer_selection, comparables, metrics, score, report)
 
