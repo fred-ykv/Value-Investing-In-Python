@@ -132,6 +132,16 @@ class ScenarioAssumptions:
 
 
 @dataclass(frozen=True)
+class ReverseDCFAssumptions:
+    min_growth: float = -0.20
+    max_growth: float = 0.60
+    tolerance: float = 0.0001
+    max_iterations: int = 80
+    plausible_growth: float = 0.08
+    demanding_growth: float = 0.15
+
+
+@dataclass(frozen=True)
 class ComparableAssumptions:
     discount_for_strong_score: float = -0.30
     premium_for_weak_score: float = 0.30
@@ -255,6 +265,7 @@ MARKET = MarketAssumptions()
 VALUATION_SCORE = ValuationScoreAssumptions()
 SCORE = ScoreConfig()
 SCENARIOS = ScenarioAssumptions()
+REVERSE_DCF = ReverseDCFAssumptions()
 COMPARABLES = ComparableAssumptions()
 PEER_SELECTION = PeerSelectionAssumptions()
 PEER_DISCOVERY = PeerDiscoveryAssumptions()
