@@ -1,7 +1,8 @@
 import unittest
 
+from fundamental_analysis.data_sources import metric_value
 from fundamental_analysis.main import analyze_ticker_from_inputs
-from fundamental_analysis.scenarios import aggregate_fair_value, aggregate_margin_of_safety
+from fundamental_analysis.scenarios import aggregate_fair_value, aggregate_margin_of_safety, build_reverse_dcf
 from fundamental_analysis.valuation import ValuationResult
 
 
@@ -19,7 +20,9 @@ class ScenarioTests(unittest.TestCase):
         labels = [scenario.label for scenario in result.scenarios]
         self.assertEqual(labels, ["Stress", "Pessimista", "Base", "Otimista"])
         self.assertEqual(len(result.report["scenario_table"]), 4)
+        self.assertIn("reverse_dcf", result.report)
         self.assertIn("Cenarios hipoteticos", result.report["markdown"])
+        self.assertIn("Reverse DCF", result.report["markdown"])
 
     def test_stress_scenario_is_more_conservative_than_optimistic(self):
         result = analyze_ticker_from_inputs(
@@ -46,6 +49,36 @@ class ScenarioTests(unittest.TestCase):
 
         self.assertAlmostEqual(aggregate_fair_value(valuations), 90.0)
         self.assertAlmostEqual(aggregate_margin_of_safety(valuations), 0.06)
+
+    def test_reverse_dcf_solves_growth_implied_by_current_price(self):
+        values = {
+            "fcff": metric_value("fcff", 100_000, "manual"),
+            "shares": metric_value("shares", 10_000, "manual"),
+            "total_debt": metric_value("total_debt", 0, "manual"),
+            "cash": metric_value("cash", 0, "manual"),
+            "price": metric_value("price", 128.0, "manual"),
+        }
+
+        result = build_reverse_dcf(values, {"wacc": 0.10, "growth_years": 0.04, "terminal_growth": 0.02}, 0.10)
+
+        self.assertIsNotNone(result.implied_growth_years)
+        self.assertEqual(result.status, "plausivel")
+        self.assertGreater(result.confidence, 0.0)
+
+    def test_reverse_dcf_explains_negative_fcff(self):
+        values = {
+            "fcff": metric_value("fcff", -100_000, "manual"),
+            "shares": metric_value("shares", 10_000, "manual"),
+            "total_debt": metric_value("total_debt", 0, "manual"),
+            "cash": metric_value("cash", 0, "manual"),
+            "price": metric_value("price", 20.0, "manual"),
+        }
+
+        result = build_reverse_dcf(values, {"wacc": 0.10, "growth_years": 0.04, "terminal_growth": 0.02}, 0.10)
+
+        self.assertIsNone(result.implied_growth_years)
+        self.assertEqual(result.status, "indisponivel")
+        self.assertIn("FCFF atual e negativo", result.interpretation)
 
 
 if __name__ == "__main__":
