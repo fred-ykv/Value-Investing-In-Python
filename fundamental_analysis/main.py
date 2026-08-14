@@ -13,8 +13,8 @@ from .metrics import MetricPack, build_metrics
 from .peer_discovery import discover_peer_candidates
 from .peer_enrichment import enrich_peer_candidates
 from .peer_selection import PeerSelectionReport, build_peer_selection_report, merge_peer_medians
-from .reports import comparable_table, executive_summary, key_indicator_table, metric_lineage_table, peer_selection_table, render_markdown_report, risk_diagnostics, scenario_table, score_table, valuation_table
-from .scenarios import ScenarioResult, build_scenarios
+from .reports import comparable_table, executive_summary, key_indicator_table, metric_lineage_table, peer_selection_table, render_markdown_report, reverse_dcf_table, risk_diagnostics, scenario_table, score_table, valuation_table
+from .scenarios import ReverseDCFResult, ScenarioResult, build_reverse_dcf, build_scenarios
 from .scoring import ScoreReport, compute_score
 from .sector_rules import classify_company
 from .valuation import DCFInput, ValuationResult, dcf_fcff, ddm_bank, eva_value, graham_value, growth_tech_value, residual_income_bank
@@ -26,6 +26,7 @@ class AnalysisResult:
     company_type: str
     valuations: list[ValuationResult]
     scenarios: list[ScenarioResult]
+    reverse_dcf: ReverseDCFResult
     peer_selection: PeerSelectionReport
     comparables: ComparableReport
     metrics: MetricPack
@@ -45,6 +46,7 @@ def analyze_ticker_from_inputs(ticker: str, income_statement: Mapping[str, float
     dcf_input = DCFInput(values["fcff"], values["shares"], metric_value("wacc", cost_of_capital, source), metric_value("growth_years", market_data.get("growth_years"), source), metric_value("terminal_growth", market_data.get("terminal_growth"), source), values["total_debt"], values["cash"], values["price"])
     valuations = build_valuations(company_type, values, metrics, market_data, source, dcf_input)
     scenarios = build_scenarios(company_type, values, metrics, market_data, source, build_valuations, cost_of_capital)
+    reverse_dcf = build_reverse_dcf(values, market_data, cost_of_capital)
     use_peer_yahoo = peer_yahoo_enrichment_enabled(market_data)
     peer_candidates = enrich_peer_candidates(
         discover_peer_candidates({**statements.info, **market_data}, metrics, market_data),
@@ -59,6 +61,7 @@ def analyze_ticker_from_inputs(ticker: str, income_statement: Mapping[str, float
         "executive_summary": executive_summary(ticker, score, valuations),
         "valuation_table": valuation_table(valuations),
         "scenario_table": scenario_table(scenarios),
+        "reverse_dcf": reverse_dcf_table(reverse_dcf),
         "peer_selection_table": peer_selection_table(peer_selection),
         "comparable_table": comparable_table(comparables),
         "key_indicator_table": key_indicator_table(metric_lineage),
@@ -66,10 +69,10 @@ def analyze_ticker_from_inputs(ticker: str, income_statement: Mapping[str, float
         "metric_lineage_table": metric_lineage_table(metric_lineage),
         "risk_diagnostics": risk_diagnostics(score, valuations, metric_lineage),
         "recommendation": score.recommendation,
-        "markdown": render_markdown_report(ticker, score, valuations, metric_lineage, scenarios, comparables, peer_selection),
-        "html": render_html_report(ticker, score, valuations, metric_lineage, scenarios, comparables, peer_selection),
+        "markdown": render_markdown_report(ticker, score, valuations, metric_lineage, scenarios, comparables, peer_selection, reverse_dcf),
+        "html": render_html_report(ticker, score, valuations, metric_lineage, scenarios, comparables, peer_selection, reverse_dcf),
     }
-    return AnalysisResult(ticker, company_type.value, valuations, scenarios, peer_selection, comparables, metrics, score, report)
+    return AnalysisResult(ticker, company_type.value, valuations, scenarios, reverse_dcf, peer_selection, comparables, metrics, score, report)
 
 
 def analyze_ticker_live(ticker: str) -> AnalysisResult:
