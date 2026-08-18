@@ -125,7 +125,12 @@ class PeerSelectionTests(unittest.TestCase):
         self.assertEqual([peer.ticker for peer in result.peer_selection.approved], ["GM", "STLA"])
         self.assertEqual(result.peer_selection.peer_medians["ev_to_ebitda"], 6.5)
         self.assertEqual(result.peer_selection.peer_median_counts["ev_to_ebitda"], 2)
-        self.assertIn("Selecao assistida de pares", result.report["markdown"])
+        self.assertIn("Selecao visual de pares", result.report["markdown"])
+        self.assertIn("Multiplos que entraram na mediana", result.report["markdown"])
+        self.assertIn("Pares usados", result.report["markdown"])
+        self.assertIn("Selecao de pares", result.report["html"])
+        self.assertIn("peer-badge approved", result.report["html"])
+        self.assertTrue(result.report["peer_median_detail_table"])
         self.assertTrue(result.report["comparable_table"])
         self.assertTrue(any(metric.source == "peer_medians" for metric in result.comparables.metrics))
 

@@ -14,6 +14,7 @@ from .html_reports import render_html_report
 from .metrics import MetricPack, build_metrics
 from .peer_discovery import discover_peer_candidates
 from .peer_enrichment import enrich_peer_candidates
+from .peer_reporting import append_peer_selection_to_html, append_peer_selection_to_markdown, peer_median_detail_table, peer_selection_visual_table
 from .peer_selection import PeerSelectionReport, build_peer_selection_report, merge_peer_medians
 from .reports import comparable_table, executive_summary, key_indicator_table, metric_lineage_table, peer_selection_table, render_markdown_report, risk_diagnostics, scenario_table, score_table, valuation_table
 from .reverse_dcf_reporting import append_reverse_dcf_to_html, append_reverse_dcf_to_markdown, reverse_dcf_table
@@ -60,11 +61,13 @@ def analyze_ticker_from_inputs(ticker: str, income_statement: Mapping[str, float
     comparables = build_comparable_report(company_type, values, metrics, comparable_market_data)
     score = compute_score(company_type, valuations, metrics, values["price"], comparables)
     metric_lineage = {**values, **metrics.values}
-    markdown = render_markdown_report(ticker, score, valuations, metric_lineage, scenarios, comparables, peer_selection)
+    markdown = render_markdown_report(ticker, score, valuations, metric_lineage, scenarios, comparables, None)
+    markdown = append_peer_selection_to_markdown(markdown, peer_selection)
     markdown = append_comparable_diagnostics_to_markdown(markdown, comparables)
     markdown = append_dcf_sensitivity_to_markdown(markdown, valuations)
     markdown = append_reverse_dcf_to_markdown(markdown, reverse_dcf)
-    html = render_html_report(ticker, score, valuations, metric_lineage, scenarios, comparables, peer_selection)
+    html = render_html_report(ticker, score, valuations, metric_lineage, scenarios, comparables, None)
+    html = append_peer_selection_to_html(html, peer_selection)
     html = append_comparable_diagnostics_to_html(html, comparables)
     html = append_dcf_sensitivity_to_html(html, valuations)
     html = append_reverse_dcf_to_html(html, reverse_dcf)
@@ -75,6 +78,8 @@ def analyze_ticker_from_inputs(ticker: str, income_statement: Mapping[str, float
         "scenario_table": scenario_table(scenarios),
         "reverse_dcf": reverse_dcf_table(reverse_dcf),
         "peer_selection_table": peer_selection_table(peer_selection),
+        "peer_selection_visual_table": peer_selection_visual_table(peer_selection),
+        "peer_median_detail_table": peer_median_detail_table(peer_selection),
         "comparable_table": comparable_table(comparables),
         "comparable_diagnostics": comparable_diagnostics_table(comparables),
         "key_indicator_table": key_indicator_table(metric_lineage),
