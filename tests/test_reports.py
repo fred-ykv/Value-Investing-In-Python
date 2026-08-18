@@ -17,7 +17,7 @@ class ReportTests(unittest.TestCase):
             "RPT",
             {"revenue": 1_000_000, "ebit": 200_000, "net_income": 120_000},
             {"total_assets": 1_500_000, "total_liabilities": 600_000, "equity": 900_000, "cash": 100_000, "total_debt": 250_000, "current_assets": 500_000, "current_liabilities": 250_000},
-            {"cfo": 150_000, "capex": -40_000},
+            {"cfo": 150_000, "capex": -40_000, "depreciation_amortization": 20_000},
             {"shares": 10_000, "price": 60, "wacc": 0.10, "growth_years": 0.04, "terminal_growth": 0.02, "dividend_per_share": 0.60, "revenue_cagr_5y": 0.1175, "earnings_cagr_5y": 0.4055},
             {"sector": "Industrials"},
         )
@@ -33,6 +33,8 @@ class ReportTests(unittest.TestCase):
         self.assertIn("Escala do score", markdown)
         self.assertIn("Valuation por metodo", markdown)
         self.assertIn("Fluxo de Caixa Descontado (DCF/FCFF)", markdown)
+        self.assertIn("Matriz de sensibilidade DCF", markdown)
+        self.assertIn("WACC \\ g terminal", markdown)
         self.assertIn("Reverse DCF", markdown)
         self.assertIn("Crescimento implicito", markdown)
         self.assertIn("taxa de desconto", markdown)
@@ -81,6 +83,8 @@ class ReportTests(unittest.TestCase):
         self.assertIn("Score por dimensao", html)
         self.assertIn("Valuation por metodo", html)
         self.assertIn("Fluxo de Caixa Descontado (DCF/FCFF)", html)
+        self.assertIn("Matriz de sensibilidade DCF", html)
+        self.assertIn("WACC \\ g terminal", html)
         self.assertIn("Cenarios", html)
         self.assertIn("Reverse DCF", html)
         self.assertIn("Crescimento implicito", html)

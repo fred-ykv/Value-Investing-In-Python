@@ -7,6 +7,7 @@ from typing import Mapping
 from .comparables import ComparableReport, build_comparable_report
 from .config import CompanyType, MARKET, PEER_ENRICHMENT
 from .data_sources import MetricValue, YahooFinanceClient, metric_value
+from .dcf_sensitivity_reporting import append_dcf_sensitivity_to_html, append_dcf_sensitivity_to_markdown, dcf_sensitivity_table
 from .financial_statements import FinancialStatements, build_statement_metrics, update_market_from_info
 from .html_reports import render_html_report
 from .metrics import MetricPack, build_metrics
@@ -58,11 +59,16 @@ def analyze_ticker_from_inputs(ticker: str, income_statement: Mapping[str, float
     comparables = build_comparable_report(company_type, values, metrics, comparable_market_data)
     score = compute_score(company_type, valuations, metrics, values["price"], comparables)
     metric_lineage = {**values, **metrics.values}
-    markdown = append_reverse_dcf_to_markdown(render_markdown_report(ticker, score, valuations, metric_lineage, scenarios, comparables, peer_selection), reverse_dcf)
-    html = append_reverse_dcf_to_html(render_html_report(ticker, score, valuations, metric_lineage, scenarios, comparables, peer_selection), reverse_dcf)
+    markdown = render_markdown_report(ticker, score, valuations, metric_lineage, scenarios, comparables, peer_selection)
+    markdown = append_dcf_sensitivity_to_markdown(markdown, valuations)
+    markdown = append_reverse_dcf_to_markdown(markdown, reverse_dcf)
+    html = render_html_report(ticker, score, valuations, metric_lineage, scenarios, comparables, peer_selection)
+    html = append_dcf_sensitivity_to_html(html, valuations)
+    html = append_reverse_dcf_to_html(html, reverse_dcf)
     report = {
         "executive_summary": executive_summary(ticker, score, valuations),
         "valuation_table": valuation_table(valuations),
+        "dcf_sensitivity_table": dcf_sensitivity_table(valuations),
         "scenario_table": scenario_table(scenarios),
         "reverse_dcf": reverse_dcf_table(reverse_dcf),
         "peer_selection_table": peer_selection_table(peer_selection),
