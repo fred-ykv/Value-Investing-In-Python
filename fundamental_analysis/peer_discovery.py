@@ -61,18 +61,6 @@ def weighted_available_score(pieces: Sequence[tuple[float, float]], evidence_wei
     return sum(value * weight for value, weight in pieces) / evidence_weight
 
 
-def peer_discovery_total_weight() -> float:
-    return (
-        PEER_DISCOVERY.sector_weight
-        + PEER_DISCOVERY.industry_weight
-        + PEER_DISCOVERY.sic_weight
-        + PEER_DISCOVERY.business_model_weight
-        + PEER_DISCOVERY.size_weight
-        + PEER_DISCOVERY.growth_weight
-        + PEER_DISCOVERY.margin_weight
-    )
-
-
 def categorical_score(name: str, target: Mapping[str, object], candidate: Mapping[str, object], weight: float, reasons: list[str]) -> tuple[float, float]:
     left, right = target.get(name), candidate.get(name)
     if not left or not right:
