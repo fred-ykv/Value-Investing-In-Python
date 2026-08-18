@@ -18,7 +18,12 @@ FIELD_ALIASES: dict[str, tuple[str, ...]] = {
     "price_to_book": ("price_to_book", "priceToBook"),
     "ev_to_sales": ("ev_to_sales", "enterpriseToRevenue"),
     "ev_to_ebitda": ("ev_to_ebitda", "enterpriseToEbitda"),
+    "ev_to_ebit": ("ev_to_ebit",),
     "price_to_sales": ("price_to_sales", "priceToSalesTrailing12Months"),
+    "enterprise_value": ("enterprise_value", "enterpriseValue"),
+    "total_revenue": ("total_revenue", "totalRevenue"),
+    "ebitda": ("ebitda",),
+    "net_income": ("net_income", "netIncomeToCommon"),
     "revenue_growth": ("revenue_growth", "revenueGrowth"),
     "operating_margin": ("operating_margin", "operatingMargins"),
     "gross_margin": ("gross_margin", "grossMargins"),
@@ -47,6 +52,7 @@ def enrich_peer_candidates(
             payload, source, ok, error = unpack_fetch_result(fetched)
             if ok and payload:
                 fill_candidate_fields(candidate, payload, source, sources)
+                derive_candidate_multiples(candidate, source, sources)
             elif error:
                 warnings.append(f"{source} failed: {error}")
 
@@ -80,6 +86,38 @@ def fill_candidate_fields(candidate: dict[str, object], payload: Mapping[str, ob
         if has_usable_value(normalized):
             candidate[field_name] = normalized
             sources[field_name] = source
+
+
+def derive_candidate_multiples(candidate: dict[str, object], source: str, sources: dict[str, str]) -> None:
+    derived_source = f"{source}_derived" if source else "derived"
+    market_cap = safe_float(candidate.get("market_cap"))
+    enterprise_value = safe_float(candidate.get("enterprise_value"))
+    total_revenue = safe_float(candidate.get("total_revenue"))
+    ebitda = safe_float(candidate.get("ebitda"))
+    net_income = safe_float(candidate.get("net_income"))
+    operating_margin = safe_float(candidate.get("operating_margin"))
+    ebit = None if total_revenue is None or operating_margin is None else total_revenue * operating_margin
+    derived_values = {
+        "price_to_sales": safe_positive_ratio(market_cap, total_revenue),
+        "ev_to_sales": safe_positive_ratio(enterprise_value, total_revenue),
+        "ev_to_ebitda": safe_positive_ratio(enterprise_value, ebitda),
+        "ev_to_ebit": safe_positive_ratio(enterprise_value, ebit),
+        "price_to_earnings": safe_positive_ratio(market_cap, net_income),
+    }
+    for field_name, value in derived_values.items():
+        if has_usable_value(candidate.get(field_name)) or not has_usable_value(value):
+            continue
+        candidate[field_name] = value
+        sources[field_name] = derived_source
+
+
+def safe_positive_ratio(numerator: object, denominator: object) -> float | None:
+    left = safe_float(numerator)
+    right = safe_float(denominator)
+    if left is None or right is None or right <= 0:
+        return None
+    value = left / right
+    return value if value > 0 else None
 
 
 def normalize_field_value(field_name: str, value: object) -> object:

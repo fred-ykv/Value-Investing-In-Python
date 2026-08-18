@@ -324,6 +324,7 @@ DAMODARAN_SECTOR_BENCHMARKS = {
 
 DATA_SOURCE_CONFIDENCE = {
     "yfinance": 0.80,
+    "yfinance_derived": 0.75,
     "finviz": 0.65,
     "zacks": 0.45,
     "fundamentus": 0.55,
