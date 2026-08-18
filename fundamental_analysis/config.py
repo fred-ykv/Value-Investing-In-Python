@@ -162,7 +162,7 @@ class PeerSelectionAssumptions:
     growth_weight: float = 0.08
     margin_weight: float = 0.08
     leverage_weight: float = 0.04
-    min_evidence_weight: float = 0.60
+    min_evidence_weight: float = 0.50
 
 
 @dataclass(frozen=True)
