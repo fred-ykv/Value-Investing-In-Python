@@ -54,6 +54,8 @@ def safe_float(value: Any, default: Optional[float] = None) -> Optional[float]:
     try:
         if value is None:
             return default
+        if isinstance(value, MetricValue):
+            return safe_float(value.value, default)
         if isinstance(value, str):
             text = value.strip().replace(",", "").replace("$", "")
             if text in {"", "-", "nan", "None"}:

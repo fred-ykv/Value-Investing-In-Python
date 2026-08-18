@@ -6,7 +6,9 @@ from fundamental_analysis.data_sources import (
     _latest_statement_metric,
     get_mapping_value,
     parse_finviz_snapshot,
+    safe_float,
 )
+from fundamental_analysis.main import analyze_ticker_from_inputs
 
 
 class FakeRow:
@@ -58,6 +60,37 @@ class DataLineageTests(unittest.TestCase):
         self.assertEqual(result.source_url, "https://finance.yahoo.com/quote/ABC")
         self.assertEqual(result.currency, "USD")
         self.assertEqual(result.scale, "raw")
+
+    def test_safe_float_accepts_metric_value(self):
+        original = MetricValue("beta", 1.2, "yfinance", 0.85)
+
+        self.assertEqual(safe_float(original), 1.2)
+
+    def test_analysis_accepts_yfinance_metric_value_market_inputs(self):
+        result = analyze_ticker_from_inputs(
+            "MLI",
+            {"revenue": 4_000_000_000, "ebit": 700_000_000, "net_income": 500_000_000},
+            {
+                "total_assets": 5_000_000_000,
+                "total_liabilities": 2_000_000_000,
+                "equity": 3_000_000_000,
+                "cash": 500_000_000,
+                "total_debt": 800_000_000,
+                "current_assets": 1_700_000_000,
+                "current_liabilities": 900_000_000,
+            },
+            {"cfo": 650_000_000, "capex": -150_000_000, "depreciation_amortization": 100_000_000},
+            {
+                "shares": MetricValue("shares", 100_000_000, "yfinance", 0.85),
+                "price": MetricValue("price", 45, "yfinance", 0.85),
+                "beta": MetricValue("beta", 1.2, "yfinance", 0.85),
+            },
+            {"sector": "Industrials"},
+            source="yfinance",
+        )
+
+        self.assertEqual(result.ticker, "MLI")
+        self.assertTrue(result.report["html"])
 
     def test_finviz_snapshot_adds_source_context(self):
         as_of = datetime(2026, 1, 2, 3, 4, 5)
