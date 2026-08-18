@@ -7,7 +7,7 @@ from typing import Mapping
 from .comparable_reporting import append_comparable_diagnostics_to_html, append_comparable_diagnostics_to_markdown, comparable_diagnostics_table
 from .comparables import ComparableReport, build_comparable_report
 from .config import CompanyType, MARKET, PEER_ENRICHMENT
-from .data_sources import MetricValue, YahooFinanceClient, metric_value
+from .data_sources import MetricValue, YahooFinanceClient, metric_value, safe_float
 from .dcf_sensitivity_reporting import append_dcf_sensitivity_to_html, append_dcf_sensitivity_to_markdown, dcf_sensitivity_table
 from .financial_statements import FinancialStatements, build_statement_metrics, update_market_from_info
 from .html_reports import render_html_report
@@ -131,5 +131,7 @@ def build_valuations(company_type: CompanyType, values: Mapping[str, MetricValue
 
 
 def infer_cost_of_equity(values: Mapping[str, MetricValue], market_data: Mapping[str, float]) -> float:
-    beta = market_data.get("beta") if market_data.get("beta") is not None else values.get("beta", MetricValue("beta", None, "missing", 0.0)).value
-    return MARKET.risk_free_rate + float(beta if beta is not None else MARKET.default_beta) * MARKET.equity_risk_premium
+    beta = safe_float(market_data.get("beta"))
+    if beta is None:
+        beta = safe_float(values.get("beta", MetricValue("beta", None, "missing", 0.0)))
+    return MARKET.risk_free_rate + (beta if beta is not None else MARKET.default_beta) * MARKET.equity_risk_premium
