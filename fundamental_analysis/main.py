@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Mapping
 
+from .comparable_reporting import append_comparable_diagnostics_to_html, append_comparable_diagnostics_to_markdown, comparable_diagnostics_table
 from .comparables import ComparableReport, build_comparable_report
 from .config import CompanyType, MARKET, PEER_ENRICHMENT
 from .data_sources import MetricValue, YahooFinanceClient, metric_value
@@ -60,9 +61,11 @@ def analyze_ticker_from_inputs(ticker: str, income_statement: Mapping[str, float
     score = compute_score(company_type, valuations, metrics, values["price"], comparables)
     metric_lineage = {**values, **metrics.values}
     markdown = render_markdown_report(ticker, score, valuations, metric_lineage, scenarios, comparables, peer_selection)
+    markdown = append_comparable_diagnostics_to_markdown(markdown, comparables)
     markdown = append_dcf_sensitivity_to_markdown(markdown, valuations)
     markdown = append_reverse_dcf_to_markdown(markdown, reverse_dcf)
     html = render_html_report(ticker, score, valuations, metric_lineage, scenarios, comparables, peer_selection)
+    html = append_comparable_diagnostics_to_html(html, comparables)
     html = append_dcf_sensitivity_to_html(html, valuations)
     html = append_reverse_dcf_to_html(html, reverse_dcf)
     report = {
@@ -73,6 +76,7 @@ def analyze_ticker_from_inputs(ticker: str, income_statement: Mapping[str, float
         "reverse_dcf": reverse_dcf_table(reverse_dcf),
         "peer_selection_table": peer_selection_table(peer_selection),
         "comparable_table": comparable_table(comparables),
+        "comparable_diagnostics": comparable_diagnostics_table(comparables),
         "key_indicator_table": key_indicator_table(metric_lineage),
         "score_table": score_table(score),
         "metric_lineage_table": metric_lineage_table(metric_lineage),

@@ -85,7 +85,9 @@ class ComparableTests(unittest.TestCase):
         report = build_comparable_report(CompanyType.TRADITIONAL, {}, {}, {})
 
         self.assertEqual(report.confidence, 0.0)
+        self.assertEqual(report.basis, "unavailable")
         self.assertIn("Sem medianas", report.summary)
+        self.assertTrue(report.diagnostics)
 
     def test_missing_peer_medians_fall_back_to_sector_benchmark(self):
         result = analyze_ticker_from_inputs(
@@ -100,7 +102,14 @@ class ComparableTests(unittest.TestCase):
         table = result.report["comparable_table"]
         self.assertTrue(table)
         self.assertIn("damodaran_sector_benchmark", {row["source"] for row in table})
+        self.assertEqual(result.comparables.basis, "sector_benchmark")
+        self.assertEqual(result.comparables.benchmark_key, "metal_fabrication")
         self.assertIn("benchmark setorial Damodaran", result.comparables.summary)
+        self.assertIn("metal_fabrication", result.comparables.summary)
+        self.assertIn("Nao trate esta leitura", " ".join(result.comparables.diagnostics))
+        self.assertEqual(result.report["comparable_diagnostics"]["basis"], "sector_benchmark")
+        self.assertIn("Base dos comparaveis", result.report["markdown"])
+        self.assertIn("Leitura dos comparaveis", result.report["html"])
         self.assertGreater(result.comparables.confidence, 0.0)
 
 

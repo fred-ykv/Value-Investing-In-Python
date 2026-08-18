@@ -1,7 +1,7 @@
 """Market comparable multiples and relative valuation diagnostics."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from statistics import median
 from typing import Mapping
 
@@ -28,6 +28,9 @@ class ComparableReport:
     overall_score: float
     confidence: float
     summary: str
+    basis: str = "unavailable"
+    benchmark_key: str | None = None
+    diagnostics: list[str] = field(default_factory=list)
 
 
 PEER_ALIASES = {
@@ -43,6 +46,7 @@ PEER_ALIASES = {
 def build_comparable_report(company_type: CompanyType, values: Mapping[str, MetricValue], metrics: MetricPack, market_data: Mapping[str, object]) -> ComparableReport:
     company_multiples = company_multiple_values(values, metrics)
     peer_medians = peer_multiple_values(market_data)
+    benchmark_key = damodaran_benchmark_key(market_data)
     selected = selected_multiples(company_type)
     rows = [
         compare_multiple(name, company_multiples.get(name), peer_medians.get(name), peer_count(name, market_data), peer_source(name, market_data))
@@ -55,7 +59,9 @@ def build_comparable_report(company_type: CompanyType, values: Mapping[str, Metr
     confidence = breadth_confidence * sample_confidence
     overall = sum(row.score for row in usable) / len(usable) if usable else 0.0
     uses_benchmark = any(row.source == "damodaran_sector_benchmark" for row in usable)
-    return ComparableReport(rows, overall, confidence, comparable_summary(overall, confidence, len(usable), sample_confidence, uses_benchmark))
+    basis = comparable_basis(usable, uses_benchmark)
+    diagnostics = comparable_diagnostics(rows, usable, basis, sample_confidence, benchmark_key)
+    return ComparableReport(rows, overall, confidence, comparable_summary(overall, confidence, len(usable), sample_confidence, uses_benchmark, benchmark_key), basis, benchmark_key if uses_benchmark else None, diagnostics)
 
 
 def company_multiple_values(values: Mapping[str, MetricValue], metrics: MetricPack) -> dict[str, float | None]:
@@ -119,11 +125,12 @@ def score_premium_discount(premium: float | None) -> float:
     return 1.0 - ((premium - low) / (high - low))
 
 
-def comparable_summary(score: float, confidence: float, usable_count: int, sample_confidence: float = 1.0, uses_benchmark: bool = False) -> str:
+def comparable_summary(score: float, confidence: float, usable_count: int, sample_confidence: float = 1.0, uses_benchmark: bool = False, benchmark_key: str | None = None) -> str:
     if usable_count == 0 or confidence == 0:
         return "Sem medianas de pares suficientes para leitura relativa."
     if uses_benchmark:
-        return "Leitura relativa baseada em benchmark setorial Damodaran; use como referencia de segunda linha, nao como cesta de pares aprovada."
+        category = f" ({benchmark_key})" if benchmark_key else ""
+        return f"Leitura relativa baseada em benchmark setorial Damodaran{category}; use como referencia de segunda linha, nao como cesta de pares aprovada."
     if sample_confidence < 1.0:
         return "Leitura relativa disponivel, mas rebaixada por amostra limitada de pares."
     if score >= 0.65:
@@ -131,6 +138,29 @@ def comparable_summary(score: float, confidence: float, usable_count: int, sampl
     if score <= 0.35:
         return "Multiplos relativos sugerem premio contra pares."
     return "Multiplos relativos parecem proximos dos pares."
+
+
+def comparable_basis(usable: list[ComparableMetric], uses_benchmark: bool) -> str:
+    if not usable:
+        return "unavailable"
+    if uses_benchmark:
+        return "sector_benchmark"
+    return "approved_peer_medians"
+
+
+def comparable_diagnostics(rows: list[ComparableMetric], usable: list[ComparableMetric], basis: str, sample_confidence: float, benchmark_key: str | None) -> list[str]:
+    diagnostics: list[str] = []
+    if basis == "unavailable":
+        diagnostics.append("Nenhum multiplo relativo teve simultaneamente valor da empresa e mediana de pares/benchmark.")
+    if basis == "sector_benchmark":
+        diagnostics.append(f"Usando benchmark setorial de segunda linha: {benchmark_key or 'categoria nao identificada'}.")
+        diagnostics.append("Nao trate esta leitura como cesta de pares empresa-a-empresa.")
+    if sample_confidence < 1.0 and usable:
+        diagnostics.append("Amostra de pares abaixo do minimo recomendado para pelo menos um multiplo.")
+    missing = [row.name for row in rows if row.premium_discount is None]
+    if missing:
+        diagnostics.append("Multiplos sem comparacao conclusiva: " + ", ".join(missing) + ".")
+    return diagnostics
 
 
 def interpretation_for(premium: float | None, peer_count: int = 0) -> str:
