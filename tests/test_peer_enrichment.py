@@ -37,6 +37,27 @@ class PeerEnrichmentTests(unittest.TestCase):
         self.assertEqual(enriched[0]["price_to_earnings"], 7.0)
         self.assertEqual(enriched[0]["_peer_metric_sources"]["price_to_earnings"], "manual")
 
+    def test_derives_peer_multiples_from_yahoo_components(self):
+        enriched = enrich_peer_candidates(
+            [{"ticker": "ATI", "sector": "Industrials", "industry": "Metal Fabrication", "business_model": "metal_fabrication"}],
+            fetch_info=lambda ticker: {
+                "marketCap": 10_000,
+                "enterpriseValue": 12_000,
+                "totalRevenue": 4_000,
+                "ebitda": 1_000,
+                "operatingMargins": 0.20,
+                "netIncomeToCommon": 500,
+            },
+        )
+
+        peer = enriched[0]
+        self.assertEqual(peer["price_to_sales"], 2.5)
+        self.assertEqual(peer["ev_to_sales"], 3.0)
+        self.assertEqual(peer["ev_to_ebitda"], 12.0)
+        self.assertEqual(peer["ev_to_ebit"], 15.0)
+        self.assertEqual(peer["price_to_earnings"], 20.0)
+        self.assertEqual(peer["_peer_metric_sources"]["ev_to_ebit"], "yfinance_derived")
+
     def test_relative_median_requires_two_peers_with_usable_multiple_confidence(self):
         report = build_peer_selection_report(
             {
