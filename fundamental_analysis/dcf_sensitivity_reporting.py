@@ -76,12 +76,11 @@ def dcf_sensitivity_summary(valuations: Iterable[ValuationResult]) -> str:
     if dcf is None:
         return "Sem DCF conclusivo para montar a matriz de sensibilidade."
     matrix = dcf.diagnostics.get("sensitivity")
-    values = [
-        float(value)
-        for row in matrix.values()
-        for value in row.values()
-        if isinstance(matrix, dict) and isinstance(row, dict) and value is not None
-    ] if isinstance(matrix, dict) else []
+    values = []
+    if isinstance(matrix, dict):
+        for row in matrix.values():
+            if isinstance(row, dict):
+                values.extend(float(value) for value in row.values() if value is not None)
     if not values:
         return "A matriz existe, mas nao ha valores suficientes para leitura."
     low, high = min(values), max(values)
