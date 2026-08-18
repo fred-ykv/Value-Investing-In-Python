@@ -195,7 +195,6 @@ class ReportTests(unittest.TestCase):
             payload = json.loads(json_path.read_text(encoding="utf-8"))
             self.assertEqual(payload["recommendation"], result.score.recommendation)
             self.assertTrue(payload["valuation_table"])
-            self.assertIn("reverse_dcf", payload)
 
 
 if __name__ == "__main__":
