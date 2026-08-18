@@ -156,6 +156,35 @@ class PeerSelectionTests(unittest.TestCase):
         self.assertEqual(report.peer_medians, {})
         self.assertIn("abaixo do minimo", report.summary)
 
+    def test_qualitative_equivalence_can_approve_peer_without_full_numeric_profile(self):
+        report = build_peer_selection_report(
+            {
+                "sector": "Industrials",
+                "industry": "Metal Fabrication",
+                "business_model": "metal_fabrication",
+            },
+            MetricPack({}),
+            [
+                {
+                    "ticker": "ATI",
+                    "sector": "Industrials",
+                    "industry": "Metal Fabrication",
+                    "business_model": "metal_fabrication",
+                    "price_to_earnings": 14.0,
+                },
+                {
+                    "ticker": "CRS",
+                    "sector": "Industrials",
+                    "industry": "Metal Fabrication",
+                    "business_model": "metal_fabrication",
+                    "price_to_earnings": 16.0,
+                },
+            ],
+        )
+
+        self.assertEqual([peer.ticker for peer in report.approved], ["ATI", "CRS"])
+        self.assertEqual(report.peer_medians["price_to_earnings"], 15.0)
+
     def test_sparse_peer_is_rejected_for_low_evidence(self):
         report = build_peer_selection_report(
             {

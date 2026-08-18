@@ -93,8 +93,7 @@ def score_candidate(target: Mapping[str, object], candidate: Mapping[str, object
         numeric_piece("debt_to_equity", target, candidate_profile, PEER_SELECTION.leverage_weight, 2.0, reasons),
     ]
     evidence_weight = sum(weight for _, weight in pieces)
-    total_weight = peer_selection_total_weight()
-    score = sum(value * weight for value, weight in pieces) / total_weight if total_weight else 0.0
+    score = weighted_available_score(pieces, evidence_weight)
     status = peer_status(score, vetoes, evidence_weight)
     data_confidence = safe_float(candidate.get("peer_data_confidence"))
     return PeerCandidateResult(
@@ -157,17 +156,10 @@ def peer_status(score: float, vetoes: list[str], evidence_weight: float) -> str:
     return "rejected_low_similarity"
 
 
-def peer_selection_total_weight() -> float:
-    return (
-        PEER_SELECTION.sector_weight
-        + PEER_SELECTION.industry_weight
-        + PEER_SELECTION.sic_weight
-        + PEER_SELECTION.business_model_weight
-        + PEER_SELECTION.size_weight
-        + PEER_SELECTION.growth_weight
-        + PEER_SELECTION.margin_weight
-        + PEER_SELECTION.leverage_weight
-    )
+def weighted_available_score(pieces: Sequence[tuple[float, float]], evidence_weight: float) -> float:
+    if evidence_weight <= 0:
+        return 0.0
+    return sum(value * weight for value, weight in pieces) / evidence_weight
 
 
 def median_multiples(approved: Sequence[PeerCandidateResult]) -> dict[str, float]:

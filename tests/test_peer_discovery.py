@@ -69,6 +69,30 @@ class PeerDiscoveryTests(unittest.TestCase):
 
         self.assertEqual(candidates, [])
 
+    def test_discovers_qualitative_match_without_full_numeric_profile(self):
+        candidates = discover_peer_candidates(
+            {
+                "ticker": "MLI",
+                "sector": "Industrials",
+                "industry": "Metal Fabrication",
+                "business_model": "metal_fabrication",
+            },
+            MetricPack({}),
+            {
+                "peer_universe": [
+                    {
+                        "ticker": "ATI",
+                        "sector": "Industrials",
+                        "industry": "Metal Fabrication",
+                        "business_model": "metal_fabrication",
+                    }
+                ]
+            },
+        )
+
+        self.assertEqual([candidate["ticker"] for candidate in candidates], ["ATI"])
+        self.assertGreaterEqual(candidates[0]["discovery_score"], 0.80)
+
     def test_analysis_uses_discovered_universe_when_no_manual_candidates(self):
         result = analyze_ticker_from_inputs(
             "F",
