@@ -162,19 +162,6 @@ def weighted_available_score(pieces: Sequence[tuple[float, float]], evidence_wei
     return sum(value * weight for value, weight in pieces) / evidence_weight
 
 
-def peer_selection_total_weight() -> float:
-    return (
-        PEER_SELECTION.sector_weight
-        + PEER_SELECTION.industry_weight
-        + PEER_SELECTION.sic_weight
-        + PEER_SELECTION.business_model_weight
-        + PEER_SELECTION.size_weight
-        + PEER_SELECTION.growth_weight
-        + PEER_SELECTION.margin_weight
-        + PEER_SELECTION.leverage_weight
-    )
-
-
 def median_multiples(approved: Sequence[PeerCandidateResult]) -> dict[str, float]:
     medians = {}
     for field_name in MULTIPLE_FIELDS:
