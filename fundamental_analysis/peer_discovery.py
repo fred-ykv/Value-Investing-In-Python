@@ -51,9 +51,14 @@ def discovery_score(target: Mapping[str, object], candidate: Mapping[str, object
         numeric_similarity("operating_margin", target, candidate_profile, PEER_DISCOVERY.margin_weight, 0.20, reasons),
     ]
     evidence_weight = sum(weight for _, weight in pieces)
-    total_weight = peer_discovery_total_weight()
-    score = sum(value * weight for value, weight in pieces) / total_weight if total_weight else 0.0
+    score = weighted_available_score(pieces, evidence_weight)
     return score, evidence_weight, reasons
+
+
+def weighted_available_score(pieces: Sequence[tuple[float, float]], evidence_weight: float) -> float:
+    if evidence_weight <= 0:
+        return 0.0
+    return sum(value * weight for value, weight in pieces) / evidence_weight
 
 
 def peer_discovery_total_weight() -> float:
