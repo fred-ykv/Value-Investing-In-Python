@@ -5,6 +5,7 @@ from html import escape
 import re
 
 from .data_sources import MetricValue
+from .executive_reporting import apply_executive_layer_to_html, apply_executive_layer_to_markdown
 from .scoring import ScoreReport
 from .valuation import ValuationResult
 
@@ -78,6 +79,7 @@ DIMENSION_EXPLANATIONS = {
 
 def apply_didactic_layer_to_markdown(markdown: str, score: ScoreReport, metrics: dict[str, MetricValue], valuations: list[ValuationResult]) -> str:
     translated = humanize_report_text(markdown)
+    translated = apply_executive_layer_to_markdown(translated, score, valuations)
     block = _didactic_markdown(score, metrics, valuations)
     marker = "\n## Tese da recomendacao"
     if marker in translated:
@@ -89,6 +91,7 @@ def apply_didactic_layer_to_markdown(markdown: str, score: ScoreReport, metrics:
 
 def apply_didactic_layer_to_html(html: str, score: ScoreReport, metrics: dict[str, MetricValue], valuations: list[ValuationResult]) -> str:
     translated = humanize_report_text(html)
+    translated = apply_executive_layer_to_html(translated, score, valuations)
     block = _didactic_html(score, metrics, valuations)
     marker = "</header>"
     if marker in translated:

@@ -4,6 +4,7 @@ from tempfile import TemporaryDirectory
 import unittest
 
 from fundamental_analysis.data_sources import MetricValue
+from fundamental_analysis.executive_reporting import apply_executive_layer_to_html, apply_executive_layer_to_markdown
 from fundamental_analysis.main import analyze_ticker_from_inputs
 from fundamental_analysis.html_reports import render_html_report
 from fundamental_analysis.reports import render_markdown_report, save_report_artifacts
@@ -24,6 +25,9 @@ class ReportTests(unittest.TestCase):
         markdown = result.report["markdown"]
         self.assertIn("Resumo executivo", markdown)
         self.assertIn("Tese da recomendacao", markdown)
+        self.assertIn("Conclusao executiva", markdown)
+        self.assertIn("O que ajudou", markdown)
+        self.assertIn("O que pesou contra", markdown)
         self.assertIn("Ponte para decisao", markdown)
         self.assertIn("Preco atual da acao", markdown)
         self.assertIn("Indicadores principais", markdown)
@@ -48,6 +52,9 @@ class ReportTests(unittest.TestCase):
         self.assertIn("source", result.report["metric_lineage_table"][0])
         self.assertIn("confidence", result.report["metric_lineage_table"][0])
         self.assertIn("Recomendacao final", markdown)
+        self.assertTrue(result.report["executive_decision"])
+        self.assertIn("supports", result.report["executive_decision"])
+        self.assertIn("pressures", result.report["executive_decision"])
 
     def test_html_report_contains_visual_decision_sections(self):
         result = analyze_ticker_from_inputs(
@@ -74,6 +81,11 @@ class ReportTests(unittest.TestCase):
         self.assertIn("Recomendacao", html)
         self.assertIn("Score total", html)
         self.assertIn("Preco atual", html)
+        self.assertIn("Conclusao executiva", html)
+        self.assertIn("executive-decision", html)
+        self.assertIn("executive-card", html)
+        self.assertIn("O que ajudou", html)
+        self.assertIn("O que pesou contra", html)
         self.assertIn("Ponte para decisao", html)
         self.assertIn("Indicadores principais", html)
         self.assertIn("indicator-table", html)
@@ -143,13 +155,18 @@ class ReportTests(unittest.TestCase):
         valuations = [ValuationResult("dcf_fcff", 80.0, 0.80, margin_of_safety=-0.20)]
 
         markdown = render_markdown_report("GATE", score, valuations)
+        executive_markdown = apply_executive_layer_to_markdown(markdown, score, valuations)
 
         self.assertIn("nao subiu para Comprar", markdown)
         self.assertIn("abaixo do minimo exigido", markdown)
+        self.assertIn("Trava/condicao decisiva", executive_markdown)
         self.assertIn("Para virar Comprar", markdown)
 
         html = render_html_report("GATE", score, valuations)
+        executive_html = apply_executive_layer_to_html(html, score, valuations)
         self.assertIn("nao subiu para Comprar", html)
+        self.assertIn("Trava/condicao", executive_html)
+        self.assertIn("executive-card negative", executive_html)
         self.assertIn("Para virar Comprar", html)
 
     def test_growth_report_explains_short_cash_runway(self):
