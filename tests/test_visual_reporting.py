@@ -1,6 +1,9 @@
 import unittest
 
+from fundamental_analysis.html_reports import render_html_report
 from fundamental_analysis.main import analyze_ticker_from_inputs
+from fundamental_analysis.scoring import DimensionScore, ScoreReport
+from fundamental_analysis.valuation import ValuationResult
 from fundamental_analysis.visual_reporting import apply_visual_polish_to_html
 
 
@@ -36,6 +39,27 @@ class VisualReportingTests(unittest.TestCase):
         self.assertTrue(result.report["valuation_table"])
         self.assertTrue(result.report["score_table"])
         self.assertTrue(result.report["key_indicator_table"])
+
+    def test_visual_polish_adds_margin_signals_to_valuation_table(self):
+        score = ScoreReport(
+            0.65,
+            "Observar",
+            {"valuation": DimensionScore("valuation", 0.50, 0.30, "Valuation")},
+        )
+        valuations = [
+            ValuationResult("dcf_fcff", 130.0, 0.80, margin_of_safety=0.30),
+            ValuationResult("graham", 104.0, 0.70, margin_of_safety=0.04),
+            ValuationResult("eva", 80.0, 0.60, margin_of_safety=-0.20),
+        ]
+
+        html = apply_visual_polish_to_html(render_html_report("VAL", score, valuations), "Observar")
+
+        self.assertIn("Margem positiva", html)
+        self.assertIn("Margem estreita", html)
+        self.assertIn("Margem negativa", html)
+        self.assertIn('margin-pill positive', html)
+        self.assertIn('margin-pill neutral', html)
+        self.assertIn('margin-pill negative', html)
 
 
 if __name__ == "__main__":
