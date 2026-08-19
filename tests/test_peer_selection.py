@@ -161,6 +161,39 @@ class PeerSelectionTests(unittest.TestCase):
         self.assertEqual(report.peer_medians, {})
         self.assertIn("abaixo do minimo", report.summary)
 
+    def test_weak_reference_can_complete_exploratory_median(self):
+        report = build_peer_selection_report(
+            {
+                "sector": "Industrials",
+                "industry": "Metal Fabrication",
+                "business_model": "metal_fabrication",
+            },
+            MetricPack({}),
+            [
+                {
+                    "ticker": "MLI",
+                    "sector": "Industrials",
+                    "industry": "Metal Fabrication",
+                    "business_model": "metal_fabrication",
+                    "price_to_earnings": 16.0,
+                },
+                {
+                    "ticker": "ATI",
+                    "sector": "Industrials",
+                    "industry": "Metal Fabrication",
+                    "business_model": "specialty_metals",
+                    "price_to_earnings": 20.0,
+                },
+            ],
+        )
+
+        self.assertEqual([peer.ticker for peer in report.approved], ["MLI"])
+        self.assertEqual(report.rejected[0].status, "weak_reference")
+        self.assertEqual(report.peer_medians["price_to_earnings"], 18.0)
+        self.assertEqual(report.peer_median_counts["price_to_earnings"], 2)
+        self.assertIn("mediana exploratoria", report.summary)
+        self.assertLess(report.confidence, 1.0)
+
     def test_qualitative_equivalence_can_approve_peer_without_full_numeric_profile(self):
         report = build_peer_selection_report(
             {
