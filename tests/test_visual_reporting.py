@@ -125,6 +125,50 @@ class VisualReportingTests(unittest.TestCase):
         self.assertIn("Forca da amostra", comparable_section)
         self.assertRegex(comparable_section, r"desconto relevante|proxima da faixa dos pares|premio contra os pares")
 
+    def test_visual_polish_summarizes_risks_as_decision_block(self):
+        html = apply_visual_polish_to_html(
+            """
+            <html><head></head><body><main>
+            <section class="panel">
+            <h2>Riscos principais</h2>
+            <ul>
+            <li>Baixa confianca dos dados; revise fontes antes de usar a recomendacao.</li>
+            <li>DCF usa FCFF negativo; a confianca do modelo foi reduzida.</li>
+            </ul>
+            </section>
+            </main></body></html>
+            """,
+            "Observar",
+        )
+
+        risk_section = html.split("<h2>Riscos principais</h2>", 1)[1].split("</section>", 1)[0]
+
+        self.assertIn("risk-dashboard", risk_section)
+        self.assertIn("risk-card-grid", risk_section)
+        self.assertIn("Risco critico", risk_section)
+        self.assertIn("Dados", risk_section)
+        self.assertIn("Valuation", risk_section)
+        self.assertIn("Antes de decidir", risk_section)
+
+    def test_visual_polish_highlights_when_no_critical_risk_is_found(self):
+        html = apply_visual_polish_to_html(
+            """
+            <html><head></head><body><main>
+            <section class="panel">
+            <h2>Riscos principais</h2>
+            <ul><li>Nenhum risco critico detectado pela camada de validacao.</li></ul>
+            </section>
+            </main></body></html>
+            """,
+            "Comprar",
+        )
+
+        risk_section = html.split("<h2>Riscos principais</h2>", 1)[1].split("</section>", 1)[0]
+
+        self.assertIn("risk-dashboard", risk_section)
+        self.assertIn("Sem risco critico", risk_section)
+        self.assertIn('risk-card positive', risk_section)
+
 
 if __name__ == "__main__":
     unittest.main()

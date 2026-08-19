@@ -12,6 +12,7 @@ def apply_visual_polish_to_html(html: str, recommendation: str) -> str:
     polished = _enhance_scenario_block(polished, recommendation)
     polished = _decorate_scenario_margins(polished)
     polished = _enhance_comparable_block(polished)
+    polished = _enhance_risk_block(polished)
     return _inject_visual_style(polished)
 
 
@@ -311,6 +312,112 @@ def _comparable_band(premium: float | None, score: float | None) -> str:
     if premium > 0.15:
         return "negative"
     return "neutral"
+
+
+def _enhance_risk_block(html: str) -> str:
+    if "risk-dashboard" in html:
+        return html
+    pattern = re.compile(r"(<h2>Riscos principais</h2>.*?)(<ul>.*?</ul>)", re.DOTALL)
+
+    def enhance(match: re.Match[str]) -> str:
+        intro_html = match.group(1)
+        list_html = match.group(2)
+        risks = _risk_items(list_html)
+        if not risks:
+            return match.group(0)
+        return intro_html + _risk_dashboard(risks) + list_html
+
+    return pattern.sub(enhance, html, count=1)
+
+
+def _risk_items(list_html: str) -> list[dict[str, str]]:
+    risks: list[dict[str, str]] = []
+    for item in re.findall(r"<li>(.*?)</li>", list_html, flags=re.DOTALL):
+        text = _strip_tags(item)
+        severity, label = _risk_severity(text)
+        risks.append(
+            {
+                "text": text,
+                "severity": severity,
+                "label": label,
+                "category": _risk_category(text),
+                "action": _risk_action(text),
+            }
+        )
+    return risks
+
+
+def _risk_dashboard(risks: list[dict[str, str]]) -> str:
+    return (
+        '<div class="risk-dashboard">'
+        f'<p class="risk-takeaway">{_risk_takeaway(risks)}</p>'
+        '<div class="risk-card-grid">'
+        + "".join(_risk_card(risk) for risk in risks)
+        + "</div>"
+        "</div>"
+    )
+
+
+def _risk_card(risk: dict[str, str]) -> str:
+    return (
+        f'<article class="risk-card {risk["severity"]}">'
+        f'<span>{risk["category"]}</span>'
+        f'<strong>{risk["label"]}</strong>'
+        f'<p>{risk["text"]}</p>'
+        f'<small>{risk["action"]}</small>'
+        "</article>"
+    )
+
+
+def _risk_takeaway(risks: list[dict[str, str]]) -> str:
+    critical = sum(1 for risk in risks if risk["severity"] == "negative")
+    watch = sum(1 for risk in risks if risk["severity"] == "neutral")
+    if critical:
+        return f"Foram encontrados {critical} risco(s) critico(s). Antes de decidir, valide primeiro os itens em vermelho."
+    if watch:
+        return f"Nao ha risco critico destacado, mas existem {watch} ponto(s) para validar antes de aumentar conviccao."
+    return "A camada de validacao nao encontrou risco critico; ainda assim, confirme os dados e premissas antes de decidir."
+
+
+def _risk_severity(text: str) -> tuple[str, str]:
+    lowered = text.lower()
+    if "nenhum risco critico" in lowered:
+        return "positive", "Sem risco critico"
+    if any(term in lowered for term in ("baixa confianca", "fcff negativo", "fallback", "runway", "abaixo do minimo")):
+        return "negative", "Risco critico"
+    if any(term in lowered for term in ("crescimento terminal", "ajustado", "premissas")):
+        return "neutral", "Validar premissas"
+    return "neutral", "Monitorar"
+
+
+def _risk_category(text: str) -> str:
+    lowered = text.lower()
+    if "fcff" in lowered or "dcf" in lowered or "crescimento terminal" in lowered:
+        return "Valuation"
+    if "confianca" in lowered or "fonte" in lowered:
+        return "Dados"
+    if "runway" in lowered or "caixa" in lowered or "liquidez" in lowered:
+        return "Liquidez"
+    if "divida" in lowered:
+        return "Endividamento"
+    return "Risco"
+
+
+def _risk_action(text: str) -> str:
+    lowered = text.lower()
+    if "nenhum risco critico" in lowered:
+        return "Ainda assim, use como triagem; nao substitui revisao dos demonstrativos."
+    if "baixa confianca" in lowered:
+        return "Revisar fontes, datas, moeda e dados ausentes antes de confiar na recomendacao."
+    if "fcff negativo" in lowered:
+        return "Testar virada operacional, runway e sensibilidade de margem antes de aceitar o DCF."
+    if "fallback" in lowered:
+        return "Substituir aproximacoes por dados observados sempre que possivel."
+    if "runway" in lowered:
+        return "Verificar caixa, queima anual, acesso a capital e risco de diluicao."
+    if "crescimento terminal" in lowered:
+        return "Confirmar se a taxa terminal esta conservadora e abaixo do custo de capital."
+    return "Validar a premissa no dado original e acompanhar impacto no score."
 
 
 def _decorate_margin_section(html: str, title: str, margin_cell_index: int) -> str:
@@ -747,6 +854,57 @@ VISUAL_POLISH_CSS = """
   text-align: right;
 }
 .visual-polish .comparable-card small {
+  color: #667385;
+  font-size: 12px;
+  line-height: 1.35;
+}
+.visual-polish .risk-dashboard {
+  background: #f8fafc;
+  border: 1px solid #e0e6ed;
+  border-radius: 8px;
+  margin: 14px 0 16px;
+  padding: 14px;
+}
+.visual-polish .risk-takeaway {
+  color: #334155;
+  font-size: 14px;
+  line-height: 1.45;
+  margin: 0 0 12px;
+}
+.visual-polish .risk-card-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+.visual-polish .risk-card {
+  background: #ffffff;
+  border: 1px solid #dbe3eb;
+  border-left: 5px solid #7b8794;
+  border-radius: 8px;
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+}
+.visual-polish .risk-card.positive { border-left-color: #1f7a4d; }
+.visual-polish .risk-card.neutral { border-left-color: #b58100; }
+.visual-polish .risk-card.negative { border-left-color: #b23b3b; }
+.visual-polish .risk-card span {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.visual-polish .risk-card strong {
+  color: #111820;
+  font-size: 17px;
+}
+.visual-polish .risk-card p {
+  color: #334155;
+  font-size: 13px;
+  line-height: 1.35;
+  margin: 0;
+}
+.visual-polish .risk-card small {
   color: #667385;
   font-size: 12px;
   line-height: 1.35;
