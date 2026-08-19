@@ -10,6 +10,7 @@ from .config import CompanyType, MARKET, PEER_ENRICHMENT
 from .data_sources import MetricValue, YahooFinanceClient, metric_value, safe_float
 from .dcf_sensitivity_reporting import append_dcf_sensitivity_to_html, append_dcf_sensitivity_to_markdown, dcf_sensitivity_table
 from .didactic_reporting import apply_didactic_layer_to_html, apply_didactic_layer_to_markdown, didactic_summary_table
+from .executive_reporting import executive_decision_summary
 from .financial_statements import FinancialStatements, build_statement_metrics, update_market_from_info
 from .html_reports import render_html_report
 from .metrics import MetricPack, build_metrics
@@ -78,6 +79,7 @@ def analyze_ticker_from_inputs(ticker: str, income_statement: Mapping[str, float
     html = apply_visual_polish_to_html(html, score.recommendation)
     report = {
         "executive_summary": executive_summary(ticker, score, valuations),
+        "executive_decision": executive_decision_summary(score, valuations),
         "valuation_table": valuation_table(valuations),
         "dcf_sensitivity_table": dcf_sensitivity_table(valuations),
         "scenario_table": scenario_table(scenarios),
