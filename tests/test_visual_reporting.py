@@ -61,6 +61,22 @@ class VisualReportingTests(unittest.TestCase):
         self.assertIn('margin-pill neutral', html)
         self.assertIn('margin-pill negative', html)
 
+    def test_visual_polish_adds_margin_signals_to_scenario_table(self):
+        result = analyze_ticker_from_inputs(
+            "SCN",
+            {"revenue": 1_000_000, "ebit": 200_000, "net_income": 120_000},
+            {"total_assets": 1_500_000, "total_liabilities": 600_000, "equity": 900_000, "cash": 100_000, "total_debt": 250_000, "current_assets": 500_000, "current_liabilities": 250_000},
+            {"cfo": 150_000, "capex": -40_000, "depreciation_amortization": 20_000},
+            {"shares": 10_000, "price": 60, "wacc": 0.10, "growth_years": 0.04, "terminal_growth": 0.02},
+            {"sector": "Industrials"},
+        )
+
+        html = result.report["html"]
+        scenario_section = html.split("<h2>Cenarios</h2>", 1)[1].split("</section>", 1)[0]
+
+        self.assertIn("margin-pill", scenario_section)
+        self.assertRegex(scenario_section, r"Margem positiva|Margem estreita|Margem negativa")
+
 
 if __name__ == "__main__":
     unittest.main()
