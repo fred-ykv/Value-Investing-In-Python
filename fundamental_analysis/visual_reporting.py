@@ -9,6 +9,7 @@ def apply_visual_polish_to_html(html: str, recommendation: str) -> str:
     polished = _add_body_class(html, recommendation)
     polished = _insert_visual_guide(polished)
     polished = _decorate_valuation_margins(polished)
+    polished = _decorate_scenario_margins(polished)
     return _inject_visual_style(polished)
 
 
@@ -59,21 +60,34 @@ def _inject_visual_style(html: str) -> str:
 
 
 def _decorate_valuation_margins(html: str) -> str:
-    if "margin-pill" in html:
-        return html
-    pattern = re.compile(r"(<h2>Valuation por metodo</h2>\s*<table>.*?</table>)", re.DOTALL)
-    return pattern.sub(lambda match: _decorate_margin_table(match.group(1)), html, count=1)
+    return _decorate_margin_section(html, "Valuation por metodo", 2)
 
 
-def _decorate_margin_table(table_html: str) -> str:
+def _decorate_scenario_margins(html: str) -> str:
+    return _decorate_margin_section(html, "Cenarios", 3)
+
+
+def _decorate_margin_section(html: str, title: str, margin_cell_index: int) -> str:
+    pattern = re.compile(rf"(<h2>{re.escape(title)}</h2>.*?<table>.*?</table>)", re.DOTALL)
+
+    def decorate_section(match: re.Match[str]) -> str:
+        section_html = match.group(1)
+        if "margin-pill" in section_html:
+            return section_html
+        return _decorate_margin_table(section_html, margin_cell_index)
+
+    return pattern.sub(decorate_section, html, count=1)
+
+
+def _decorate_margin_table(table_html: str, margin_cell_index: int) -> str:
     row_pattern = re.compile(r"<tr>(.*?)</tr>", re.DOTALL)
 
     def decorate_row(match: re.Match[str]) -> str:
         row = match.group(1)
         cells = re.findall(r"<td>(.*?)</td>", row, flags=re.DOTALL)
-        if len(cells) < 3:
+        if len(cells) <= margin_cell_index:
             return match.group(0)
-        cells[2] = _margin_badge(cells[2])
+        cells[margin_cell_index] = _margin_badge(cells[margin_cell_index])
         return "<tr>" + "".join(f"<td>{cell}</td>" for cell in cells) + "</tr>"
 
     return row_pattern.sub(decorate_row, table_html)
