@@ -11,6 +11,7 @@ def apply_visual_polish_to_html(html: str, recommendation: str) -> str:
     polished = _decorate_valuation_margins(polished)
     polished = _enhance_scenario_block(polished, recommendation)
     polished = _decorate_scenario_margins(polished)
+    polished = _enhance_comparable_block(polished)
     return _inject_visual_style(polished)
 
 
@@ -183,6 +184,135 @@ def _scenario_impact(margin: float | None) -> str:
     return "Quebra ou pressiona fortemente a tese neste conjunto de premissas."
 
 
+def _enhance_comparable_block(html: str) -> str:
+    if "comparable-dashboard" in html:
+        return html
+    pattern = re.compile(r"(<h2>Comparaveis</h2>.*?)(<table>.*?</table>)", re.DOTALL)
+
+    def enhance(match: re.Match[str]) -> str:
+        intro_html = match.group(1)
+        table_html = match.group(2)
+        rows = _comparable_rows(table_html)
+        if not rows:
+            return match.group(0)
+        return intro_html + _comparable_dashboard(rows) + table_html
+
+    return pattern.sub(enhance, html, count=1)
+
+
+def _comparable_rows(table_html: str) -> list[dict[str, str | float | int | None]]:
+    rows: list[dict[str, str | float | int | None]] = []
+    for row in re.findall(r"<tr>(.*?)</tr>", table_html, flags=re.DOTALL):
+        cells = re.findall(r"<td>(.*?)</td>", row, flags=re.DOTALL)
+        if len(cells) < 7:
+            continue
+        premium = _parse_percent(cells[4])
+        score = _parse_number(cells[5])
+        peer_count = _parse_int(cells[3])
+        rows.append(
+            {
+                "metric": _strip_tags(cells[0]),
+                "company": _strip_tags(cells[1]),
+                "peer_median": _strip_tags(cells[2]),
+                "peer_count": peer_count,
+                "premium": premium,
+                "premium_text": _strip_tags(cells[4]),
+                "score": score,
+                "score_text": _strip_tags(cells[5]),
+                "read": _strip_tags(cells[6]),
+                "band_class": _comparable_band(premium, score),
+            }
+        )
+    return rows
+
+
+def _comparable_dashboard(rows: list[dict[str, str | float | int | None]]) -> str:
+    usable = [row for row in rows if isinstance(row.get("premium"), float)]
+    avg_premium = sum(float(row["premium"]) for row in usable) / len(usable) if usable else None
+    best = max(rows, key=lambda row: float(row.get("score") or -1.0))
+    worst = min(rows, key=lambda row: float(row.get("score") or 2.0))
+    return (
+        '<div class="comparable-dashboard">'
+        f'<p class="comparable-takeaway">{_comparable_takeaway(avg_premium, best, worst, len(usable))}</p>'
+        '<div class="comparable-card-grid">'
+        + _comparable_summary_card("Multiplo que mais ajuda", best)
+        + _comparable_summary_card("Multiplo que mais pressiona", worst)
+        + _comparable_breadth_card(rows, len(usable))
+        + "</div>"
+        "</div>"
+    )
+
+
+def _comparable_takeaway(avg_premium: float | None, best: dict[str, object], worst: dict[str, object], usable_count: int) -> str:
+    if avg_premium is None:
+        return "A leitura relativa ainda nao tem multiplos suficientes para comparar a empresa contra pares com seguranca."
+    if avg_premium <= -0.15:
+        valuation_read = "A empresa parece negociar com desconto relevante contra os pares usados."
+    elif avg_premium <= 0.10:
+        valuation_read = "A empresa negocia proxima da faixa dos pares; a decisao depende mais de qualidade, crescimento e riscos."
+    else:
+        valuation_read = "A empresa parece negociar com premio contra os pares, exigindo fundamentos superiores para justificar o preco."
+    return (
+        f"{valuation_read} Foram usados {usable_count} multiplos com leitura relativa. "
+        f"O melhor apoio veio de {best.get('metric')} e o maior ponto de atencao veio de {worst.get('metric')}."
+    )
+
+
+def _comparable_summary_card(title: str, row: dict[str, object]) -> str:
+    band_class = str(row.get("band_class") or "neutral")
+    return (
+        f'<article class="comparable-card {band_class}">'
+        f"<span>{title}</span>"
+        f"<strong>{row.get('metric')}</strong>"
+        "<dl>"
+        f"<div><dt>Empresa</dt><dd>{row.get('company')}</dd></div>"
+        f"<div><dt>Mediana pares</dt><dd>{row.get('peer_median')}</dd></div>"
+        f"<div><dt>Premio/desconto</dt><dd>{row.get('premium_text')}</dd></div>"
+        f"<div><dt>Score relativo</dt><dd>{row.get('score_text')}</dd></div>"
+        "</dl>"
+        f"<small>{row.get('read')}</small>"
+        "</article>"
+    )
+
+
+def _comparable_breadth_card(rows: list[dict[str, str | float | int | None]], usable_count: int) -> str:
+    total_peers = sum(int(row.get("peer_count") or 0) for row in rows)
+    avg_peers = total_peers / len(rows) if rows else 0.0
+    band_class = "positive" if usable_count >= 3 and avg_peers >= 2 else "neutral" if usable_count >= 2 else "negative"
+    if band_class == "positive":
+        read = "A amostra relativa tem mais sustentacao e pode complementar o valuation intrinseco."
+    elif band_class == "neutral":
+        read = "A amostra ajuda como referencia, mas ainda deve ser lida com cautela."
+    else:
+        read = "A amostra e estreita; nao use comparaveis como pilar principal da decisao."
+    return (
+        f'<article class="comparable-card {band_class}">'
+        "<span>Forca da amostra</span>"
+        f"<strong>{usable_count} multiplos</strong>"
+        "<dl>"
+        f"<div><dt>Pares por multiplo</dt><dd>{avg_peers:.1f}</dd></div>"
+        f"<div><dt>Total de leituras</dt><dd>{len(rows)}</dd></div>"
+        "</dl>"
+        f"<small>{read}</small>"
+        "</article>"
+    )
+
+
+def _comparable_band(premium: float | None, score: float | None) -> str:
+    if score is not None:
+        if score >= 0.65:
+            return "positive"
+        if score < 0.40:
+            return "negative"
+    if premium is None:
+        return "neutral"
+    if premium <= -0.15:
+        return "positive"
+    if premium > 0.15:
+        return "negative"
+    return "neutral"
+
+
 def _decorate_margin_section(html: str, title: str, margin_cell_index: int) -> str:
     pattern = re.compile(rf"(<h2>{re.escape(title)}</h2>.*?<table>.*?</table>)", re.DOTALL)
 
@@ -236,6 +366,27 @@ def _parse_margin(value_html: str) -> float | None:
         return float(text.replace("%", "").replace(",", "")) / 100.0
     except Exception:
         return None
+
+
+def _parse_percent(value_html: str) -> float | None:
+    text = _strip_tags(value_html).strip()
+    try:
+        return float(text.replace("%", "").replace(",", "")) / 100.0
+    except Exception:
+        return None
+
+
+def _parse_number(value_html: str) -> float | None:
+    text = _strip_tags(value_html).strip()
+    try:
+        return float(text.replace(",", ""))
+    except Exception:
+        return None
+
+
+def _parse_int(value_html: str) -> int:
+    value = _parse_number(value_html)
+    return int(value or 0)
 
 
 def _strip_tags(value_html: str) -> str:
@@ -528,6 +679,74 @@ VISUAL_POLISH_CSS = """
   text-align: right;
 }
 .visual-polish .scenario-card small {
+  color: #667385;
+  font-size: 12px;
+  line-height: 1.35;
+}
+.visual-polish .comparable-dashboard {
+  background: #f8fafc;
+  border: 1px solid #e0e6ed;
+  border-radius: 8px;
+  margin: 14px 0 16px;
+  padding: 14px;
+}
+.visual-polish .comparable-takeaway {
+  color: #334155;
+  font-size: 14px;
+  line-height: 1.45;
+  margin: 0 0 12px;
+}
+.visual-polish .comparable-card-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+.visual-polish .comparable-card {
+  background: #ffffff;
+  border: 1px solid #dbe3eb;
+  border-left: 5px solid #7b8794;
+  border-radius: 8px;
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+}
+.visual-polish .comparable-card.positive { border-left-color: #1f7a4d; }
+.visual-polish .comparable-card.neutral { border-left-color: #b58100; }
+.visual-polish .comparable-card.negative { border-left-color: #b23b3b; }
+.visual-polish .comparable-card span {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.visual-polish .comparable-card strong {
+  color: #111820;
+  font-size: 18px;
+}
+.visual-polish .comparable-card dl {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+.visual-polish .comparable-card dl div {
+  align-items: baseline;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+.visual-polish .comparable-card dt {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+}
+.visual-polish .comparable-card dd {
+  color: #17202a;
+  font-size: 13px;
+  font-weight: 800;
+  margin: 0;
+  text-align: right;
+}
+.visual-polish .comparable-card small {
   color: #667385;
   font-size: 12px;
   line-height: 1.35;

@@ -98,6 +98,33 @@ class VisualReportingTests(unittest.TestCase):
         self.assertRegex(scenario_section, r"Sustenta a tese|Fragiliza a tese|Quebra ou pressiona")
         self.assertIn("use esta secao para ver se a tese sobrevive fora do caso otimista", scenario_section)
 
+    def test_visual_polish_summarizes_comparables_as_decision_block(self):
+        result = analyze_ticker_from_inputs(
+            "CMP",
+            {"revenue": 1_000_000, "ebit": 200_000, "net_income": 120_000},
+            {"total_assets": 1_500_000, "total_liabilities": 600_000, "equity": 900_000, "cash": 100_000, "total_debt": 250_000, "current_assets": 500_000, "current_liabilities": 250_000},
+            {"cfo": 150_000, "capex": -40_000, "depreciation_amortization": 20_000},
+            {
+                "shares": 10_000,
+                "price": 60,
+                "wacc": 0.10,
+                "growth_years": 0.04,
+                "terminal_growth": 0.02,
+                "peer_medians": {"price_to_earnings": 8.0, "ev_to_ebitda": 12.0, "ev_to_sales": 4.0},
+                "peer_median_counts": {"price_to_earnings": 4, "ev_to_ebitda": 4, "ev_to_sales": 4},
+            },
+            {"sector": "Industrials"},
+        )
+
+        html = result.report["html"]
+        comparable_section = html.split("<h2>Comparaveis</h2>", 1)[1].split("</section>", 1)[0]
+
+        self.assertIn("comparable-dashboard", comparable_section)
+        self.assertIn("Multiplo que mais ajuda", comparable_section)
+        self.assertIn("Multiplo que mais pressiona", comparable_section)
+        self.assertIn("Forca da amostra", comparable_section)
+        self.assertRegex(comparable_section, r"desconto relevante|proxima da faixa dos pares|premio contra os pares")
+
 
 if __name__ == "__main__":
     unittest.main()
