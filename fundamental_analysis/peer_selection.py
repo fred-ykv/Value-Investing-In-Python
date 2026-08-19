@@ -58,11 +58,11 @@ def build_peer_selection_report(target_info: Mapping[str, object], target_metric
     results = [score_candidate(target_profile, candidate) for candidate in candidates or []]
     approved = [result for result in results if result.status in {"strong", "acceptable"}]
     rejected = [result for result in results if result.status not in {"strong", "acceptable"}]
-    has_minimum_peer_set = len(approved) >= PEER_SELECTION.min_approved_peers
-    medians = median_multiples(approved) if has_minimum_peer_set else {}
-    counts = median_multiple_counts(approved) if has_minimum_peer_set else {}
-    confidence = min(1.0, len(approved) / max(1, PEER_SELECTION.min_approved_peers))
-    return PeerSelectionReport(approved, rejected, medians, confidence, peer_selection_summary(approved, rejected, confidence), counts)
+    median_candidates = peer_median_candidates(approved, rejected)
+    medians = median_multiples(median_candidates)
+    counts = median_multiple_counts(median_candidates) if medians else {}
+    confidence = peer_selection_confidence(approved, median_candidates)
+    return PeerSelectionReport(approved, rejected, medians, confidence, peer_selection_summary(approved, rejected, confidence, bool(medians), len(median_candidates)), counts)
 
 
 def company_profile(info: Mapping[str, object], metrics: MetricPack) -> dict[str, object]:
@@ -171,6 +171,22 @@ def median_multiples(approved: Sequence[PeerCandidateResult]) -> dict[str, float
     return medians
 
 
+def peer_median_candidates(approved: Sequence[PeerCandidateResult], rejected: Sequence[PeerCandidateResult]) -> list[PeerCandidateResult]:
+    if len(approved) >= PEER_SELECTION.min_approved_peers:
+        return list(approved)
+    weak_references = [candidate for candidate in rejected if candidate.status == "weak_reference"]
+    return [*approved, *weak_references]
+
+
+def peer_selection_confidence(approved: Sequence[PeerCandidateResult], median_candidates: Sequence[PeerCandidateResult]) -> float:
+    approved_confidence = min(1.0, len(approved) / max(1, PEER_SELECTION.min_approved_peers))
+    if len(approved) >= PEER_SELECTION.min_approved_peers:
+        return approved_confidence
+    fallback_support = max(0, len(median_candidates) - len(approved))
+    weak_support = min(0.30, fallback_support * 0.15)
+    return min(0.85, approved_confidence + weak_support)
+
+
 def median_multiple_counts(approved: Sequence[PeerCandidateResult]) -> dict[str, int]:
     return {field_name: len(usable_multiple_values(approved, field_name)) for field_name in MULTIPLE_FIELDS}
 
@@ -214,10 +230,14 @@ def merge_peer_medians(market_data: Mapping[str, object], peer_selection: PeerSe
     return merged
 
 
-def peer_selection_summary(approved: Sequence[PeerCandidateResult], rejected: Sequence[PeerCandidateResult], confidence: float) -> str:
+def peer_selection_summary(approved: Sequence[PeerCandidateResult], rejected: Sequence[PeerCandidateResult], confidence: float, has_medians: bool = False, median_candidate_count: int | None = None) -> str:
     if not approved:
+        if has_medians:
+            return f"Nenhum par plenamente aprovado, mas {median_candidate_count or 0} referencias fracas permitiram uma mediana exploratoria; use com baixa confianca."
         return "Nenhum par aprovado pelo filtro de equivalencia."
     if len(approved) < PEER_SELECTION.min_approved_peers:
+        if has_medians:
+            return f"{len(approved)} par aprovado e referencias fracas completaram uma mediana exploratoria; confianca rebaixada para {confidence:.2f}."
         return f"{len(approved)} par aprovado, abaixo do minimo de {PEER_SELECTION.min_approved_peers}; mediana de pares nao foi usada."
     return f"{len(approved)} pares aprovados, {len(rejected)} rejeitados; confianca da selecao {confidence:.2f}."
 

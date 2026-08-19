@@ -6,6 +6,7 @@ import re
 
 from .data_sources import MetricValue
 from .executive_reporting import apply_executive_layer_to_html, apply_executive_layer_to_markdown
+from .presentation_fixes import apply_presentation_fixes_to_html, apply_presentation_fixes_to_markdown
 from .scoring import ScoreReport
 from .valuation import ValuationResult
 
@@ -86,7 +87,7 @@ def apply_didactic_layer_to_markdown(markdown: str, score: ScoreReport, metrics:
         translated = translated.replace(marker, f"\n{block}{marker}", 1)
     else:
         translated = f"{translated}\n\n{block}"
-    return humanize_report_text(translated)
+    return apply_presentation_fixes_to_markdown(humanize_report_text(translated))
 
 
 def apply_didactic_layer_to_html(html: str, score: ScoreReport, metrics: dict[str, MetricValue], valuations: list[ValuationResult]) -> str:
@@ -98,7 +99,7 @@ def apply_didactic_layer_to_html(html: str, score: ScoreReport, metrics: dict[st
         translated = translated.replace(marker, f"{marker}\n{block}", 1)
     else:
         translated = f"{block}\n{translated}"
-    return humanize_report_text(translated)
+    return apply_presentation_fixes_to_html(humanize_report_text(translated))
 
 
 def didactic_summary_table(score: ScoreReport, metrics: dict[str, MetricValue], valuations: list[ValuationResult]) -> list[dict[str, object]]:
