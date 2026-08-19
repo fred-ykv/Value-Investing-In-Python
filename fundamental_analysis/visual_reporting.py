@@ -1,11 +1,14 @@
 """Visual polish layer for static HTML reports."""
 from __future__ import annotations
 
+import re
+
 
 def apply_visual_polish_to_html(html: str, recommendation: str) -> str:
     """Add presentation-only structure and styles to the final HTML report."""
     polished = _add_body_class(html, recommendation)
     polished = _insert_visual_guide(polished)
+    polished = _decorate_valuation_margins(polished)
     return _inject_visual_style(polished)
 
 
@@ -53,6 +56,50 @@ def _inject_visual_style(html: str) -> str:
     if "</head>" in html:
         return html.replace("</head>", f"{style}\n</head>", 1)
     return f"{style}\n{html}"
+
+
+def _decorate_valuation_margins(html: str) -> str:
+    if "margin-pill" in html:
+        return html
+    pattern = re.compile(r"(<h2>Valuation por metodo</h2>\s*<table>.*?</table>)", re.DOTALL)
+    return pattern.sub(lambda match: _decorate_margin_table(match.group(1)), html, count=1)
+
+
+def _decorate_margin_table(table_html: str) -> str:
+    row_pattern = re.compile(r"<tr>(.*?)</tr>", re.DOTALL)
+
+    def decorate_row(match: re.Match[str]) -> str:
+        row = match.group(1)
+        cells = re.findall(r"<td>(.*?)</td>", row, flags=re.DOTALL)
+        if len(cells) < 3:
+            return match.group(0)
+        cells[2] = _margin_badge(cells[2])
+        return "<tr>" + "".join(f"<td>{cell}</td>" for cell in cells) + "</tr>"
+
+    return row_pattern.sub(decorate_row, table_html)
+
+
+def _margin_badge(value_html: str) -> str:
+    band_class, band_label = _margin_band(value_html)
+    return (
+        '<span class="margin-readout">'
+        f"<strong>{value_html}</strong>"
+        f'<span class="margin-pill {band_class}">{band_label}</span>'
+        "</span>"
+    )
+
+
+def _margin_band(value_html: str) -> tuple[str, str]:
+    text = re.sub(r"<.*?>", "", value_html).strip()
+    try:
+        margin = float(text.replace("%", "").replace(",", "")) / 100.0
+    except Exception:
+        return "neutral", "Sem leitura"
+    if margin >= 0.15:
+        return "positive", "Margem positiva"
+    if margin >= 0.0:
+        return "neutral", "Margem estreita"
+    return "negative", "Margem negativa"
 
 
 VISUAL_POLISH_CSS = """
@@ -239,6 +286,36 @@ VISUAL_POLISH_CSS = """
   letter-spacing: .02em;
   min-width: 72px;
   text-align: center;
+}
+.visual-polish .margin-readout {
+  align-items: flex-end;
+  display: inline-grid;
+  gap: 4px;
+  justify-items: end;
+}
+.visual-polish .margin-pill {
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  min-width: 104px;
+  padding: 3px 7px;
+  text-align: center;
+  text-transform: uppercase;
+}
+.visual-polish .margin-pill.positive {
+  color: #176b43;
+  background: #e7f4ec;
+  border: 1px solid #b9dfc8;
+}
+.visual-polish .margin-pill.neutral {
+  color: #6b5600;
+  background: #fff7d6;
+  border: 1px solid #ead47a;
+}
+.visual-polish .margin-pill.negative {
+  color: #9c2f2f;
+  background: #fdeaea;
+  border: 1px solid #efb6b6;
 }
 .visual-polish .reverse-item,
 .visual-polish .peer-summary div {
