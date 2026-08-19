@@ -9,6 +9,7 @@ from .comparables import ComparableReport, build_comparable_report
 from .config import CompanyType, MARKET, PEER_ENRICHMENT
 from .data_sources import MetricValue, YahooFinanceClient, metric_value, safe_float
 from .dcf_sensitivity_reporting import append_dcf_sensitivity_to_html, append_dcf_sensitivity_to_markdown, dcf_sensitivity_table
+from .didactic_reporting import apply_didactic_layer_to_html, apply_didactic_layer_to_markdown, didactic_summary_table
 from .financial_statements import FinancialStatements, build_statement_metrics, update_market_from_info
 from .html_reports import render_html_report
 from .metrics import MetricPack, build_metrics
@@ -66,11 +67,13 @@ def analyze_ticker_from_inputs(ticker: str, income_statement: Mapping[str, float
     markdown = append_comparable_diagnostics_to_markdown(markdown, comparables)
     markdown = append_dcf_sensitivity_to_markdown(markdown, valuations)
     markdown = append_reverse_dcf_to_markdown(markdown, reverse_dcf)
+    markdown = apply_didactic_layer_to_markdown(markdown, score, metric_lineage, valuations)
     html = render_html_report(ticker, score, valuations, metric_lineage, scenarios, comparables, None)
     html = append_peer_selection_to_html(html, peer_selection)
     html = append_comparable_diagnostics_to_html(html, comparables)
     html = append_dcf_sensitivity_to_html(html, valuations)
     html = append_reverse_dcf_to_html(html, reverse_dcf)
+    html = apply_didactic_layer_to_html(html, score, metric_lineage, valuations)
     report = {
         "executive_summary": executive_summary(ticker, score, valuations),
         "valuation_table": valuation_table(valuations),
@@ -86,6 +89,7 @@ def analyze_ticker_from_inputs(ticker: str, income_statement: Mapping[str, float
         "score_table": score_table(score),
         "metric_lineage_table": metric_lineage_table(metric_lineage),
         "risk_diagnostics": risk_diagnostics(score, valuations, metric_lineage),
+        "didactic_summary": didactic_summary_table(score, metric_lineage, valuations),
         "recommendation": score.recommendation,
         "markdown": markdown,
         "html": html,
