@@ -216,8 +216,29 @@ VISUAL_POLISH_CSS = """
 .visual-polish .bar i {
   background: #2f6f9f;
 }
+.visual-polish .score-positive .bar i {
+  background: #1f7a4d;
+}
+.visual-polish .score-neutral .bar i {
+  background: #b58100;
+}
+.visual-polish .score-negative .bar i {
+  background: #b23b3b;
+}
 .visual-polish .dimension > strong {
   font-size: 15px;
+}
+.visual-polish .score-readout {
+  min-width: 86px;
+}
+.visual-polish .score-readout strong {
+  color: #17202a;
+  font-size: 16px;
+}
+.visual-polish .score-pill {
+  letter-spacing: .02em;
+  min-width: 72px;
+  text-align: center;
 }
 .visual-polish .reverse-item,
 .visual-polish .peer-summary div {
