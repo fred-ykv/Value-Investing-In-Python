@@ -23,6 +23,7 @@ from .scenarios import ReverseDCFResult, ScenarioResult, build_reverse_dcf, buil
 from .scoring import ScoreReport, compute_score
 from .sector_rules import classify_company
 from .valuation import DCFInput, ValuationResult, dcf_fcff, ddm_bank, eva_value, graham_value, growth_tech_value, residual_income_bank
+from .visual_reporting import apply_visual_polish_to_html
 
 
 @dataclass
@@ -74,6 +75,7 @@ def analyze_ticker_from_inputs(ticker: str, income_statement: Mapping[str, float
     html = append_dcf_sensitivity_to_html(html, valuations)
     html = append_reverse_dcf_to_html(html, reverse_dcf)
     html = apply_didactic_layer_to_html(html, score, metric_lineage, valuations)
+    html = apply_visual_polish_to_html(html, score.recommendation)
     report = {
         "executive_summary": executive_summary(ticker, score, valuations),
         "valuation_table": valuation_table(valuations),
