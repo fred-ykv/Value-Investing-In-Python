@@ -42,7 +42,7 @@ class ReportTests(unittest.TestCase):
         self.assertIn("Fontes e confianca das metricas", markdown)
         self.assertIn("Notas explicativas", markdown)
         self.assertIn("Margem de seguranca negativa", markdown)
-        self.assertIn("| revenue |", markdown)
+        self.assertIn("| Receita |", markdown)
         self.assertIn("| manual |", markdown)
         self.assertTrue(result.report["metric_lineage_table"])
         self.assertIn("source", result.report["metric_lineage_table"][0])
