@@ -9,6 +9,7 @@ def apply_visual_polish_to_html(html: str, recommendation: str) -> str:
     polished = _add_body_class(html, recommendation)
     polished = _insert_visual_guide(polished)
     polished = _decorate_valuation_margins(polished)
+    polished = _enhance_scenario_block(polished, recommendation)
     polished = _decorate_scenario_margins(polished)
     return _inject_visual_style(polished)
 
@@ -67,6 +68,121 @@ def _decorate_scenario_margins(html: str) -> str:
     return _decorate_margin_section(html, "Cenarios", 3)
 
 
+def _enhance_scenario_block(html: str, recommendation: str) -> str:
+    if "scenario-dashboard" in html:
+        return html
+    pattern = re.compile(r"(<h2>Cenarios</h2>.*?)(<table>.*?</table>)", re.DOTALL)
+
+    def enhance(match: re.Match[str]) -> str:
+        intro_html = match.group(1)
+        table_html = match.group(2)
+        cards = _scenario_cards(table_html)
+        if not cards:
+            return match.group(0)
+        return intro_html + _scenario_dashboard(cards, recommendation) + table_html
+
+    return pattern.sub(enhance, html, count=1)
+
+
+def _scenario_cards(table_html: str) -> list[dict[str, str | float | None]]:
+    cards: list[dict[str, str | float | None]] = []
+    for row in re.findall(r"<tr>(.*?)</tr>", table_html, flags=re.DOTALL):
+        cells = re.findall(r"<td>(.*?)</td>", row, flags=re.DOTALL)
+        if len(cells) < 6:
+            continue
+        margin = _parse_margin(cells[3])
+        band_class, band_label = _margin_band(cells[3])
+        scenario_name = _strip_tags(cells[0])
+        cards.append(
+            {
+                "name": scenario_name,
+                "type": _scenario_type(scenario_name),
+                "read": _strip_tags(cells[1]),
+                "price": _strip_tags(cells[2]),
+                "margin": _strip_tags(cells[3]),
+                "confidence": _strip_tags(cells[4]),
+                "assumptions": _strip_tags(cells[5]),
+                "band_class": band_class,
+                "band_label": band_label,
+                "impact": _scenario_impact(margin),
+                "margin_value": margin,
+            }
+        )
+    return cards
+
+
+def _scenario_dashboard(cards: list[dict[str, str | float | None]], recommendation: str) -> str:
+    return (
+        '<div class="scenario-dashboard">'
+        f'<p class="scenario-takeaway">{_scenario_takeaway(cards, recommendation)}</p>'
+        '<div class="scenario-card-grid">'
+        + "".join(_scenario_card(card) for card in cards)
+        + "</div>"
+        "</div>"
+    )
+
+
+def _scenario_card(card: dict[str, str | float | None]) -> str:
+    band_class = str(card.get("band_class") or "neutral")
+    return (
+        f'<article class="scenario-card {band_class}">'
+        f'<span class="scenario-type">{card.get("type")}</span>'
+        f'<strong>{card.get("name")}</strong>'
+        f'<p>{card.get("impact")}</p>'
+        '<dl>'
+        f'<div><dt>Preco justo</dt><dd>{card.get("price")}</dd></div>'
+        f'<div><dt>Margem</dt><dd>{card.get("margin")}</dd></div>'
+        f'<div><dt>Confianca</dt><dd>{card.get("confidence")}</dd></div>'
+        "</dl>"
+        f'<small>{card.get("read")}</small>'
+        "</article>"
+    )
+
+
+def _scenario_takeaway(cards: list[dict[str, str | float | None]], recommendation: str) -> str:
+    available = [card for card in cards if isinstance(card.get("margin_value"), float)]
+    if not available:
+        return "Os cenarios ajudam a testar a tese, mas ainda nao ha margem suficiente para concluir assimetria."
+    best = max(available, key=lambda card: float(card["margin_value"]))
+    worst = min(available, key=lambda card: float(card["margin_value"]))
+    base = next((card for card in available if str(card.get("name", "")).lower() == "base"), None)
+    base_margin = base.get("margin_value") if base else None
+    if isinstance(base_margin, float) and base_margin >= 0.0:
+        base_read = "O cenario Base sustenta a tese porque ainda aponta valor justo acima do preco atual."
+    elif isinstance(base_margin, float):
+        base_read = "O cenario Base fragiliza a tese porque depende de preco melhor ou premissas mais fortes."
+    else:
+        base_read = "O cenario Base nao trouxe leitura conclusiva."
+    return (
+        f"{base_read} O cenario que mais ajuda e {best.get('name')} ({best.get('margin')}); "
+        f"o que mais pressiona e {worst.get('name')} ({worst.get('margin')}). "
+        f"Com recomendacao {recommendation}, use esta secao para ver se a tese sobrevive fora do caso otimista."
+    )
+
+
+def _scenario_type(name: str) -> str:
+    normalized = name.strip().lower()
+    if normalized in {"stress", "pessimista"}:
+        return "Cenario conservador"
+    if normalized == "base":
+        return "Cenario base"
+    if normalized == "otimista":
+        return "Cenario otimista"
+    return "Cenario hipotetico"
+
+
+def _scenario_impact(margin: float | None) -> str:
+    if margin is None:
+        return "Sem leitura conclusiva; dado insuficiente para apoiar ou rejeitar a tese."
+    if margin >= 0.15:
+        return "Sustenta a tese com folga de seguranca relevante."
+    if margin >= 0.0:
+        return "Sustenta a tese, mas com folga pequena para erro de premissa."
+    if margin >= -0.15:
+        return "Fragiliza a tese; o preco atual exige premissas melhores."
+    return "Quebra ou pressiona fortemente a tese neste conjunto de premissas."
+
+
 def _decorate_margin_section(html: str, title: str, margin_cell_index: int) -> str:
     pattern = re.compile(rf"(<h2>{re.escape(title)}</h2>.*?<table>.*?</table>)", re.DOTALL)
 
@@ -104,16 +220,27 @@ def _margin_badge(value_html: str) -> str:
 
 
 def _margin_band(value_html: str) -> tuple[str, str]:
-    text = re.sub(r"<.*?>", "", value_html).strip()
-    try:
-        margin = float(text.replace("%", "").replace(",", "")) / 100.0
-    except Exception:
+    margin = _parse_margin(value_html)
+    if margin is None:
         return "neutral", "Sem leitura"
     if margin >= 0.15:
         return "positive", "Margem positiva"
     if margin >= 0.0:
         return "neutral", "Margem estreita"
     return "negative", "Margem negativa"
+
+
+def _parse_margin(value_html: str) -> float | None:
+    text = _strip_tags(value_html).strip()
+    try:
+        return float(text.replace("%", "").replace(",", "")) / 100.0
+    except Exception:
+        return None
+
+
+def _strip_tags(value_html: str) -> str:
+    text = re.sub(r"<.*?>", "", value_html)
+    return re.sub(r"\s+", " ", text).strip()
 
 
 VISUAL_POLISH_CSS = """
@@ -330,6 +457,80 @@ VISUAL_POLISH_CSS = """
   color: #9c2f2f;
   background: #fdeaea;
   border: 1px solid #efb6b6;
+}
+.visual-polish .scenario-dashboard {
+  background: #f8fafc;
+  border: 1px solid #e0e6ed;
+  border-radius: 8px;
+  margin: 14px 0 16px;
+  padding: 14px;
+}
+.visual-polish .scenario-takeaway {
+  color: #334155;
+  font-size: 14px;
+  line-height: 1.45;
+  margin: 0 0 12px;
+}
+.visual-polish .scenario-card-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(205px, 1fr));
+}
+.visual-polish .scenario-card {
+  background: #ffffff;
+  border: 1px solid #dbe3eb;
+  border-left: 5px solid #7b8794;
+  border-radius: 8px;
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+}
+.visual-polish .scenario-card.positive { border-left-color: #1f7a4d; }
+.visual-polish .scenario-card.neutral { border-left-color: #b58100; }
+.visual-polish .scenario-card.negative { border-left-color: #b23b3b; }
+.visual-polish .scenario-type {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.visual-polish .scenario-card strong {
+  color: #111820;
+  font-size: 18px;
+}
+.visual-polish .scenario-card p {
+  color: #334155;
+  font-size: 13px;
+  line-height: 1.35;
+  margin: 0;
+}
+.visual-polish .scenario-card dl {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+.visual-polish .scenario-card dl div {
+  align-items: baseline;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+.visual-polish .scenario-card dt {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+}
+.visual-polish .scenario-card dd {
+  color: #17202a;
+  font-size: 13px;
+  font-weight: 800;
+  margin: 0;
+  text-align: right;
+}
+.visual-polish .scenario-card small {
+  color: #667385;
+  font-size: 12px;
+  line-height: 1.35;
 }
 .visual-polish .reverse-item,
 .visual-polish .peer-summary div {
