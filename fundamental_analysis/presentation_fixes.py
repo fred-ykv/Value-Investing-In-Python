@@ -131,7 +131,7 @@ def _html_source_note(sources: dict[str, int]) -> str:
     if not sources:
         return ""
     notes = " ".join(f"<span>[{ref}] {source}</span>" for source, ref in sources.items())
-    return f'<p class="indicator-source-notes">Fontes dos indicadores: {notes}</p>'
+    return f'<p class="indicator-source-notes" style="color:#667385;font-size:12px;line-height:1.45;margin:10px 0 0;">Fontes dos indicadores: {notes}</p>'
 
 
 def _prefix_currency(value: str, currency: str) -> str:
