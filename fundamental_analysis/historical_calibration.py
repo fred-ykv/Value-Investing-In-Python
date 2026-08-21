@@ -1,0 +1,331 @@
+"""Point-in-time validation of scores against forward market outcomes."""
+
+from __future__ import annotations
+
+import csv
+from dataclasses import dataclass
+from datetime import date
+from pathlib import Path
+from statistics import mean
+from typing import Iterable
+
+from .config import CALIBRATION, CalibrationAssumptions
+
+
+@dataclass(frozen=True)
+class HistoricalCalibrationObservation:
+    ticker: str
+    as_of: date
+    company_type: str
+    total_score: float
+    recommendation: str
+    data_confidence: float
+    forward_return: float | None
+    benchmark_return: float | None
+    max_drawdown: float | None
+    point_in_time_validated: bool
+    latest_filing_date: date | None = None
+
+    @property
+    def excess_return(self) -> float | None:
+        if self.forward_return is None or self.benchmark_return is None:
+            return None
+        return self.forward_return - self.benchmark_return
+
+    @property
+    def has_complete_outcome(self) -> bool:
+        return self.excess_return is not None and self.max_drawdown is not None
+
+    @property
+    def is_point_in_time_valid(self) -> bool:
+        if not self.point_in_time_validated:
+            return False
+        return self.latest_filing_date is None or self.latest_filing_date <= self.as_of
+
+
+@dataclass(frozen=True)
+class OutcomeBucketSummary:
+    bucket: int
+    count: int
+    min_score: float
+    max_score: float
+    average_score: float
+    average_forward_return: float
+    average_excess_return: float
+    excess_return_hit_rate: float
+    average_max_drawdown: float
+    worst_max_drawdown: float
+
+
+@dataclass(frozen=True)
+class HistoricalCalibrationSummary:
+    observations: list[HistoricalCalibrationObservation]
+    usable_observations: int
+    outcome_coverage: float
+    point_in_time_ratio: float
+    buckets: list[OutcomeBucketSummary]
+    spearman_score_to_excess_return: float
+    monotonic_bucket_steps: int
+    possible_monotonic_steps: int
+    monotonic_bucket_ratio: float
+    warnings: tuple[str, ...]
+    is_ready_for_weight_changes: bool
+
+
+def evaluate_historical_outcomes(
+    observations: Iterable[HistoricalCalibrationObservation],
+    assumptions: CalibrationAssumptions = CALIBRATION,
+) -> HistoricalCalibrationSummary:
+    observations = list(observations)
+    complete = [observation for observation in observations if observation.has_complete_outcome]
+    point_in_time = [
+        observation for observation in observations if observation.is_point_in_time_valid
+    ]
+    usable = [observation for observation in complete if observation.is_point_in_time_valid]
+    outcome_coverage = len(complete) / len(observations) if observations else 0.0
+    point_in_time_ratio = len(point_in_time) / len(observations) if observations else 0.0
+    buckets = _build_outcome_buckets(usable, assumptions.outcome_bucket_count)
+
+    score_values = [observation.total_score for observation in usable]
+    excess_returns = [float(observation.excess_return) for observation in usable]
+    spearman = _spearman(score_values, excess_returns)
+    monotonic_steps = sum(
+        1
+        for previous, current in zip(buckets, buckets[1:])
+        if current.average_excess_return > previous.average_excess_return
+    )
+    possible_steps = max(0, len(buckets) - 1)
+    monotonic_ratio = monotonic_steps / possible_steps if possible_steps else 0.0
+
+    warnings: list[str] = []
+    if len(observations) < assumptions.minimum_historical_observations:
+        warnings.append(
+            f"Historico insuficiente: {len(observations)} de "
+            f"{assumptions.minimum_historical_observations} observacoes minimas."
+        )
+    if outcome_coverage < assumptions.minimum_outcome_coverage:
+        warnings.append(
+            f"Cobertura de resultados futuros de {outcome_coverage:.1%} e menor que o minimo de "
+            f"{assumptions.minimum_outcome_coverage:.1%}."
+        )
+    if point_in_time_ratio < assumptions.minimum_point_in_time_ratio:
+        warnings.append(
+            f"Validacao point-in-time de {point_in_time_ratio:.1%} e menor que o minimo de "
+            f"{assumptions.minimum_point_in_time_ratio:.1%}."
+        )
+    if len(buckets) < assumptions.outcome_bucket_count:
+        warnings.append(
+            f"Amostra util nao suporta {assumptions.outcome_bucket_count} faixas de score."
+        )
+    if spearman < assumptions.minimum_spearman_correlation:
+        warnings.append(
+            f"Correlacao de Spearman entre score e retorno excedente ({spearman:.3f}) e menor que "
+            f"{assumptions.minimum_spearman_correlation:.3f}."
+        )
+    if monotonic_ratio < assumptions.minimum_monotonic_bucket_ratio:
+        warnings.append(
+            f"Monotonicidade entre faixas de score ({monotonic_ratio:.1%}) e menor que "
+            f"{assumptions.minimum_monotonic_bucket_ratio:.1%}."
+        )
+
+    return HistoricalCalibrationSummary(
+        observations=observations,
+        usable_observations=len(usable),
+        outcome_coverage=outcome_coverage,
+        point_in_time_ratio=point_in_time_ratio,
+        buckets=buckets,
+        spearman_score_to_excess_return=spearman,
+        monotonic_bucket_steps=monotonic_steps,
+        possible_monotonic_steps=possible_steps,
+        monotonic_bucket_ratio=monotonic_ratio,
+        warnings=tuple(warnings),
+        is_ready_for_weight_changes=not warnings,
+    )
+
+
+def _build_outcome_buckets(
+    observations: list[HistoricalCalibrationObservation],
+    bucket_count: int,
+) -> list[OutcomeBucketSummary]:
+    if not observations or bucket_count <= 0:
+        return []
+    ordered = sorted(observations, key=lambda observation: observation.total_score)
+    actual_bucket_count = min(bucket_count, len(ordered))
+    grouped: list[list[HistoricalCalibrationObservation]] = [
+        [] for _ in range(actual_bucket_count)
+    ]
+    for index, observation in enumerate(ordered):
+        bucket_index = min((index * actual_bucket_count) // len(ordered), actual_bucket_count - 1)
+        grouped[bucket_index].append(observation)
+
+    summaries: list[OutcomeBucketSummary] = []
+    for index, bucket in enumerate(grouped, start=1):
+        scores = [observation.total_score for observation in bucket]
+        forward_returns = [float(observation.forward_return) for observation in bucket]
+        excess_returns = [float(observation.excess_return) for observation in bucket]
+        drawdowns = [float(observation.max_drawdown) for observation in bucket]
+        summaries.append(
+            OutcomeBucketSummary(
+                bucket=index,
+                count=len(bucket),
+                min_score=min(scores),
+                max_score=max(scores),
+                average_score=mean(scores),
+                average_forward_return=mean(forward_returns),
+                average_excess_return=mean(excess_returns),
+                excess_return_hit_rate=sum(value > 0.0 for value in excess_returns) / len(bucket),
+                average_max_drawdown=mean(drawdowns),
+                worst_max_drawdown=min(drawdowns),
+            )
+        )
+    return summaries
+
+
+def _spearman(left: list[float], right: list[float]) -> float:
+    if len(left) != len(right) or len(left) < 2:
+        return 0.0
+    left_ranks = _average_ranks(left)
+    right_ranks = _average_ranks(right)
+    left_mean = mean(left_ranks)
+    right_mean = mean(right_ranks)
+    numerator = sum(
+        (left_rank - left_mean) * (right_rank - right_mean)
+        for left_rank, right_rank in zip(left_ranks, right_ranks)
+    )
+    left_variance = sum((rank - left_mean) ** 2 for rank in left_ranks)
+    right_variance = sum((rank - right_mean) ** 2 for rank in right_ranks)
+    denominator = (left_variance * right_variance) ** 0.5
+    return numerator / denominator if denominator else 0.0
+
+
+def _average_ranks(values: list[float]) -> list[float]:
+    ordered = sorted(enumerate(values), key=lambda item: item[1])
+    ranks = [0.0] * len(values)
+    index = 0
+    while index < len(ordered):
+        end = index
+        while end + 1 < len(ordered) and ordered[end + 1][1] == ordered[index][1]:
+            end += 1
+        average_rank = ((index + 1) + (end + 1)) / 2.0
+        for ordered_index in range(index, end + 1):
+            original_index = ordered[ordered_index][0]
+            ranks[original_index] = average_rank
+        index = end + 1
+    return ranks
+
+
+def write_historical_calibration_csv(
+    observations: Iterable[HistoricalCalibrationObservation],
+    path: str | Path,
+) -> None:
+    fieldnames = [
+        "ticker",
+        "as_of",
+        "company_type",
+        "total_score",
+        "recommendation",
+        "data_confidence",
+        "forward_return",
+        "benchmark_return",
+        "max_drawdown",
+        "point_in_time_validated",
+        "latest_filing_date",
+    ]
+    with Path(path).open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        for observation in observations:
+            writer.writerow(
+                {
+                    "ticker": observation.ticker,
+                    "as_of": observation.as_of.isoformat(),
+                    "company_type": observation.company_type,
+                    "total_score": f"{observation.total_score:.6f}",
+                    "recommendation": observation.recommendation,
+                    "data_confidence": f"{observation.data_confidence:.6f}",
+                    "forward_return": _format_optional(observation.forward_return),
+                    "benchmark_return": _format_optional(observation.benchmark_return),
+                    "max_drawdown": _format_optional(observation.max_drawdown),
+                    "point_in_time_validated": "1" if observation.point_in_time_validated else "0",
+                    "latest_filing_date": (
+                        observation.latest_filing_date.isoformat()
+                        if observation.latest_filing_date is not None
+                        else ""
+                    ),
+                }
+            )
+
+
+def read_historical_calibration_csv(path: str | Path) -> list[HistoricalCalibrationObservation]:
+    observations: list[HistoricalCalibrationObservation] = []
+    with Path(path).open(newline="", encoding="utf-8") as handle:
+        for row in csv.DictReader(handle):
+            filing_date = row.get("latest_filing_date", "").strip()
+            observations.append(
+                HistoricalCalibrationObservation(
+                    ticker=row["ticker"].upper().strip(),
+                    as_of=date.fromisoformat(row["as_of"]),
+                    company_type=row["company_type"],
+                    total_score=float(row["total_score"]),
+                    recommendation=row["recommendation"],
+                    data_confidence=float(row["data_confidence"]),
+                    forward_return=_parse_optional_float(row.get("forward_return", "")),
+                    benchmark_return=_parse_optional_float(row.get("benchmark_return", "")),
+                    max_drawdown=_parse_optional_float(row.get("max_drawdown", "")),
+                    point_in_time_validated=row.get("point_in_time_validated", "").lower()
+                    in {"1", "true", "sim", "yes"},
+                    latest_filing_date=date.fromisoformat(filing_date) if filing_date else None,
+                )
+            )
+    return observations
+
+
+def render_historical_calibration_markdown(
+    summary: HistoricalCalibrationSummary,
+    assumptions: CalibrationAssumptions = CALIBRATION,
+) -> str:
+    lines = [
+        "# Validacao Historica Point-in-Time",
+        "",
+        f"- Horizonte futuro: {assumptions.forward_horizon_months} meses",
+        f"- Observacoes totais: {len(summary.observations)}",
+        f"- Observacoes utilizaveis: {summary.usable_observations}",
+        f"- Cobertura de resultados: {summary.outcome_coverage:.1%}",
+        f"- Cobertura point-in-time: {summary.point_in_time_ratio:.1%}",
+        f"- Spearman score x retorno excedente: {summary.spearman_score_to_excess_return:.3f}",
+        f"- Monotonicidade das faixas: {summary.monotonic_bucket_ratio:.1%}",
+        f"- Pronto para alterar pesos: {'sim' if summary.is_ready_for_weight_changes else 'nao'}",
+        "",
+        "## Alertas",
+    ]
+    if summary.warnings:
+        lines.extend(f"- {warning}" for warning in summary.warnings)
+    else:
+        lines.append("- Nenhum alerta de validade historica.")
+    lines.extend(
+        [
+            "",
+            "## Resultado por faixa de score",
+            "| Faixa | N | Score medio | Intervalo | Retorno futuro | Retorno excedente | Acerto relativo | Drawdown medio | Pior drawdown |",
+            "|---:|---:|---:|---|---:|---:|---:|---:|---:|",
+        ]
+    )
+    for bucket in summary.buckets:
+        lines.append(
+            f"| {bucket.bucket} | {bucket.count} | {bucket.average_score:.3f} | "
+            f"{bucket.min_score:.3f} a {bucket.max_score:.3f} | "
+            f"{bucket.average_forward_return:.1%} | {bucket.average_excess_return:.1%} | "
+            f"{bucket.excess_return_hit_rate:.1%} | {bucket.average_max_drawdown:.1%} | "
+            f"{bucket.worst_max_drawdown:.1%} |"
+        )
+    return "\n".join(lines)
+
+
+def _format_optional(value: float | None) -> str:
+    return "" if value is None else f"{value:.8f}"
+
+
+def _parse_optional_float(value: str | None) -> float | None:
+    value = (value or "").strip()
+    return float(value) if value else None
+

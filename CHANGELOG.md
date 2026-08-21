@@ -67,3 +67,13 @@ Original notebooks remain unchanged.
 - Replaced the short justification with a thesis-style recommendation narrative.
 - Added explicit notes when valuation gates block a Buy rating or when weak valuation and weak quality keep a stock at Avoid.
 - Added explanatory report notes for recommendation labels, margin of safety, data confidence, and negative-FCFF DCF cases.
+
+## Professional calibration protocol
+
+- Added a balanced 40-ticker benchmark universe across traditional/cyclical, growth/tech, financial, and negative-FCF/early-growth calibration groups.
+- Added cross-sectional diagnostics for score quartiles, dispersion, recommendation concentration, valuation gates, data confidence, and collection errors.
+- Added explicit minimum-sample and calibration-readiness controls in `config.py`.
+- Added point-in-time historical evaluation for forward return, benchmark-relative return, maximum drawdown, Spearman correlation, and score-bucket monotonicity.
+- Added CSV, JSON, and Markdown calibration artifacts plus a documented anti-look-ahead protocol.
+- Preserved all current score weights and recommendation thresholds until empirical benchmark evidence is available.
+
