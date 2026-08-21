@@ -336,6 +336,7 @@ def save_report_artifacts(ticker: str, report: dict[str, object], output_dir: st
             "executive_summary",
             "recommendation",
             "cost_of_capital",
+            "cash_flow_reconciliation",
             "valuation_table",
             "scenario_table",
             "peer_selection_table",
@@ -676,3 +677,4 @@ def _low_good_signal(value: float, good: float, bad: float) -> tuple[str, str]:
     if value >= bad:
         return "negative", "Atencao"
     return "neutral", "Neutro"
+
