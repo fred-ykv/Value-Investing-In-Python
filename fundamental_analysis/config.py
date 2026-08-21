@@ -49,6 +49,14 @@ class MarketAssumptions:
     risk_free_rate: float = 0.045
     equity_risk_premium: float = 0.055
     default_beta: float = 1.0
+    default_credit_spread: float = 0.020
+    min_beta: float = 0.0
+    max_beta: float = 3.0
+    min_discount_rate: float = 0.01
+    max_discount_rate: float = 0.50
+    max_pre_tax_cost_of_debt: float = 0.30
+    risk_free_rate_source: str = "Premissa configurada; atualizar com Treasury compativel com o horizonte"
+    equity_risk_premium_source: str = "Premissa configurada; atualizar com ERP de mercado documentado"
 
 
 @dataclass(frozen=True)
