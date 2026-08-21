@@ -1,4 +1,4 @@
-"""Adjusted historical prices, forward outcomes, drawdown, and trailing beta."""
+"""Historical valuation prices, adjusted returns, drawdown, and trailing beta."""
 
 from __future__ import annotations
 
@@ -64,7 +64,7 @@ class PriceOutcome:
 
 
 class YFinanceHistoricalPriceClient:
-    """Fetch adjusted closes once per ticker and reuse them across observations."""
+    """Fetch historical prices once per ticker and reuse them across observations."""
 
     def __init__(self):
         self._cache: dict[str, PriceSeries] = {}
@@ -77,29 +77,47 @@ class YFinanceHistoricalPriceClient:
             frame = yf.Ticker(normalized).history(
                 period="max",
                 auto_adjust=False,
-                actions=False,
+                actions=True,
             )
             if frame is None or getattr(frame, "empty", True):
                 raise LookupError(f"Serie historica indisponivel para {normalized}")
-            points: list[PricePoint] = []
-            raw_close = frame["Close"]
-            adjusted_close = frame["Adj Close"] if "Adj Close" in frame else raw_close
-            for raw_day in frame.index:
-                raw_value = float(raw_close.loc[raw_day])
-                adjusted_value = float(adjusted_close.loc[raw_day])
-                if (
-                    not math.isfinite(raw_value)
-                    or raw_value <= 0
-                    or not math.isfinite(adjusted_value)
-                    or adjusted_value <= 0
-                ):
-                    continue
-                converted = raw_day.to_pydatetime().date() if hasattr(raw_day, "to_pydatetime") else date.fromisoformat(str(raw_day)[:10])
-                points.append(PricePoint(converted, adjusted_value, raw_value))
+            points = yfinance_price_points(frame)
             self._cache[normalized] = normalize_price_series(
                 PriceSeries(normalized, tuple(points), "yfinance_historical")
             )
         return self._cache[normalized].between(start, end)
+
+
+def yfinance_price_points(frame: object) -> list[PricePoint]:
+    """Restore as-traded closes because Yahoo back-adjusts Close for later splits."""
+
+    raw_close = frame["Close"]
+    adjusted_close = frame["Adj Close"] if "Adj Close" in frame else raw_close
+    splits = frame["Stock Splits"] if "Stock Splits" in frame else None
+    points: list[PricePoint] = []
+    future_split_factor = 1.0
+    for raw_day in reversed(frame.index):
+        close_value = float(raw_close.loc[raw_day])
+        adjusted_value = float(adjusted_close.loc[raw_day])
+        valuation_value = close_value * future_split_factor
+        if (
+            math.isfinite(valuation_value)
+            and valuation_value > 0
+            and math.isfinite(adjusted_value)
+            and adjusted_value > 0
+        ):
+            converted = (
+                raw_day.to_pydatetime().date()
+                if hasattr(raw_day, "to_pydatetime")
+                else date.fromisoformat(str(raw_day)[:10])
+            )
+            points.append(PricePoint(converted, adjusted_value, valuation_value))
+        if splits is not None:
+            split_factor = float(splits.loc[raw_day])
+            if math.isfinite(split_factor) and split_factor > 0:
+                future_split_factor *= split_factor
+    points.reverse()
+    return points
 
 
 def calculate_price_outcome(
@@ -172,7 +190,7 @@ def calculate_price_outcome(
         max_drawdown=drawdown,
         trailing_beta=beta,
         beta_observations=beta_observations,
-        source="yfinance_historical_adjusted_close",
+        source="yfinance_historical_close_and_adjusted_close",
     )
 
 

@@ -7,6 +7,7 @@ from fundamental_analysis.historical_prices import (
     PricePoint,
     PriceSeries,
     calculate_price_outcome,
+    yfinance_price_points,
 )
 
 
@@ -132,6 +133,25 @@ class HistoricalPriceTests(unittest.TestCase):
         self.assertEqual(outcome.start_adjusted_price, 50)
         self.assertAlmostEqual(outcome.forward_return, 0.20)
         self.assertAlmostEqual(outcome.max_drawdown, -0.20)
+
+    def test_later_splits_are_reversed_only_for_valuation_price(self):
+        import pandas as pd
+
+        frame = pd.DataFrame(
+            {
+                "Close": [50.0, 50.0, 60.0],
+                "Adj Close": [45.0, 46.0, 55.0],
+                "Stock Splits": [0.0, 2.0, 0.0],
+            },
+            index=pd.to_datetime(["2024-01-04", "2024-01-05", "2024-01-08"]),
+        )
+
+        points = yfinance_price_points(frame)
+
+        self.assertEqual(points[0].valuation_close, 100.0)
+        self.assertEqual(points[1].valuation_close, 50.0)
+        self.assertEqual(points[2].valuation_close, 60.0)
+        self.assertEqual(points[0].adjusted_close, 45.0)
 
 
 if __name__ == "__main__":

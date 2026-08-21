@@ -22,10 +22,12 @@ Cada snapshot e ligado a um formulario anual original (`10-K`, `20-F` ou
 3. foi publicado antes da data-base;
 4. respeita o atraso minimo configurado entre filing e analise.
 
-O score e o market cap usam o primeiro fechamento bruto em data de negociacao
-igual ou posterior a data-base, mantendo consistencia com as acoes historicas
-informadas no filing. Retorno futuro, benchmark, drawdown e beta usam
-fechamentos ajustados; o beta usa apenas retornos anteriores ao preco inicial.
+O score e o market cap usam o primeiro fechamento efetivamente negociado em
+data igual ou posterior a data-base. Como o Yahoo reajusta `Close`
+retrospectivamente por splits posteriores, o coletor reverte esses fatores para
+manter consistencia com as acoes historicas informadas no filing. Retorno
+futuro, benchmark, drawdown e beta usam fechamentos ajustados; o beta usa apenas
+retornos anteriores ao preco inicial.
 
 ## Identificacao obrigatoria na SEC
 

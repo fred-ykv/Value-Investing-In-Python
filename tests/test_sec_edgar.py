@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+from copy import deepcopy
 from datetime import date
 
 from fundamental_analysis.sec_edgar import SecEdgarClient
@@ -43,7 +44,7 @@ class SecEdgarClientTests(unittest.TestCase):
         self.assertEqual(snapshot.balance_sheet["total_liabilities"].value, 600)
         self.assertEqual(snapshot.balance_sheet["total_debt"].value, 350)
         self.assertTrue(snapshot.audit.point_in_time_valid)
-        self.assertGreater(snapshot.audit.coverage_ratio, 0.80)
+        self.assertEqual(snapshot.audit.coverage_ratio, 1.0)
 
     def test_filing_is_not_available_before_configured_lag(self):
         with tempfile.TemporaryDirectory() as tempdir:
@@ -56,7 +57,55 @@ class SecEdgarClientTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             SecEdgarClient(user_agent="anonymous")
 
+    def test_accepts_observed_sec_fallback_concepts_for_capex_and_interest(self):
+        payload = deepcopy(company_facts_fixture())
+        gaap = payload["facts"]["us-gaap"]
+        gaap["PaymentsToAcquireProductiveAssets"] = gaap.pop(
+            "PaymentsToAcquirePropertyPlantAndEquipment"
+        )
+        gaap["InterestExpense"] = gaap.pop("InterestExpenseNonOperating")
+
+        def get_json(url):
+            return ticker_map_fixture() if "company_tickers" in url else payload
+
+        with tempfile.TemporaryDirectory() as tempdir:
+            client = SecEdgarClient(
+                "Test Research test@example.com",
+                cache_dir=tempdir,
+                json_getter=get_json,
+            )
+            snapshot = client.build_snapshot("TEST", date(2024, 2, 16))
+
+        self.assertEqual(snapshot.cash_flow["capex"].value, 50)
+        self.assertEqual(snapshot.income_statement["interest_expense"].value, 10)
+        self.assertFalse(snapshot.cash_flow["capex"].is_fallback)
+        self.assertFalse(snapshot.income_statement["interest_expense"].is_fallback)
+
+    def test_derives_lower_confidence_ebit_proxy_when_reported_ebit_is_missing(self):
+        payload = deepcopy(company_facts_fixture())
+        gaap = payload["facts"]["us-gaap"]
+        gaap[
+            "IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest"
+        ] = gaap.pop("OperatingIncomeLoss")
+
+        def get_json(url):
+            return ticker_map_fixture() if "company_tickers" in url else payload
+
+        with tempfile.TemporaryDirectory() as tempdir:
+            client = SecEdgarClient(
+                "Test Research test@example.com",
+                cache_dir=tempdir,
+                json_getter=get_json,
+            )
+            snapshot = client.build_snapshot("TEST", date(2024, 2, 16))
+
+        ebit = snapshot.income_statement["ebit"]
+        self.assertEqual(ebit.value, 150)
+        self.assertTrue(ebit.is_fallback)
+        self.assertEqual(ebit.formula, "pretax_income_plus_abs_interest_expense")
+        self.assertLess(ebit.confidence, snapshot.income_statement["net_income"].confidence)
+        self.assertIn("Metricas derivadas por fallback: ebit.", snapshot.audit.warnings)
+
 
 if __name__ == "__main__":
     unittest.main()
-
