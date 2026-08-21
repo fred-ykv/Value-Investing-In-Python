@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import math
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -30,6 +31,19 @@ class HistoricalCalibrationObservation:
     price_end_date: date | None = None
     filing_accession: str = ""
     fundamental_coverage: float = 0.0
+    risk_free_rate: float | None = None
+    risk_free_rate_date: date | None = None
+    equity_risk_premium: float | None = None
+    erp_reference_year: int | None = None
+    erp_available_date: date | None = None
+    macro_point_in_time_validated: bool = False
+    discount_rate: float | None = None
+    discount_rate_label: str = ""
+    wacc: float | None = None
+    cost_of_equity: float | None = None
+    cost_of_capital_method: str = ""
+    cost_of_capital_confidence: float | None = None
+    cost_of_capital_is_fallback: bool = False
 
     @property
     def excess_return(self) -> float | None:
@@ -47,7 +61,20 @@ class HistoricalCalibrationObservation:
             return False
         if self.latest_filing_date is not None and self.latest_filing_date > self.as_of:
             return False
-        return self.price_start_date is None or self.price_start_date >= self.as_of
+        if self.price_start_date is not None and self.price_start_date < self.as_of:
+            return False
+        if not self.macro_point_in_time_validated:
+            return False
+        macro_rates = (
+            self.risk_free_rate,
+            self.equity_risk_premium,
+            self.discount_rate,
+        )
+        if any(value is None or not math.isfinite(value) for value in macro_rates):
+            return False
+        if self.risk_free_rate_date is None or self.risk_free_rate_date > self.as_of:
+            return False
+        return self.erp_available_date is not None and self.erp_available_date <= self.as_of
 
 
 @dataclass(frozen=True)
@@ -250,6 +277,19 @@ def write_historical_calibration_csv(
         "price_end_date",
         "filing_accession",
         "fundamental_coverage",
+        "risk_free_rate",
+        "risk_free_rate_date",
+        "equity_risk_premium",
+        "erp_reference_year",
+        "erp_available_date",
+        "macro_point_in_time_validated",
+        "discount_rate",
+        "discount_rate_label",
+        "wacc",
+        "cost_of_equity",
+        "cost_of_capital_method",
+        "cost_of_capital_confidence",
+        "cost_of_capital_is_fallback",
     ]
     with Path(path).open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
@@ -285,6 +325,35 @@ def write_historical_calibration_csv(
                     ),
                     "filing_accession": observation.filing_accession,
                     "fundamental_coverage": f"{observation.fundamental_coverage:.6f}",
+                    "risk_free_rate": _format_optional(observation.risk_free_rate),
+                    "risk_free_rate_date": (
+                        observation.risk_free_rate_date.isoformat()
+                        if observation.risk_free_rate_date is not None
+                        else ""
+                    ),
+                    "equity_risk_premium": _format_optional(
+                        observation.equity_risk_premium
+                    ),
+                    "erp_reference_year": observation.erp_reference_year or "",
+                    "erp_available_date": (
+                        observation.erp_available_date.isoformat()
+                        if observation.erp_available_date is not None
+                        else ""
+                    ),
+                    "macro_point_in_time_validated": (
+                        "1" if observation.macro_point_in_time_validated else "0"
+                    ),
+                    "discount_rate": _format_optional(observation.discount_rate),
+                    "discount_rate_label": observation.discount_rate_label,
+                    "wacc": _format_optional(observation.wacc),
+                    "cost_of_equity": _format_optional(observation.cost_of_equity),
+                    "cost_of_capital_method": observation.cost_of_capital_method,
+                    "cost_of_capital_confidence": _format_optional(
+                        observation.cost_of_capital_confidence
+                    ),
+                    "cost_of_capital_is_fallback": (
+                        "1" if observation.cost_of_capital_is_fallback else "0"
+                    ),
                 }
             )
 
@@ -296,6 +365,9 @@ def read_historical_calibration_csv(path: str | Path) -> list[HistoricalCalibrat
             filing_date = row.get("latest_filing_date", "").strip()
             price_start_date = row.get("price_start_date", "").strip()
             price_end_date = row.get("price_end_date", "").strip()
+            risk_free_rate_date = row.get("risk_free_rate_date", "").strip()
+            erp_reference_year = row.get("erp_reference_year", "").strip()
+            erp_available_date = row.get("erp_available_date", "").strip()
             observations.append(
                 HistoricalCalibrationObservation(
                     ticker=row["ticker"].upper().strip(),
@@ -315,6 +387,39 @@ def read_historical_calibration_csv(path: str | Path) -> list[HistoricalCalibrat
                     price_end_date=date.fromisoformat(price_end_date) if price_end_date else None,
                     filing_accession=row.get("filing_accession", "").strip(),
                     fundamental_coverage=float(row.get("fundamental_coverage", "0") or 0.0),
+                    risk_free_rate=_parse_optional_float(row.get("risk_free_rate", "")),
+                    risk_free_rate_date=(
+                        date.fromisoformat(risk_free_rate_date)
+                        if risk_free_rate_date
+                        else None
+                    ),
+                    equity_risk_premium=_parse_optional_float(
+                        row.get("equity_risk_premium", "")
+                    ),
+                    erp_reference_year=(
+                        int(erp_reference_year) if erp_reference_year else None
+                    ),
+                    erp_available_date=(
+                        date.fromisoformat(erp_available_date)
+                        if erp_available_date
+                        else None
+                    ),
+                    macro_point_in_time_validated=(
+                        row.get("macro_point_in_time_validated", "").lower()
+                        in {"1", "true", "sim", "yes"}
+                    ),
+                    discount_rate=_parse_optional_float(row.get("discount_rate", "")),
+                    discount_rate_label=row.get("discount_rate_label", "").strip(),
+                    wacc=_parse_optional_float(row.get("wacc", "")),
+                    cost_of_equity=_parse_optional_float(row.get("cost_of_equity", "")),
+                    cost_of_capital_method=row.get("cost_of_capital_method", "").strip(),
+                    cost_of_capital_confidence=_parse_optional_float(
+                        row.get("cost_of_capital_confidence", "")
+                    ),
+                    cost_of_capital_is_fallback=(
+                        row.get("cost_of_capital_is_fallback", "").lower()
+                        in {"1", "true", "sim", "yes"}
+                    ),
                 )
             )
     return observations
@@ -368,4 +473,3 @@ def _format_optional(value: float | None) -> str:
 def _parse_optional_float(value: str | None) -> float | None:
     value = (value or "").strip()
     return float(value) if value else None
-

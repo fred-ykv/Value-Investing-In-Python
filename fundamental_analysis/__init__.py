@@ -11,6 +11,7 @@ from .calibration import build_calibration_diagnostics, run_benchmark_calibratio
 from .benchmark_universe import DEFAULT_BENCHMARK_CASES, benchmark_tickers
 from .historical_calibration import evaluate_historical_outcomes
 from .historical_prices import YFinanceHistoricalPriceClient, calculate_price_outcome
+from .historical_macro import HistoricalMacroClient
 from .point_in_time_collection import collect_benchmark_history, collect_point_in_time_observation
 from .sec_edgar import SecEdgarClient
 from .scenarios import build_scenarios
@@ -37,6 +38,7 @@ __all__ = [
     "SecEdgarClient",
     "YFinanceHistoricalPriceClient",
     "calculate_price_outcome",
+    "HistoricalMacroClient",
     "collect_point_in_time_observation",
     "collect_benchmark_history",
     "build_scenarios",
@@ -51,4 +53,3 @@ __all__ = [
     "prompt_for_ticker",
     "run_colab_analysis",
 ]
-
