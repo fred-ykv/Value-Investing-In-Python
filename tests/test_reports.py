@@ -47,7 +47,8 @@ class ReportTests(unittest.TestCase):
         self.assertIn("Notas explicativas", markdown)
         self.assertIn("Margem de seguranca negativa", markdown)
         self.assertIn("| Receita |", markdown)
-        self.assertIn("| manual |", markdown)
+        self.assertIn("Fontes dos dados principais:", markdown)
+        self.assertIn("Entrada manual", markdown)
         self.assertTrue(result.report["metric_lineage_table"])
         self.assertIn("source", result.report["metric_lineage_table"][0])
         self.assertIn("confidence", result.report["metric_lineage_table"][0])
@@ -134,7 +135,7 @@ class ReportTests(unittest.TestCase):
         markdown = result.report["markdown"]
         html = result.report["html"]
 
-        self.assertIn("Fonte legivel", markdown)
+        self.assertIn("| Metrica | Valor usado | Base | Periodo | Moeda | Confianca | Fonte |", markdown)
         self.assertIn("Yahoo Finance, Yahoo Finance income statement, periodo 2025-12-31, moeda USD", markdown)
         self.assertIn("Fontes dos dados principais", html)
         self.assertIn("Yahoo Finance income statement", html)
