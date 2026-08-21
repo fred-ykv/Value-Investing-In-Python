@@ -1,4 +1,5 @@
 import unittest
+from dataclasses import replace
 from datetime import date, timedelta
 
 from fundamental_analysis.config import CalibrationAssumptions
@@ -75,6 +76,16 @@ class HistoricalCalibrationTests(unittest.TestCase):
         self.assertFalse(summary.is_ready_for_weight_changes)
         self.assertAlmostEqual(summary.spearman_score_to_excess_return, -1.0)
         self.assertEqual(summary.monotonic_bucket_ratio, 0.0)
+
+    def test_equal_scores_are_not_split_between_buckets(self):
+        tied = [
+            replace(observation, total_score=(index // 2 + 1) / 5.0)
+            for index, observation in enumerate(observations())
+        ]
+        summary = evaluate_historical_outcomes(tied, ASSUMPTIONS)
+
+        self.assertEqual(len(summary.buckets), 5)
+        self.assertTrue(all(bucket.min_score == bucket.max_score for bucket in summary.buckets))
 
 
 if __name__ == "__main__":

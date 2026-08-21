@@ -150,13 +150,21 @@ def _build_outcome_buckets(
     if not observations or bucket_count <= 0:
         return []
     ordered = sorted(observations, key=lambda observation: observation.total_score)
-    actual_bucket_count = min(bucket_count, len(ordered))
+    tied_scores: list[list[HistoricalCalibrationObservation]] = []
+    for observation in ordered:
+        if not tied_scores or tied_scores[-1][0].total_score != observation.total_score:
+            tied_scores.append([])
+        tied_scores[-1].append(observation)
+    actual_bucket_count = min(bucket_count, len(tied_scores))
     grouped: list[list[HistoricalCalibrationObservation]] = [
         [] for _ in range(actual_bucket_count)
     ]
-    for index, observation in enumerate(ordered):
-        bucket_index = min((index * actual_bucket_count) // len(ordered), actual_bucket_count - 1)
-        grouped[bucket_index].append(observation)
+    for index, tied_group in enumerate(tied_scores):
+        bucket_index = min(
+            (index * actual_bucket_count) // len(tied_scores),
+            actual_bucket_count - 1,
+        )
+        grouped[bucket_index].extend(tied_group)
 
     summaries: list[OutcomeBucketSummary] = []
     for index, bucket in enumerate(grouped, start=1):

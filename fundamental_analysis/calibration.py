@@ -100,7 +100,7 @@ class CalibrationDiagnostics:
     average_data_confidence: float
     group_summaries: dict[str, CalibrationGroupSummary]
     warnings: tuple[str, ...]
-    is_ready_for_weight_changes: bool
+    is_ready_for_historical_validation: bool
 
 
 def run_calibration(
@@ -283,7 +283,7 @@ def build_calibration_diagnostics(
         average_data_confidence=average_confidence,
         group_summaries=group_summaries,
         warnings=tuple(warnings),
-        is_ready_for_weight_changes=not warnings,
+        is_ready_for_historical_validation=not warnings,
     )
 
 
@@ -415,7 +415,7 @@ def render_calibration_markdown(
         f"- Dispersao do score: {diagnostics.score_spread:.3f}",
         f"- Confianca media dos dados: {diagnostics.average_data_confidence:.1%}",
         f"- Concentracao da recomendacao dominante: {diagnostics.recommendation_concentration:.1%}",
-        f"- Pronto para alterar pesos: {'sim' if diagnostics.is_ready_for_weight_changes else 'nao'}",
+        f"- Pronto para iniciar validacao historica: {'sim' if diagnostics.is_ready_for_historical_validation else 'nao'}",
         "",
         "## Alertas de validade",
     ]

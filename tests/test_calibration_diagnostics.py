@@ -61,7 +61,7 @@ class CalibrationDiagnosticsTests(unittest.TestCase):
             assumptions(),
         )
 
-        self.assertFalse(diagnostics.is_ready_for_weight_changes)
+        self.assertFalse(diagnostics.is_ready_for_historical_validation)
         self.assertTrue(any("Amostra valida insuficiente" in item for item in diagnostics.warnings))
 
     def test_balanced_sample_can_pass_cross_sectional_controls(self):
@@ -78,7 +78,7 @@ class CalibrationDiagnosticsTests(unittest.TestCase):
 
         diagnostics = build_calibration_diagnostics(rows, assumptions())
 
-        self.assertTrue(diagnostics.is_ready_for_weight_changes)
+        self.assertTrue(diagnostics.is_ready_for_historical_validation)
         self.assertEqual(diagnostics.warnings, ())
         self.assertAlmostEqual(diagnostics.score_spread, 0.55)
 
@@ -98,7 +98,7 @@ class CalibrationDiagnosticsTests(unittest.TestCase):
         rows = [row(index, "grupo_a" if index < 4 else "grupo_b", 0.20 + index * 0.08) for index in range(8)]
         diagnostics = build_calibration_diagnostics(rows, assumptions())
 
-        self.assertFalse(diagnostics.is_ready_for_weight_changes)
+        self.assertFalse(diagnostics.is_ready_for_historical_validation)
         self.assertEqual(diagnostics.dominant_recommendation, "Observar")
         self.assertEqual(diagnostics.recommendation_concentration, 1.0)
 
