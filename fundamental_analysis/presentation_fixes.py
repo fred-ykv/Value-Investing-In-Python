@@ -21,6 +21,10 @@ METRIC_LABELS = {
     "current_assets": "Ativos Circulantes",
     "current_liabilities": "Passivos Circulantes",
     "total_liabilities": "Passivos Totais",
+    "change_in_nwc_cash_effect": "Efeito de Caixa do Capital de Giro",
+    "net_debt": "Divida Liquida",
+    "invested_capital": "Capital Investido",
+    "nopat": "Lucro Operacional apos Impostos (NOPAT)",
 }
 
 MONEY_METRICS = {
@@ -38,6 +42,10 @@ MONEY_METRICS = {
     "current_assets",
     "current_liabilities",
     "total_liabilities",
+    "change_in_nwc_cash_effect",
+    "net_debt",
+    "invested_capital",
+    "nopat",
 }
 
 CURRENCY_SYMBOLS = {"USD": "US$", "BRL": "R$", "EUR": "EUR", "GBP": "GBP"}
@@ -271,3 +279,4 @@ def _translate_remaining_english(text: str) -> str:
     for english, portuguese in replacements.items():
         text = text.replace(english, portuguese)
     return text
+
