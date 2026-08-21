@@ -60,16 +60,16 @@ def build_statement_metrics(statements: FinancialStatements) -> StatementMetrics
 
 
 def compute_free_cash_flow_after_capex(values: Mapping[str, MetricValue]) -> MetricValue:
-    cfo, capex = values["cfo"].value, values["capex"].value
+    cfo_metric, capex_metric = values["cfo"], values["capex"]
+    cfo, capex = cfo_metric.value, capex_metric.value
     if cfo is None or capex is None:
         return MetricValue("free_cash_flow_after_capex", None, "missing", 0.0, "requires CFO and capex", basis="derived")
-    return MetricValue(
+    return _derived_metric(
         "free_cash_flow_after_capex",
         cfo - abs(capex),
-        "derived",
-        (values["cfo"].confidence + values["capex"].confidence) / 2,
+        (cfo_metric, capex_metric),
+        (cfo_metric.confidence + capex_metric.confidence) / 2,
         "CFO - abs(CAPEX); levered cash-flow proxy, not unlevered FCFF",
-        basis="derived",
         formula="cfo_minus_capex",
     )
 
@@ -100,16 +100,52 @@ def compute_fcff(values: Mapping[str, MetricValue]) -> MetricValue:
     note = "FCFF = EBIT * (1 - tax_rate) + D&A - abs(CAPEX) - change_in_nwc"
     if used_nwc_fallback:
         note += "; change_in_nwc unavailable, used explicit 0 approximation with confidence penalty"
-    return MetricValue(
+    return _derived_metric(
         "fcff",
         fcff,
-        "derived",
+        tuple(inputs),
         confidence,
         note,
-        basis="derived",
         is_fallback=used_nwc_fallback or values["tax_rate"].is_fallback,
         formula="nopat_plus_da_minus_capex_minus_delta_nwc",
     )
+
+
+def _derived_metric(
+    name: str,
+    value: float,
+    inputs: tuple[MetricValue, ...],
+    confidence: float,
+    note: str,
+    *,
+    is_fallback: bool = False,
+    formula: str,
+) -> MetricValue:
+    documents = list(dict.fromkeys(item.source_document for item in inputs if item.source_document))
+    source_document = f"Derivado de {'; '.join(documents)}" if documents else None
+    return MetricValue(
+        name,
+        value,
+        "derived",
+        confidence,
+        note,
+        source_url=_shared_lineage_value(inputs, "source_url"),
+        source_document=source_document,
+        period_start=_shared_lineage_value(inputs, "period_start"),
+        period_end=_shared_lineage_value(inputs, "period_end"),
+        filing_date=_shared_lineage_value(inputs, "filing_date"),
+        as_of=_shared_lineage_value(inputs, "as_of"),
+        currency=_shared_lineage_value(inputs, "currency"),
+        scale="raw",
+        basis="derived",
+        is_fallback=is_fallback,
+        formula=formula,
+    )
+
+
+def _shared_lineage_value(inputs: tuple[MetricValue, ...], field_name: str):
+    values = list(dict.fromkeys(getattr(item, field_name) for item in inputs if getattr(item, field_name) is not None))
+    return values[0] if len(values) == 1 else None
 
 
 def compute_tax_rate(values: Mapping[str, MetricValue]) -> MetricValue:
