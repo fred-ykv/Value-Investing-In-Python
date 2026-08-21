@@ -7,7 +7,9 @@ valuation, scoring, and reporting into auditable Python modules.
 
 from .main import analyze_ticker_from_inputs, analyze_ticker_live
 from .notebook_adapter import analyze_from_notebook_globals
-from .calibration import run_calibration
+from .calibration import build_calibration_diagnostics, run_benchmark_calibration, run_calibration
+from .benchmark_universe import DEFAULT_BENCHMARK_CASES, benchmark_tickers
+from .historical_calibration import evaluate_historical_outcomes
 from .scenarios import build_scenarios
 from .comparables import build_comparable_report
 from .cost_of_capital import calculate_cost_of_capital
@@ -24,6 +26,11 @@ __all__ = [
     "analyze_ticker_live",
     "analyze_from_notebook_globals",
     "run_calibration",
+    "run_benchmark_calibration",
+    "build_calibration_diagnostics",
+    "DEFAULT_BENCHMARK_CASES",
+    "benchmark_tickers",
+    "evaluate_historical_outcomes",
     "build_scenarios",
     "build_comparable_report",
     "calculate_cost_of_capital",

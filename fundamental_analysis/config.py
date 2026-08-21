@@ -156,6 +156,23 @@ class CashFlowReconciliationAssumptions:
 
 
 @dataclass(frozen=True)
+class CalibrationAssumptions:
+    minimum_total_sample: int = 40
+    minimum_sample_per_group: int = 8
+    maximum_recommendation_concentration: float = 0.75
+    minimum_score_spread: float = 0.20
+    minimum_data_confidence: float = 0.55
+    maximum_error_rate: float = 0.15
+    outcome_bucket_count: int = 5
+    forward_horizon_months: int = 12
+    minimum_historical_observations: int = 100
+    minimum_outcome_coverage: float = 0.90
+    minimum_point_in_time_ratio: float = 0.95
+    minimum_spearman_correlation: float = 0.10
+    minimum_monotonic_bucket_ratio: float = 0.60
+
+
+@dataclass(frozen=True)
 class ComparableAssumptions:
     discount_for_strong_score: float = -0.30
     premium_for_weak_score: float = 0.30
@@ -281,6 +298,7 @@ SCORE = ScoreConfig()
 SCENARIOS = ScenarioAssumptions()
 REVERSE_DCF = ReverseDCFAssumptions()
 CASH_FLOW_RECONCILIATION = CashFlowReconciliationAssumptions()
+CALIBRATION = CalibrationAssumptions()
 COMPARABLES = ComparableAssumptions()
 PEER_SELECTION = PeerSelectionAssumptions()
 PEER_DISCOVERY = PeerDiscoveryAssumptions()
