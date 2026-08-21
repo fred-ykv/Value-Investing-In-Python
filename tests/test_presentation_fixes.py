@@ -53,14 +53,14 @@ class PresentationFixesTests(unittest.TestCase):
     def test_html_source_values_show_friendly_metric_currency_and_numbered_sources(self):
         html = (
             "<h2>Fontes dos dados principais</h2><table><tbody>"
-            "<tr><td>cash</td><td>35,934,000,000.0000</td><td>Yahoo Finance, moeda USD</td><td>reported</td><td>0.85</td></tr>"
+            "<tr><td>fcff</td><td>786,800,723.1820</td><td>Calculado pelo modelo</td><td>derived</td><td>USD</td><td>0.79</td></tr>"
             "</tbody></table>"
         )
 
         fixed = apply_presentation_fixes_to_html(html)
 
         self.assertIn("<th>Metrica</th><th>Valor usado</th><th>Base</th><th>Confianca</th><th>Fonte</th>", fixed)
-        self.assertIn("<td>Caixa</td><td>US$ 35,934,000,000.00</td><td>Informado pela fonte</td><td>0.85</td><td>[1]</td>", fixed)
+        self.assertIn("<td>Fluxo de Caixa Livre para a Firma</td><td>US$ 786,800,723.18</td><td>Calculado pelo modelo</td><td>0.79</td><td>[1]</td>", fixed)
         self.assertIn("Fontes dos dados principais:", fixed)
 
     def test_remaining_english_score_explanations_are_translated(self):
