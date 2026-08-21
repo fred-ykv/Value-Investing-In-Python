@@ -33,13 +33,14 @@ def build_metrics(statement_values: Mapping[str, MetricValue]) -> MetricPack:
     v = statement_values
     ni, eq, assets, cfo = v["net_income"].value, v["equity"].value, v["total_assets"].value, v["cfo"].value
     revenue, ebit, debt, cash = v["revenue"].value, v["ebit"].value, v["total_debt"].value, v["cash"].value
+    nopat, invested_capital = v["nopat"].value, v["invested_capital"].value
     ca, cl, shares, price = v["current_assets"].value, v["current_liabilities"].value, v["shares"].value, v["price"].value
     bvps, fcff = v["book_value_per_share"].value, v["fcff"].value
     cash_burn = cash_burn_amount(cfo, fcff)
     metrics = {
         "roe": metric_value("roe", safe_div(ni, eq), "derived"),
         "roa": metric_value("roa", safe_div(ni, assets), "derived"),
-        "roic_proxy": metric_value("roic_proxy", safe_div(ebit, (debt or 0.0) + (eq or 0.0)), "derived"),
+        "roic_proxy": metric_value("roic_proxy", safe_div(nopat, invested_capital), "derived", "NOPAT divided by invested capital net of cash"),
         "operating_margin": metric_value("operating_margin", safe_div(ebit, revenue), "derived"),
         "net_margin": metric_value("net_margin", safe_div(ni, revenue), "derived"),
         "cfo_to_net_income": metric_value("cfo_to_net_income", safe_div(cfo, ni), "derived"),
@@ -99,3 +100,4 @@ def earnings_quality_score(metrics: Mapping[str, MetricValue]) -> Optional[float
 def _normalize(value: Optional[float], low: float, high: float) -> Optional[float]:
     value = safe_float(value)
     return None if value is None else max(0.0, min(1.0, (value - low) / (high - low)))
+
