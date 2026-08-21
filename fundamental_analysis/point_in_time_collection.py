@@ -274,9 +274,9 @@ def _analyze_snapshot(
             "price",
             outcome.start_price,
             "yfinance_historical",
-            "Adjusted close on first trading day on or after the analysis date",
+            "Unadjusted close for valuation on first trading day on or after the analysis date",
             source_url=f"https://finance.yahoo.com/quote/{case.ticker}/history",
-            source_document="Yahoo Finance adjusted historical price",
+            source_document="Yahoo Finance historical close",
             period_end=outcome.price_start_date,
             as_of=datetime.combine(outcome.price_start_date, datetime.min.time()),
             currency="USD",
@@ -304,7 +304,7 @@ def _analyze_snapshot(
             "market_cap",
             outcome.start_price * float(shares.value),
             "sec_edgar_derived",
-            "Historical adjusted close multiplied by SEC shares outstanding",
+            "Historical unadjusted close multiplied by SEC shares outstanding",
             source_document=(shares.source_document or "SEC EDGAR") + "; Yahoo Finance historical price",
             period_end=outcome.price_start_date,
             filing_date=shares.filing_date,
@@ -352,4 +352,3 @@ def _classification_info(case: BenchmarkCase) -> dict[str, object]:
         "classification_source": "curated_benchmark_universe",
         "classification_rationale": case.rationale,
     }
-

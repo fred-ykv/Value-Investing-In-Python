@@ -22,10 +22,10 @@ Cada snapshot e ligado a um formulario anual original (`10-K`, `20-F` ou
 3. foi publicado antes da data-base;
 4. respeita o atraso minimo configurado entre filing e analise.
 
-O preco inicial e o primeiro fechamento ajustado em data de negociacao igual
-ou posterior a data-base. O retorno futuro, o retorno do benchmark e o
-drawdown usam a mesma janela. O beta usa apenas retornos anteriores ao preco
-inicial.
+O score e o market cap usam o primeiro fechamento bruto em data de negociacao
+igual ou posterior a data-base, mantendo consistencia com as acoes historicas
+informadas no filing. Retorno futuro, benchmark, drawdown e beta usam
+fechamentos ajustados; o beta usa apenas retornos anteriores ao preco inicial.
 
 ## Identificacao obrigatoria na SEC
 
@@ -79,4 +79,3 @@ usado para reconstruir demonstracoes passadas.
   as premissas configuradas continuam constantes. Pesos e limiares nao devem
   ser recalibrados definitivamente antes dessa camada macro ser adicionada ou
   o impacto da premissa constante ser testado.
-

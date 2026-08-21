@@ -95,7 +95,44 @@ class HistoricalPriceTests(unittest.TestCase):
                 assumptions,
             )
 
+    def test_raw_close_drives_valuation_while_adjusted_close_drives_return(self):
+        provider = StaticPriceProvider(
+            {
+                "TEST": PriceSeries(
+                    "TEST",
+                    (
+                        PricePoint(date(2024, 1, 5), 50, 100),
+                        PricePoint(date(2024, 1, 20), 40, 80),
+                        PricePoint(date(2024, 2, 5), 60, 60),
+                    ),
+                    "fixture",
+                ),
+                "SPY": PriceSeries(
+                    "SPY",
+                    (
+                        PricePoint(date(2024, 1, 5), 100, 100),
+                        PricePoint(date(2024, 1, 20), 105, 105),
+                        PricePoint(date(2024, 2, 5), 110, 110),
+                    ),
+                    "fixture",
+                ),
+            }
+        )
+        assumptions = replace(POINT_IN_TIME, forward_horizon_months=1)
+
+        outcome = calculate_price_outcome(
+            "TEST",
+            "SPY",
+            date(2024, 1, 4),
+            provider,
+            assumptions,
+        )
+
+        self.assertEqual(outcome.start_price, 100)
+        self.assertEqual(outcome.start_adjusted_price, 50)
+        self.assertAlmostEqual(outcome.forward_return, 0.20)
+        self.assertAlmostEqual(outcome.max_drawdown, -0.20)
+
 
 if __name__ == "__main__":
     unittest.main()
-

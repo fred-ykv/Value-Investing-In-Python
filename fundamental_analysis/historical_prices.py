@@ -15,6 +15,11 @@ from .config import POINT_IN_TIME, PointInTimeAssumptions
 class PricePoint:
     day: date
     adjusted_close: float
+    raw_close: float | None = None
+
+    @property
+    def valuation_close(self) -> float:
+        return self.raw_close if self.raw_close is not None else self.adjusted_close
 
 
 @dataclass(frozen=True)
@@ -48,6 +53,8 @@ class PriceOutcome:
     end_price: float
     benchmark_start_price: float
     benchmark_end_price: float
+    start_adjusted_price: float
+    end_adjusted_price: float
     forward_return: float
     benchmark_return: float
     max_drawdown: float
@@ -69,19 +76,26 @@ class YFinanceHistoricalPriceClient:
 
             frame = yf.Ticker(normalized).history(
                 period="max",
-                auto_adjust=True,
+                auto_adjust=False,
                 actions=False,
             )
             if frame is None or getattr(frame, "empty", True):
                 raise LookupError(f"Serie historica indisponivel para {normalized}")
             points: list[PricePoint] = []
-            close = frame["Close"]
-            for raw_day, raw_value in close.items():
-                value = float(raw_value)
-                if not math.isfinite(value) or value <= 0:
+            raw_close = frame["Close"]
+            adjusted_close = frame["Adj Close"] if "Adj Close" in frame else raw_close
+            for raw_day in frame.index:
+                raw_value = float(raw_close.loc[raw_day])
+                adjusted_value = float(adjusted_close.loc[raw_day])
+                if (
+                    not math.isfinite(raw_value)
+                    or raw_value <= 0
+                    or not math.isfinite(adjusted_value)
+                    or adjusted_value <= 0
+                ):
                     continue
                 converted = raw_day.to_pydatetime().date() if hasattr(raw_day, "to_pydatetime") else date.fromisoformat(str(raw_day)[:10])
-                points.append(PricePoint(converted, value))
+                points.append(PricePoint(converted, adjusted_value, raw_value))
             self._cache[normalized] = normalize_price_series(
                 PriceSeries(normalized, tuple(points), "yfinance_historical")
             )
@@ -147,10 +161,12 @@ def calculate_price_outcome(
         target_end_date=target_end,
         price_start_date=stock_start.day,
         price_end_date=stock_end.day,
-        start_price=stock_start.adjusted_close,
-        end_price=stock_end.adjusted_close,
+        start_price=stock_start.valuation_close,
+        end_price=stock_end.valuation_close,
         benchmark_start_price=benchmark_start.adjusted_close,
         benchmark_end_price=benchmark_end.adjusted_close,
+        start_adjusted_price=stock_start.adjusted_close,
+        end_adjusted_price=stock_end.adjusted_close,
         forward_return=forward_return,
         benchmark_return=benchmark_return,
         max_drawdown=drawdown,
@@ -161,12 +177,13 @@ def calculate_price_outcome(
 
 
 def normalize_price_series(series: PriceSeries) -> PriceSeries:
-    by_day: dict[date, float] = {}
+    by_day: dict[date, PricePoint] = {}
     for point in series.points:
-        value = float(point.adjusted_close)
-        if math.isfinite(value) and value > 0:
-            by_day[point.day] = value
-    points = tuple(PricePoint(day, by_day[day]) for day in sorted(by_day))
+        adjusted = float(point.adjusted_close)
+        raw = float(point.raw_close) if point.raw_close is not None else None
+        if math.isfinite(adjusted) and adjusted > 0 and (raw is None or math.isfinite(raw) and raw > 0):
+            by_day[point.day] = PricePoint(point.day, adjusted, raw)
+    points = tuple(by_day[day] for day in sorted(by_day))
     if not points:
         raise LookupError(f"Serie historica vazia para {series.ticker}")
     return PriceSeries(series.ticker.upper().strip(), points, series.source)
@@ -241,4 +258,3 @@ def add_months(value: date, months: int) -> date:
     month = month_index % 12 + 1
     day = min(value.day, calendar.monthrange(year, month)[1])
     return date(year, month, day)
-

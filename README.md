@@ -63,8 +63,9 @@ python build_historical_dataset.py MLI NUE --start-year 2020 --max-filings-per-c
 ```
 
 See `fundamental_analysis/POINT_IN_TIME_DATA.md` before running the full
-benchmark. Historical collection intentionally disables current peer data and
-current sector-multiple fallbacks.
+benchmark. Historical collection uses raw close for valuation, adjusted close
+for performance, and intentionally disables current peer data and current
+sector-multiple fallbacks.
 
 Live ticker analysis and calibration use Yahoo Finance data and require the
 dependencies from `requirements.txt` plus network access.
@@ -151,4 +152,3 @@ StatQuest and Towards Data Science have great tutorials on Machine Learning and 
 I benefited a lot from these resources.
 
 If you have any suggestions or feedback, please feel free to leave a comment or email me at sicong.zhao@duke.edu.
-
