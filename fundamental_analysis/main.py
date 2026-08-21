@@ -6,8 +6,10 @@ from typing import Mapping
 
 from .comparable_reporting import append_comparable_diagnostics_to_html, append_comparable_diagnostics_to_markdown, comparable_diagnostics_table
 from .comparables import ComparableReport, build_comparable_report
-from .config import CompanyType, MARKET, PEER_ENRICHMENT
-from .data_sources import MetricValue, YahooFinanceClient, metric_value, safe_float
+from .config import CompanyType, PEER_ENRICHMENT
+from .cost_of_capital import CostOfCapitalResult, calculate_cost_of_capital
+from .cost_of_capital_reporting import append_cost_of_capital_to_html, append_cost_of_capital_to_markdown, cost_of_capital_payload
+from .data_sources import MetricValue, YahooFinanceClient, metric_value
 from .dcf_sensitivity_reporting import append_dcf_sensitivity_to_html, append_dcf_sensitivity_to_markdown, dcf_sensitivity_table
 from .didactic_reporting import apply_didactic_layer_to_html, apply_didactic_layer_to_markdown, didactic_summary_table
 from .executive_reporting import executive_decision_summary
@@ -37,6 +39,7 @@ class AnalysisResult:
     peer_selection: PeerSelectionReport
     comparables: ComparableReport
     metrics: MetricPack
+    cost_of_capital: CostOfCapitalResult
     score: ScoreReport
     report: dict[str, object]
 
@@ -49,11 +52,12 @@ def analyze_ticker_from_inputs(ticker: str, income_statement: Mapping[str, float
     company_type = classify_company(statements.info, has_negative_fcf=(statement_metrics.get("fcff").value or 0.0) < 0)
     values = statement_metrics.values
     enrich_metrics_with_market_inputs(metrics, market_data, source)
-    cost_of_capital = market_data.get("wacc", infer_cost_of_equity(values, market_data))
-    dcf_input = DCFInput(values["fcff"], values["shares"], metric_value("wacc", cost_of_capital, source), metric_value("growth_years", market_data.get("growth_years"), source), metric_value("terminal_growth", market_data.get("terminal_growth"), source), values["total_debt"], values["cash"], values["price"])
-    valuations = build_valuations(company_type, values, metrics, market_data, source, dcf_input)
-    scenarios = build_scenarios(company_type, values, metrics, market_data, source, build_valuations, cost_of_capital)
-    reverse_dcf = build_reverse_dcf(values, market_data, cost_of_capital)
+    capital = calculate_cost_of_capital(company_type, values, market_data, source)
+    resolved_market_data = {**market_data, "wacc": capital.discount_rate, "ke": capital.cost_of_equity}
+    dcf_input = DCFInput(values["fcff"], values["shares"], capital.discount_rate_metric(), metric_value("growth_years", market_data.get("growth_years"), source), metric_value("terminal_growth", market_data.get("terminal_growth"), source), values["total_debt"], values["cash"], values["price"])
+    valuations = build_valuations(company_type, values, metrics, resolved_market_data, source, dcf_input)
+    scenarios = build_scenarios(company_type, values, metrics, resolved_market_data, source, build_valuations, capital.discount_rate)
+    reverse_dcf = build_reverse_dcf(values, resolved_market_data, capital.discount_rate)
     use_peer_yahoo = peer_yahoo_enrichment_enabled(market_data)
     peer_candidates = enrich_peer_candidates(
         discover_peer_candidates({**statements.info, **market_data}, metrics, market_data),
@@ -67,12 +71,14 @@ def analyze_ticker_from_inputs(ticker: str, income_statement: Mapping[str, float
     markdown = render_markdown_report(ticker, score, valuations, metric_lineage, scenarios, comparables, None)
     markdown = append_peer_selection_to_markdown(markdown, peer_selection)
     markdown = append_comparable_diagnostics_to_markdown(markdown, comparables)
+    markdown = append_cost_of_capital_to_markdown(markdown, capital)
     markdown = append_dcf_sensitivity_to_markdown(markdown, valuations)
     markdown = append_reverse_dcf_to_markdown(markdown, reverse_dcf)
     markdown = apply_didactic_layer_to_markdown(markdown, score, metric_lineage, valuations)
     html = render_html_report(ticker, score, valuations, metric_lineage, scenarios, comparables, None)
     html = append_peer_selection_to_html(html, peer_selection)
     html = append_comparable_diagnostics_to_html(html, comparables)
+    html = append_cost_of_capital_to_html(html, capital)
     html = append_dcf_sensitivity_to_html(html, valuations)
     html = append_reverse_dcf_to_html(html, reverse_dcf)
     html = apply_didactic_layer_to_html(html, score, metric_lineage, valuations)
@@ -81,6 +87,7 @@ def analyze_ticker_from_inputs(ticker: str, income_statement: Mapping[str, float
         "executive_summary": executive_summary(ticker, score, valuations),
         "executive_decision": executive_decision_summary(score, valuations),
         "valuation_table": valuation_table(valuations),
+        "cost_of_capital": cost_of_capital_payload(capital),
         "dcf_sensitivity_table": dcf_sensitivity_table(valuations),
         "scenario_table": scenario_table(scenarios),
         "reverse_dcf": reverse_dcf_table(reverse_dcf),
@@ -98,7 +105,7 @@ def analyze_ticker_from_inputs(ticker: str, income_statement: Mapping[str, float
         "markdown": markdown,
         "html": html,
     }
-    return AnalysisResult(ticker, company_type.value, valuations, scenarios, reverse_dcf, peer_selection, comparables, metrics, score, report)
+    return AnalysisResult(ticker, company_type.value, valuations, scenarios, reverse_dcf, peer_selection, comparables, metrics, capital, score, report)
 
 
 def analyze_ticker_live(ticker: str) -> AnalysisResult:
@@ -124,7 +131,12 @@ def peer_yahoo_enrichment_enabled(market_data: Mapping[str, object]) -> bool:
 def build_valuations(company_type: CompanyType, values: Mapping[str, MetricValue], metrics: MetricPack, market_data: Mapping[str, float], source: str, dcf_input: DCFInput) -> list[ValuationResult]:
     current_price = values["price"]
     terminal_growth = metric_value("terminal_growth", market_data.get("terminal_growth"), source)
-    ke = metric_value("ke", market_data.get("ke", market_data.get("wacc", infer_cost_of_equity(values, market_data))), source)
+    ke = metric_value("ke", market_data.get("ke"), source)
+    if not ke.is_available:
+        ke = metric_value("ke", infer_cost_of_equity(values, market_data), source)
+    wacc = metric_value("wacc", market_data.get("wacc"), source)
+    if not wacc.is_available:
+        wacc = metric_value("wacc", ke.value, source)
     if company_type == CompanyType.FINANCIAL:
         return [
             residual_income_bank(values["book_value_per_share"], metric_value("roe", metrics.get("roe"), "derived"), ke, terminal_growth, current_price),
@@ -132,14 +144,11 @@ def build_valuations(company_type: CompanyType, values: Mapping[str, MetricValue
         ]
     if company_type == CompanyType.GROWTH_TECH:
         net_cash = metric_value("net_cash", (values["cash"].value or 0.0) - (values["total_debt"].value or 0.0), "derived")
-        return [growth_tech_value(values["revenue"], metric_value("revenue_growth", market_data.get("revenue_growth"), source), metric_value("target_fcf_margin", market_data.get("target_fcf_margin"), source), net_cash, values["shares"], current_price, ke), dcf_fcff(dcf_input)]
+        return [growth_tech_value(values["revenue"], metric_value("revenue_growth", market_data.get("revenue_growth"), source), metric_value("target_fcf_margin", market_data.get("target_fcf_margin"), source), net_cash, values["shares"], current_price, wacc), dcf_fcff(dcf_input)]
     eps = None if values["net_income"].value is None or values["shares"].value in (None, 0) else values["net_income"].value / values["shares"].value
     invested = None if values["equity"].value is None else values["equity"].value + (values["total_debt"].value or 0.0) - (values["cash"].value or 0.0)
-    return [dcf_fcff(dcf_input), graham_value(metric_value("eps", eps, "derived"), values["book_value_per_share"], current_price), eva_value(metric_value("invested_capital", invested, "derived"), metric_value("roic", metrics.get("roic_proxy"), "derived"), metric_value("wacc", market_data.get("wacc", infer_cost_of_equity(values, market_data)), source), terminal_growth, values["shares"], current_price)]
+    return [dcf_fcff(dcf_input), graham_value(metric_value("eps", eps, "derived"), values["book_value_per_share"], current_price), eva_value(metric_value("invested_capital", invested, "derived"), metric_value("roic", metrics.get("roic_proxy"), "derived"), wacc, terminal_growth, values["shares"], current_price)]
 
 
 def infer_cost_of_equity(values: Mapping[str, MetricValue], market_data: Mapping[str, float]) -> float:
-    beta = safe_float(market_data.get("beta"))
-    if beta is None:
-        beta = safe_float(values.get("beta", MetricValue("beta", None, "missing", 0.0)))
-    return MARKET.risk_free_rate + (beta if beta is not None else MARKET.default_beta) * MARKET.equity_risk_premium
+    return calculate_cost_of_capital(CompanyType.FINANCIAL, values, market_data).cost_of_equity

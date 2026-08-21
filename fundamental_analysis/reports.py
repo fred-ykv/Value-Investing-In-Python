@@ -335,6 +335,7 @@ def save_report_artifacts(ticker: str, report: dict[str, object], output_dir: st
         for key in (
             "executive_summary",
             "recommendation",
+            "cost_of_capital",
             "valuation_table",
             "scenario_table",
             "peer_selection_table",

@@ -45,6 +45,9 @@ def dcf_fcff(inputs: DCFInput) -> ValuationResult:
     diagnostics: dict[str, object] = {
         "fcff_definition": inputs.fcff.formula or "unknown",
         "fcff_note": inputs.fcff.note,
+        "discount_rate_label": "WACC" if inputs.wacc.name == "wacc" else "Taxa de desconto proxy",
+        "discount_rate_source": inputs.wacc.source,
+        "discount_rate_note": inputs.wacc.note,
         "fallback_assumptions": fallback_assumptions(inputs),
     }
     if wacc <= terminal_growth:
