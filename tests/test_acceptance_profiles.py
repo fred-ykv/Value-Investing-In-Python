@@ -13,12 +13,14 @@ class AcceptanceProfileTests(unittest.TestCase):
     def test_traditional_industrial_runs(self):
         result = analyze_ticker_from_inputs("INDU", BASE_INCOME, BASE_BALANCE, BASE_CASH_FLOW, BASE_MARKET, {"sector": "Industrials", "industry": "Industrial Products"})
         self.assertEqual(result.company_type, "tradicional")
+        self.assertAlmostEqual(result.cost_of_capital.discount_rate, 0.10)
         self.assertTrue(result.valuations)
 
     def test_big_tech_runs(self):
         result = analyze_ticker_from_inputs("TECH", BASE_INCOME, BASE_BALANCE, BASE_CASH_FLOW, dict(BASE_MARKET, revenue_growth=0.18, target_fcf_margin=0.24), {"sector": "Technology", "industry": "Software"})
         self.assertEqual(result.company_type, "growth_tech")
         self.assertEqual(result.valuations[0].method, "growth_tech")
+        self.assertAlmostEqual(result.valuations[0].diagnostics["discount_rate"], result.cost_of_capital.discount_rate)
 
     def test_bank_runs(self):
         result = analyze_ticker_from_inputs("BANK", BASE_INCOME, BASE_BALANCE, BASE_CASH_FLOW, dict(BASE_MARKET, dividend_per_share=2.0), {"sector": "Financial Services", "industry": "Banks - Regional"})
