@@ -36,6 +36,9 @@ class ReportTests(unittest.TestCase):
         self.assertIn("CAGR Receitas 5 anos", markdown)
         self.assertIn("Escala do score", markdown)
         self.assertIn("Valuation por metodo", markdown)
+        self.assertIn("Taxa de desconto utilizada", markdown)
+        self.assertIn("WACC de 10.00%", markdown)
+        self.assertIn("Custo do patrimonio (Ke)", markdown)
         self.assertIn("Fluxo de Caixa Descontado (DCF/FCFF)", markdown)
         self.assertIn("Matriz de sensibilidade DCF", markdown)
         self.assertIn("WACC \\ g terminal", markdown)
@@ -95,6 +98,9 @@ class ReportTests(unittest.TestCase):
         self.assertIn("Escala do score", html)
         self.assertIn("Score por dimensao", html)
         self.assertIn("Valuation por metodo", html)
+        self.assertIn("Taxa de desconto utilizada", html)
+        self.assertIn("WACC de 10.00%", html)
+        self.assertIn("Custo do patrimonio (Ke)", html)
         self.assertIn("Fluxo de Caixa Descontado (DCF/FCFF)", html)
         self.assertIn("Matriz de sensibilidade DCF", html)
         self.assertIn("WACC \\ g terminal", html)
@@ -107,6 +113,8 @@ class ReportTests(unittest.TestCase):
         self.assertIn("Riscos principais", html)
         self.assertIn("card", html)
         self.assertIn("bar", html)
+        self.assertIn("cost_of_capital", result.report)
+        self.assertAlmostEqual(result.report["cost_of_capital"]["discount_rate"], 0.10)
 
     def test_reports_show_readable_source_lineage(self):
         result = analyze_ticker_from_inputs(
@@ -212,6 +220,8 @@ class ReportTests(unittest.TestCase):
 
             payload = json.loads(json_path.read_text(encoding="utf-8"))
             self.assertEqual(payload["recommendation"], result.score.recommendation)
+            self.assertIn("cost_of_capital", payload)
+            self.assertAlmostEqual(payload["cost_of_capital"]["discount_rate"], 0.10)
             self.assertTrue(payload["valuation_table"])
 
 
