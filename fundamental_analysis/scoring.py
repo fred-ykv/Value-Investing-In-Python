@@ -53,13 +53,13 @@ def compute_score(company_type: CompanyType, valuations: Iterable[ValuationResul
 def valuation_dimension(valuations: Iterable[ValuationResult], metrics: MetricPack | None = None, company_type: CompanyType = CompanyType.TRADITIONAL, comparables: ComparableReport | None = None) -> DimensionScore:
     available = [v for v in valuations if v.margin_of_safety is not None and v.confidence > 0]
     if not available:
-        base = financial_valuation_dimension(metrics, None, 0.0) if company_type == CompanyType.FINANCIAL and metrics else DimensionScore("valuation", 0.0, 0.0, "No reliable valuation model available.")
+        base = financial_valuation_dimension(metrics, None, 0.0) if company_type == CompanyType.FINANCIAL and metrics else DimensionScore("valuation", 0.0, 0.0, "Nenhum modelo de valuation confiavel ficou disponivel.")
         return blend_relative_valuation(base, comparables)
     weighted = [(_score_margin_of_safety(v.margin_of_safety), min(v.confidence, SCORE.max_single_valuation_method_weight)) for v in available]
     total_weight = sum(weight for _, weight in weighted)
     score = sum(value * weight for value, weight in weighted) / total_weight if total_weight else 0.0
     confidence = min(1.0, total_weight / max(1, len(available)))
-    base = financial_valuation_dimension(metrics, score, confidence) if company_type == CompanyType.FINANCIAL and metrics else DimensionScore("valuation", score, confidence, "Upside/margin of safety across capped valuation models.")
+    base = financial_valuation_dimension(metrics, score, confidence) if company_type == CompanyType.FINANCIAL and metrics else DimensionScore("valuation", score, confidence, "Mede a margem de seguranca combinada dos modelos de valuation, com peso limitado por metodo para reduzir dupla contagem.")
     return blend_relative_valuation(base, comparables)
 
 
@@ -70,14 +70,14 @@ def blend_relative_valuation(base: DimensionScore, comparables: ComparableReport
     relative_weight = VALUATION_SCORE.relative_weight * comparables.confidence
     total_weight = intrinsic_weight + relative_weight
     if total_weight <= 0:
-        return DimensionScore("valuation", comparables.overall_score, comparables.confidence, "Relative valuation from peer multiples; intrinsic valuation was unavailable.")
+        return DimensionScore("valuation", comparables.overall_score, comparables.confidence, "Valuation relativo por multiplos de pares; valuation intrinseco indisponivel.")
     score = ((base.score * intrinsic_weight) + (comparables.overall_score * relative_weight)) / total_weight
     confidence = min(1.0, intrinsic_weight + relative_weight)
     return DimensionScore(
         "valuation",
         score,
         confidence,
-        "Blends intrinsic margin of safety with peer-relative multiples; peer signal is capped by sample confidence.",
+        "Combina margem de seguranca dos modelos intrinsecos com multiplos relativos de pares; o peso dos comparaveis e limitado pela confianca da amostra.",
     )
 
 
@@ -95,29 +95,29 @@ def financial_valuation_dimension(metrics: MetricPack, model_score: float | None
         relative_margin = (justified_pb / pb) - 1.0
         pieces.append((_score_margin_of_safety(relative_margin), VALUATION_SCORE.bank_justified_price_to_book_weight))
     if not pieces:
-        return DimensionScore("valuation", 0.0, 0.0, "No reliable bank valuation metrics available.")
+        return DimensionScore("valuation", 0.0, 0.0, "Nenhuma metrica confiavel de valuation bancario ficou disponivel.")
     total_weight = sum(weight for _, weight in pieces)
-    return DimensionScore("valuation", sum(value * weight for value, weight in pieces) / total_weight, max(model_confidence, metrics.confidence() * 0.80), "Bank valuation blends RI/DDM margin, P/B, and ROE strength.")
+    return DimensionScore("valuation", sum(value * weight for value, weight in pieces) / total_weight, max(model_confidence, metrics.confidence() * 0.80), "Para bancos, combina Lucro Residual/DDM, P/VP e forca do ROE contra o custo de capital.")
 
 
 def growth_dimension(metrics: MetricPack) -> DimensionScore:
-    return DimensionScore("growth", _average([_metric_score(metrics.values.get("revenue_growth"), -0.05, 0.25), _metric_score(metrics.values.get("fcff_growth"), -0.10, 0.20)], 0.50), metrics.confidence(), "Revenue/FCFF growth profile.")
+    return DimensionScore("growth", _average([_metric_score(metrics.values.get("revenue_growth"), -0.05, 0.25), _metric_score(metrics.values.get("fcff_growth"), -0.10, 0.20)], 0.50), metrics.confidence(), "Avalia o perfil de crescimento de receita e de fluxo de caixa livre para a firma.")
 
 
 def quality_dimension(metrics: MetricPack) -> DimensionScore:
-    return DimensionScore("quality", _average([_metric_score(metrics.values.get("fama_french_profitability"), 0, 1), _metric_score(metrics.values.get("earnings_quality"), 0, 1), _metric_score(metrics.values.get("piotroski_proxy"), 0, 1)], 0.0), metrics.confidence(), "Profitability, accruals, and Piotroski-style quality.")
+    return DimensionScore("quality", _average([_metric_score(metrics.values.get("fama_french_profitability"), 0, 1), _metric_score(metrics.values.get("earnings_quality"), 0, 1), _metric_score(metrics.values.get("piotroski_proxy"), 0, 1)], 0.0), metrics.confidence(), "Avalia rentabilidade, qualidade do lucro, accruals e sinais inspirados no Piotroski F-Score.")
 
 
 def debt_dimension(metrics: MetricPack, company_type: CompanyType) -> DimensionScore:
     if company_type == CompanyType.FINANCIAL:
-        return DimensionScore("debt", 0.50, metrics.confidence(), "Debt ratios are less meaningful for banks; neutral score.")
+        return DimensionScore("debt", 0.50, metrics.confidence(), "Indicadores tradicionais de divida sao menos comparaveis em bancos; por isso o score fica neutro.")
     de, nd = metrics.get("debt_to_equity"), metrics.get("net_debt_to_ebit")
-    return DimensionScore("debt", _average([None if de is None else 1.0 - _normalize(de, 0, 3), None if nd is None else 1.0 - _normalize(nd, 0, 5)], 0.50), metrics.confidence(), "Balance sheet leverage.")
+    return DimensionScore("debt", _average([None if de is None else 1.0 - _normalize(de, 0, 3), None if nd is None else 1.0 - _normalize(nd, 0, 5)], 0.50), metrics.confidence(), "Avalia a alavancagem do balanco, principalmente divida sobre patrimonio e divida liquida sobre EBIT.")
 
 
 def liquidity_dimension(metrics: MetricPack, company_type: CompanyType) -> DimensionScore:
     if company_type == CompanyType.FINANCIAL:
-        return DimensionScore("liquidity", 0.50, metrics.confidence(), "Current ratio is not central for banks; neutral score.")
+        return DimensionScore("liquidity", 0.50, metrics.confidence(), "Liquidez corrente nao e o principal indicador para bancos; por isso a leitura fica neutra.")
     current_ratio = metrics.get("current_ratio")
     current_ratio_score = _normalize(current_ratio, 0.8, 2.0) if current_ratio is not None else 0.50
     if company_type == CompanyType.GROWTH_TECH:
@@ -125,14 +125,14 @@ def liquidity_dimension(metrics: MetricPack, company_type: CompanyType) -> Dimen
         if runway is not None:
             runway_score = _normalize(runway, 0.5, max(GROWTH_TECH.min_cash_runway_years, 0.5))
             score = (current_ratio_score * 0.40) + (runway_score * 0.60)
-            return DimensionScore("liquidity", score, metrics.confidence(), "Liquidity blends current ratio with cash runway for growth/tech cash-burn risk.")
-    return DimensionScore("liquidity", current_ratio_score, metrics.confidence(), "Short-term liquidity.")
+            return DimensionScore("liquidity", score, metrics.confidence(), "Para growth/tech, combina liquidez corrente com runway de caixa para capturar risco de queima de caixa.")
+    return DimensionScore("liquidity", current_ratio_score, metrics.confidence(), "Avalia a folga de liquidez de curto prazo, principalmente ativos circulantes contra passivos circulantes.")
 
 
 def data_confidence_dimension(valuations: Iterable[ValuationResult], metrics: MetricPack) -> DimensionScore:
     parts = [v.confidence for v in valuations if v.confidence > 0] + [metrics.confidence()]
     score = sum(parts) / len(parts) if parts else 0.0
-    return DimensionScore("data_confidence", score, score, "Average confidence of sources and derived metrics.")
+    return DimensionScore("data_confidence", score, score, "Mede a confianca media das fontes e das metricas derivadas; nao e probabilidade de acerto.")
 
 
 def recommendation_from_score(score: float, dimensions: Mapping[str, DimensionScore] | None = None) -> str:
@@ -154,7 +154,7 @@ def recommendation_from_score(score: float, dimensions: Mapping[str, DimensionSc
 
 def explain_score(recommendation: str, dimensions: Mapping[str, DimensionScore]) -> str:
     best, worst = max(dimensions.values(), key=lambda d: d.score), min(dimensions.values(), key=lambda d: d.score)
-    return f"Recommendation {recommendation}: strongest dimension is {best.name} ({best.score:.2f}); weakest dimension is {worst.name} ({worst.score:.2f})."
+    return f"Recomendacao {recommendation}: a dimensao mais forte foi {best.name} ({best.score:.2f}); a dimensao mais fraca foi {worst.name} ({worst.score:.2f})."
 
 
 def _metric_score(metric: MetricValue | None, low: float, high: float) -> float | None:
