@@ -37,6 +37,7 @@ class ReportTests(unittest.TestCase):
         self.assertIn("Escala do score", markdown)
         self.assertIn("Valuation por metodo", markdown)
         self.assertIn("Taxa de desconto utilizada", markdown)
+        self.assertIn("Reconciliacao dos fluxos de caixa", markdown)
         self.assertIn("WACC de 10.00%", markdown)
         self.assertIn("Custo do patrimonio (Ke)", markdown)
         self.assertIn("Fluxo de Caixa Descontado (DCF/FCFF)", markdown)
@@ -99,6 +100,7 @@ class ReportTests(unittest.TestCase):
         self.assertIn("Score por dimensao", html)
         self.assertIn("Valuation por metodo", html)
         self.assertIn("Taxa de desconto utilizada", html)
+        self.assertIn("Reconciliacao dos fluxos de caixa", html)
         self.assertIn("WACC de 10.00%", html)
         self.assertIn("Custo do patrimonio (Ke)", html)
         self.assertIn("Fluxo de Caixa Descontado (DCF/FCFF)", html)
@@ -114,6 +116,7 @@ class ReportTests(unittest.TestCase):
         self.assertIn("card", html)
         self.assertIn("bar", html)
         self.assertIn("cost_of_capital", result.report)
+        self.assertIn("cash_flow_reconciliation", result.report)
         self.assertAlmostEqual(result.report["cost_of_capital"]["discount_rate"], 0.10)
 
     def test_reports_show_readable_source_lineage(self):
@@ -222,8 +225,10 @@ class ReportTests(unittest.TestCase):
             self.assertEqual(payload["recommendation"], result.score.recommendation)
             self.assertIn("cost_of_capital", payload)
             self.assertAlmostEqual(payload["cost_of_capital"]["discount_rate"], 0.10)
+            self.assertIn("cash_flow_reconciliation", payload)
             self.assertTrue(payload["valuation_table"])
 
 
 if __name__ == "__main__":
     unittest.main()
+

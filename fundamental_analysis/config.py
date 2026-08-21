@@ -150,6 +150,12 @@ class ReverseDCFAssumptions:
 
 
 @dataclass(frozen=True)
+class CashFlowReconciliationAssumptions:
+    close_gap_ratio: float = 0.20
+    moderate_gap_ratio: float = 0.50
+
+
+@dataclass(frozen=True)
 class ComparableAssumptions:
     discount_for_strong_score: float = -0.30
     premium_for_weak_score: float = 0.30
@@ -274,6 +280,7 @@ VALUATION_SCORE = ValuationScoreAssumptions()
 SCORE = ScoreConfig()
 SCENARIOS = ScenarioAssumptions()
 REVERSE_DCF = ReverseDCFAssumptions()
+CASH_FLOW_RECONCILIATION = CashFlowReconciliationAssumptions()
 COMPARABLES = ComparableAssumptions()
 PEER_SELECTION = PeerSelectionAssumptions()
 PEER_DISCOVERY = PeerDiscoveryAssumptions()
@@ -342,3 +349,4 @@ DATA_SOURCE_CONFIDENCE = {
     "fallback": 0.50,
     "missing": 0.00,
 }
+

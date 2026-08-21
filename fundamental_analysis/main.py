@@ -1,15 +1,16 @@
 """Orchestration entry points."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Mapping
 
 from .comparable_reporting import append_comparable_diagnostics_to_html, append_comparable_diagnostics_to_markdown, comparable_diagnostics_table
 from .comparables import ComparableReport, build_comparable_report
-from .config import CompanyType, PEER_ENRICHMENT
+from .cash_flow_reconciliation import CashFlowReconciliation, append_cash_flow_reconciliation_to_html, append_cash_flow_reconciliation_to_markdown, reconcile_cash_flows
+from .config import CompanyType, DCF, PEER_ENRICHMENT
 from .cost_of_capital import CostOfCapitalResult, calculate_cost_of_capital
 from .cost_of_capital_reporting import append_cost_of_capital_to_html, append_cost_of_capital_to_markdown, cost_of_capital_payload
-from .data_sources import MetricValue, YahooFinanceClient, metric_value
+from .data_sources import MetricValue, YahooFinanceClient, clamp, metric_value, safe_float
 from .dcf_sensitivity_reporting import append_dcf_sensitivity_to_html, append_dcf_sensitivity_to_markdown, dcf_sensitivity_table
 from .didactic_reporting import apply_didactic_layer_to_html, apply_didactic_layer_to_markdown, didactic_summary_table
 from .executive_reporting import executive_decision_summary
@@ -40,11 +41,12 @@ class AnalysisResult:
     comparables: ComparableReport
     metrics: MetricPack
     cost_of_capital: CostOfCapitalResult
+    cash_flow_reconciliation: CashFlowReconciliation
     score: ScoreReport
     report: dict[str, object]
 
 
-def analyze_ticker_from_inputs(ticker: str, income_statement: Mapping[str, float], balance_sheet: Mapping[str, float], cash_flow: Mapping[str, float], market_data: Mapping[str, float], info: Mapping[str, object] | None = None, source: str = "manual") -> AnalysisResult:
+def analyze_ticker_from_inputs(ticker: str, income_statement: Mapping[str, object], balance_sheet: Mapping[str, object], cash_flow: Mapping[str, object], market_data: Mapping[str, object], info: Mapping[str, object] | None = None, source: str = "manual") -> AnalysisResult:
     statements = FinancialStatements(ticker, income_statement, balance_sheet, cash_flow, market_data, info or {}, source)
     statements = update_market_from_info(statements)
     statement_metrics = build_statement_metrics(statements)
@@ -53,8 +55,11 @@ def analyze_ticker_from_inputs(ticker: str, income_statement: Mapping[str, float
     values = statement_metrics.values
     enrich_metrics_with_market_inputs(metrics, market_data, source)
     capital = calculate_cost_of_capital(company_type, values, market_data, source)
-    resolved_market_data = {**market_data, "wacc": capital.discount_rate, "ke": capital.cost_of_equity}
-    dcf_input = DCFInput(values["fcff"], values["shares"], capital.discount_rate_metric(), metric_value("growth_years", market_data.get("growth_years"), source), metric_value("terminal_growth", market_data.get("terminal_growth"), source), values["total_debt"], values["cash"], values["price"])
+    growth_years = resolve_valuation_assumption("growth_years", market_data.get("growth_years"), DCF.default_growth_years, DCF.min_growth_years, DCF.max_growth_years, source)
+    terminal_growth = resolve_valuation_assumption("terminal_growth", market_data.get("terminal_growth"), DCF.default_terminal_growth, DCF.min_terminal_growth, min(DCF.max_terminal_growth, capital.discount_rate - DCF.min_spread_wacc_terminal), source)
+    ke = metric_value("ke", capital.cost_of_equity, "derived", capital.sources.get("cost_of_equity", "Custo do patrimonio calculado"), confidence=capital.component_confidences.get("cost_of_equity", capital.confidence))
+    resolved_market_data = {**market_data, "wacc": capital.discount_rate_metric(), "ke": ke, "growth_years": growth_years, "terminal_growth": terminal_growth}
+    dcf_input = DCFInput(values["fcff"], values["shares"], capital.discount_rate_metric(), growth_years, terminal_growth, values["total_debt"], values["cash"], values["price"])
     valuations = build_valuations(company_type, values, metrics, resolved_market_data, source, dcf_input)
     scenarios = build_scenarios(company_type, values, metrics, resolved_market_data, source, build_valuations, capital.discount_rate)
     reverse_dcf = build_reverse_dcf(values, resolved_market_data, capital.discount_rate)
@@ -67,11 +72,13 @@ def analyze_ticker_from_inputs(ticker: str, income_statement: Mapping[str, float
     comparable_market_data = {**statements.info, **merge_peer_medians(market_data, peer_selection)}
     comparables = build_comparable_report(company_type, values, metrics, comparable_market_data)
     score = compute_score(company_type, valuations, metrics, values["price"], comparables)
+    cash_flow_reconciliation = reconcile_cash_flows(values)
     metric_lineage = {**values, **metrics.values}
     markdown = render_markdown_report(ticker, score, valuations, metric_lineage, scenarios, comparables, None)
     markdown = append_peer_selection_to_markdown(markdown, peer_selection)
     markdown = append_comparable_diagnostics_to_markdown(markdown, comparables)
     markdown = append_cost_of_capital_to_markdown(markdown, capital)
+    markdown = append_cash_flow_reconciliation_to_markdown(markdown, cash_flow_reconciliation)
     markdown = append_dcf_sensitivity_to_markdown(markdown, valuations)
     markdown = append_reverse_dcf_to_markdown(markdown, reverse_dcf)
     markdown = apply_didactic_layer_to_markdown(markdown, score, metric_lineage, valuations)
@@ -79,6 +86,7 @@ def analyze_ticker_from_inputs(ticker: str, income_statement: Mapping[str, float
     html = append_peer_selection_to_html(html, peer_selection)
     html = append_comparable_diagnostics_to_html(html, comparables)
     html = append_cost_of_capital_to_html(html, capital)
+    html = append_cash_flow_reconciliation_to_html(html, cash_flow_reconciliation)
     html = append_dcf_sensitivity_to_html(html, valuations)
     html = append_reverse_dcf_to_html(html, reverse_dcf)
     html = apply_didactic_layer_to_html(html, score, metric_lineage, valuations)
@@ -88,6 +96,7 @@ def analyze_ticker_from_inputs(ticker: str, income_statement: Mapping[str, float
         "executive_decision": executive_decision_summary(score, valuations),
         "valuation_table": valuation_table(valuations),
         "cost_of_capital": cost_of_capital_payload(capital),
+        "cash_flow_reconciliation": cash_flow_reconciliation.payload(),
         "dcf_sensitivity_table": dcf_sensitivity_table(valuations),
         "scenario_table": scenario_table(scenarios),
         "reverse_dcf": reverse_dcf_table(reverse_dcf),
@@ -105,7 +114,7 @@ def analyze_ticker_from_inputs(ticker: str, income_statement: Mapping[str, float
         "markdown": markdown,
         "html": html,
     }
-    return AnalysisResult(ticker, company_type.value, valuations, scenarios, reverse_dcf, peer_selection, comparables, metrics, capital, score, report)
+    return AnalysisResult(ticker, company_type.value, valuations, scenarios, reverse_dcf, peer_selection, comparables, metrics, capital, cash_flow_reconciliation, score, report)
 
 
 def analyze_ticker_live(ticker: str) -> AnalysisResult:
@@ -116,7 +125,7 @@ def analyze_ticker_live(ticker: str) -> AnalysisResult:
     return analyze_ticker_from_inputs(statements.ticker, statements.income_statement, statements.balance_sheet, statements.cash_flow, statements.market_data, statements.info, statements.source)
 
 
-def enrich_metrics_with_market_inputs(metrics: MetricPack, market_data: Mapping[str, float], source: str) -> None:
+def enrich_metrics_with_market_inputs(metrics: MetricPack, market_data: Mapping[str, object], source: str) -> None:
     for name in ("revenue_growth", "fcff_growth", "rule_of_40", "gross_margin", "cash_runway_years", "dividend_per_share", "revenue_cagr_5y", "earnings_cagr_5y"):
         if name in market_data:
             metrics.values[name] = metric_value(name, market_data[name], source)
@@ -128,13 +137,13 @@ def peer_yahoo_enrichment_enabled(market_data: Mapping[str, object]) -> bool:
     return PEER_ENRICHMENT.use_yahoo_info
 
 
-def build_valuations(company_type: CompanyType, values: Mapping[str, MetricValue], metrics: MetricPack, market_data: Mapping[str, float], source: str, dcf_input: DCFInput) -> list[ValuationResult]:
+def build_valuations(company_type: CompanyType, values: Mapping[str, MetricValue], metrics: MetricPack, market_data: Mapping[str, object], source: str, dcf_input: DCFInput) -> list[ValuationResult]:
     current_price = values["price"]
-    terminal_growth = metric_value("terminal_growth", market_data.get("terminal_growth"), source)
-    ke = metric_value("ke", market_data.get("ke"), source)
+    terminal_growth = preserve_metric("terminal_growth", market_data.get("terminal_growth"), source)
+    ke = preserve_metric("ke", market_data.get("ke"), source)
     if not ke.is_available:
         ke = metric_value("ke", infer_cost_of_equity(values, market_data), source)
-    wacc = metric_value("wacc", market_data.get("wacc"), source)
+    wacc = preserve_metric("wacc", market_data.get("wacc"), source)
     if not wacc.is_available:
         wacc = metric_value("wacc", ke.value, source)
     if company_type == CompanyType.FINANCIAL:
@@ -150,5 +159,32 @@ def build_valuations(company_type: CompanyType, values: Mapping[str, MetricValue
     return [dcf_fcff(dcf_input), graham_value(metric_value("eps", eps, "derived"), values["book_value_per_share"], current_price), eva_value(metric_value("invested_capital", invested, "derived"), metric_value("roic", metrics.get("roic_proxy"), "derived"), wacc, terminal_growth, values["shares"], current_price)]
 
 
-def infer_cost_of_equity(values: Mapping[str, MetricValue], market_data: Mapping[str, float]) -> float:
+def infer_cost_of_equity(values: Mapping[str, MetricValue], market_data: Mapping[str, object]) -> float:
     return calculate_cost_of_capital(CompanyType.FINANCIAL, values, market_data).cost_of_equity
+
+
+def preserve_metric(name: str, value: object, source: str) -> MetricValue:
+    if isinstance(value, MetricValue):
+        return value
+    return metric_value(name, value, source)
+
+
+def resolve_valuation_assumption(name: str, value: object, default: float, lower: float, upper: float, source: str) -> MetricValue:
+    if isinstance(value, MetricValue) and value.is_available:
+        bounded = clamp(float(value.value), lower, upper)
+        if bounded == value.value:
+            return replace(value, name=name)
+        return replace(
+            value,
+            name=name,
+            value=bounded,
+            note=f"Premissa limitada de {value.value:.2%} para {bounded:.2%}",
+            is_fallback=True,
+            confidence=max(0.0, value.confidence - 0.15),
+        )
+    numeric = safe_float(value)
+    if numeric is not None:
+        bounded = clamp(numeric, lower, upper)
+        return metric_value(name, bounded, source, "Premissa informada" if bounded == numeric else f"Premissa limitada de {numeric:.2%} para {bounded:.2%}", is_fallback=bounded != numeric)
+    return metric_value(name, clamp(default, lower, upper), "fallback", "Premissa padrao de config.py", is_fallback=True)
+

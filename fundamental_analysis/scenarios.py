@@ -5,13 +5,13 @@ from dataclasses import dataclass
 from typing import Callable, Mapping
 
 from .config import CompanyType, DCF, GROWTH_TECH, REVERSE_DCF, SCENARIOS, ScenarioCase
-from .data_sources import MetricValue, clamp, metric_value, weighted_confidence
+from .data_sources import MetricValue, clamp, metric_value, safe_float, weighted_confidence
 from .metrics import MetricPack
 from .valuation import DCFInput, ValuationResult, dcf_fcff_no_sensitivity
 
 
 ValuationBuilder = Callable[
-    [CompanyType, Mapping[str, MetricValue], MetricPack, Mapping[str, float], str, DCFInput],
+    [CompanyType, Mapping[str, MetricValue], MetricPack, Mapping[str, object], str, DCFInput],
     list[ValuationResult],
 ]
 
@@ -45,7 +45,7 @@ def build_scenarios(
     company_type: CompanyType,
     values: Mapping[str, MetricValue],
     metrics: MetricPack,
-    market_data: Mapping[str, float],
+    market_data: Mapping[str, object],
     source: str,
     valuation_builder: ValuationBuilder,
     cost_of_capital: float,
@@ -82,7 +82,7 @@ def build_scenarios(
 
 def build_reverse_dcf(
     values: Mapping[str, MetricValue],
-    market_data: Mapping[str, float],
+    market_data: Mapping[str, object],
     cost_of_capital: float,
 ) -> ReverseDCFResult:
     fcff = values["fcff"]
@@ -91,9 +91,11 @@ def build_reverse_dcf(
     terminal_growth = first_number(market_data.get("terminal_growth"), DCF.default_terminal_growth)
     discount_rate = first_number(market_data.get("wacc"), cost_of_capital, DCF.default_wacc)
     terminal_growth = clamp(terminal_growth, DCF.min_terminal_growth, min(DCF.max_terminal_growth, discount_rate - DCF.min_spread_wacc_terminal))
+    min_explicit_growth = max(REVERSE_DCF.min_growth, DCF.min_growth_years)
+    max_explicit_growth = min(REVERSE_DCF.max_growth, DCF.max_growth_years)
     assumptions = {
-        "min_growth": REVERSE_DCF.min_growth,
-        "max_growth": REVERSE_DCF.max_growth,
+        "min_growth": min_explicit_growth,
+        "max_growth": max_explicit_growth,
         "base_growth_years": base_growth,
         "discount_rate": discount_rate,
         "terminal_growth": terminal_growth,
@@ -106,8 +108,9 @@ def build_reverse_dcf(
     if discount_rate <= terminal_growth:
         return ReverseDCFResult(current_price.value, None, base_growth, discount_rate, terminal_growth, 0.0, "indisponivel", "Reverse DCF indisponivel: crescimento terminal precisa ficar abaixo da taxa de desconto.", assumptions)
 
-    low = REVERSE_DCF.min_growth
-    high = min(REVERSE_DCF.max_growth, discount_rate - DCF.min_spread_wacc_terminal)
+    low = min_explicit_growth
+    # Explicit-period growth can exceed WACC; only perpetual growth must stay below it.
+    high = max_explicit_growth
     low_price = _reverse_dcf_price_at_growth(values, discount_rate, terminal_growth, low)
     high_price = _reverse_dcf_price_at_growth(values, discount_rate, terminal_growth, high)
     target = float(current_price.value)
@@ -123,7 +126,7 @@ def build_reverse_dcf(
     return ReverseDCFResult(target, implied, base_growth, discount_rate, terminal_growth, confidence, status, interpretation, assumptions)
 
 
-def scenario_market_data(case: ScenarioCase, metrics: MetricPack, market_data: Mapping[str, float], cost_of_capital: float) -> dict[str, float]:
+def scenario_market_data(case: ScenarioCase, metrics: MetricPack, market_data: Mapping[str, object], cost_of_capital: float) -> dict[str, float]:
     base_growth = first_number(market_data.get("growth_years"), market_data.get("revenue_growth"), metrics.get("revenue_growth"), DCF.default_growth_years)
     base_terminal_growth = first_number(market_data.get("terminal_growth"), DCF.default_terminal_growth)
     base_revenue_growth = first_number(market_data.get("revenue_growth"), base_growth)
@@ -150,7 +153,7 @@ def scenario_statement_values(values: Mapping[str, MetricValue], case: ScenarioC
     return adjusted
 
 
-def scenario_assumptions(case: ScenarioCase, market_data: Mapping[str, float]) -> dict[str, float]:
+def scenario_assumptions(case: ScenarioCase, market_data: Mapping[str, object]) -> dict[str, float]:
     return {
         "growth_years": market_data["growth_years"],
         "revenue_growth": market_data["revenue_growth"],
@@ -183,8 +186,9 @@ def aggregate_confidence(valuations: list[ValuationResult]) -> float:
 
 def first_number(*values: object) -> float:
     for value in values:
-        if isinstance(value, (int, float)):
-            return float(value)
+        numeric = safe_float(value)
+        if numeric is not None:
+            return numeric
     return 0.0
 
 
@@ -244,3 +248,4 @@ def reverse_dcf_interpretation(implied_growth: float, base_growth: float | None)
         else:
             read += " A exigencia esta proxima da premissa base."
     return status, read
+
