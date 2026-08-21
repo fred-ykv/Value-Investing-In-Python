@@ -66,7 +66,7 @@ class ScoringCalibrationTests(unittest.TestCase):
         dimension = liquidity_dimension(metrics, CompanyType.GROWTH_TECH)
 
         self.assertLess(dimension.score, 0.80)
-        self.assertIn("cash runway", dimension.explanation)
+        self.assertIn("runway de caixa", dimension.explanation)
 
     def test_relative_comparables_blend_into_valuation_without_overriding_intrinsic_value(self):
         metrics = metric_pack()
@@ -77,7 +77,7 @@ class ScoringCalibrationTests(unittest.TestCase):
 
         self.assertGreater(dimension.score, valuation_dimension(valuations, metrics, CompanyType.TRADITIONAL).score)
         self.assertLess(dimension.score, 0.90)
-        self.assertIn("peer-relative", dimension.explanation)
+        self.assertIn("multiplos relativos de pares", dimension.explanation)
 
 
 if __name__ == "__main__":

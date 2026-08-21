@@ -6,6 +6,7 @@ from typing import Iterable
 
 from .comparables import ComparableReport
 from .data_sources import MetricValue
+from .peer_reporting import peer_median_detail_table, peer_selection_visual_table
 from .peer_selection import PeerSelectionReport
 from .reports import (
     _fmt_money,
@@ -17,20 +18,15 @@ from .reports import (
     explanatory_notes,
     key_indicator_table,
     metric_lineage_table,
-    peer_median_detail_table,
-    peer_selection_snapshot,
-    peer_selection_table,
     recommendation_summary,
     risk_diagnostics,
-    reverse_dcf_summary,
-    reverse_dcf_table,
     scenario_assumption_text,
-    scenario_readthrough,
     scenario_table,
     score_scale_note,
     score_table,
     valuation_table,
 )
+from .reverse_dcf_reporting import reverse_dcf_summary, reverse_dcf_table
 from .scenarios import ReverseDCFResult, ScenarioResult
 from .scoring import ScoreReport
 from .valuation import ValuationResult
@@ -43,10 +39,10 @@ def render_html_report(ticker: str, score: ScoreReport, valuations: Iterable[Val
     valuation_rows = valuation_table(valuations)
     indicator_rows = key_indicator_table(metrics)
     scenario_rows = scenario_table(scenarios)
-    reverse = reverse_dcf_table(reverse_dcf)
     comparable_rows = comparable_table(comparables) if comparables else []
-    peer_rows = peer_selection_table(peer_selection) if peer_selection else []
+    peer_rows = peer_selection_visual_table(peer_selection) if peer_selection else []
     peer_median_rows = peer_median_detail_table(peer_selection) if peer_selection else []
+    reverse = reverse_dcf_table(reverse_dcf) if reverse_dcf else {}
     price = current_price_summary(metrics)
     cards = [
         ("Recomendacao", score.recommendation, "Decisao final do modelo"),
@@ -132,7 +128,7 @@ def render_html_report(ticker: str, score: ScoreReport, valuations: Iterable[Val
             ]
         )
     if peer_selection and (peer_selection.approved or peer_selection.rejected):
-        snapshot = peer_selection_snapshot(peer_selection)
+        snapshot = peer_selection_snapshot(peer_selection, peer_median_rows)
         body.extend(
             [
                 '<section class="panel peer-selection">',
@@ -196,6 +192,29 @@ def render_html_report(ticker: str, score: ScoreReport, valuations: Iterable[Val
     return "\n".join(body)
 
 
+def scenario_readthrough(row: dict[str, object]) -> str:
+    try:
+        margin = float(row.get("margin_of_safety"))
+    except Exception:
+        return "Sem leitura conclusiva."
+    if margin >= 0.15:
+        return "Sustenta a tese com folga."
+    if margin >= 0.0:
+        return "Sustenta a tese, mas com pouca folga."
+    if margin >= -0.15:
+        return "Fragiliza a tese."
+    return "Pressiona fortemente a tese."
+
+
+def peer_selection_snapshot(peer_selection: PeerSelectionReport, median_rows: list[dict[str, object]]) -> dict[str, object]:
+    return {
+        "approved_count": len(peer_selection.approved),
+        "rejected_count": len(peer_selection.rejected),
+        "median_metric_count": len([row for row in median_rows if row.get("included_in_median")]),
+        "confidence": peer_selection.confidence,
+    }
+
+
 def _html_style() -> str:
     return """
 :root { color-scheme: light; font-family: Inter, Segoe UI, Arial, sans-serif; color: #18202a; background: #f5f7fa; }
@@ -221,52 +240,30 @@ h2 { margin: 0 0 16px; font-size: 20px; }
 .bar i { display: block; height: 100%; background: #2f6f9f; }
 .dimension small { color: #667385; }
 .score-readout { display: grid; gap: 4px; justify-items: end; }
-.score-pill { border-radius: 999px; font-size: 11px; font-weight: 800; padding: 3px 7px; text-transform: uppercase; }
-.score-pill.positive { color: #176b43; background: #e7f4ec; border: 1px solid #b9dfc8; }
-.score-pill.neutral { color: #6b5600; background: #fff7d6; border: 1px solid #ead47a; }
-.score-pill.negative { color: #9c2f2f; background: #fdeaea; border: 1px solid #efb6b6; }
 table { width: 100%; border-collapse: collapse; font-size: 14px; }
 th { text-align: left; color: #526071; background: #f2f5f8; }
 th, td { padding: 10px 8px; border-bottom: 1px solid #e3e8ef; vertical-align: top; }
 td:not(:first-child), th:not(:first-child) { text-align: right; }
 .indicator-table td:nth-child(1), .indicator-table th:nth-child(1), .indicator-table td:nth-child(2), .indicator-table th:nth-child(2), .indicator-table td:nth-child(4), .indicator-table th:nth-child(4), .indicator-table td:nth-child(5), .indicator-table th:nth-child(5), .indicator-table td:nth-child(7), .indicator-table th:nth-child(7) { text-align: left; }
-.signal { display: inline-flex; align-items: center; justify-content: center; min-width: 84px; padding: 4px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; }
-.signal.positive { color: #176b43; background: #e7f4ec; border: 1px solid #b9dfc8; }
-.signal.neutral { color: #6b5600; background: #fff7d6; border: 1px solid #ead47a; }
-.signal.negative { color: #9c2f2f; background: #fdeaea; border: 1px solid #efb6b6; }
+.signal, .peer-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 84px; padding: 4px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; }
+.signal.positive, .peer-badge.approved { color: #176b43; background: #e7f4ec; border: 1px solid #b9dfc8; }
+.signal.neutral, .peer-badge.weak { color: #6b5600; background: #fff7d6; border: 1px solid #ead47a; }
+.signal.negative, .peer-badge.rejected { color: #9c2f2f; background: #fdeaea; border: 1px solid #efb6b6; }
 .signal.missing { color: #667385; background: #eef2f6; border: 1px solid #d6dde6; }
-.reverse-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin-top: 14px; }
-.reverse-item { background: #f7f9fb; border: 1px solid #e0e6ed; border-radius: 8px; padding: 12px; }
-.reverse-item span { display: block; color: #667385; font-size: 12px; }
-.reverse-item strong { display: block; margin-top: 6px; font-size: 20px; }
-.peer-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin: 12px 0 16px; }
-.peer-summary div { background: #f7f9fb; border: 1px solid #e0e6ed; border-radius: 8px; padding: 10px 12px; }
-.peer-summary span { display: block; color: #667385; font-size: 12px; }
-.peer-summary strong { display: block; margin-top: 4px; font-size: 18px; }
-.peer-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 86px; padding: 4px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; }
-.peer-badge.approved { color: #176b43; background: #e7f4ec; border: 1px solid #b9dfc8; }
-.peer-badge.weak { color: #6b5600; background: #fff7d6; border: 1px solid #ead47a; }
-.peer-badge.rejected { color: #9c2f2f; background: #fdeaea; border: 1px solid #efb6b6; }
+.reverse-grid, .peer-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-top: 14px; }
+.reverse-item, .peer-summary div { background: #f7f9fb; border: 1px solid #e0e6ed; border-radius: 8px; padding: 12px; }
+.reverse-item span, .peer-summary span { display: block; color: #667385; font-size: 12px; }
+.reverse-item strong, .peer-summary strong { display: block; margin-top: 6px; font-size: 18px; }
 .peer-selection h3 { margin: 18px 0 10px; font-size: 16px; }
 ul { margin: 0; padding-left: 20px; }
 li { margin: 8px 0; }
-@media (max-width: 720px) {
-  h1 { font-size: 32px; }
-  .dimension { grid-template-columns: 1fr; gap: 6px; }
-  td:not(:first-child), th:not(:first-child) { text-align: left; }
-}
+@media (max-width: 720px) { h1 { font-size: 32px; } .dimension { grid-template-columns: 1fr; gap: 6px; } td:not(:first-child), th:not(:first-child) { text-align: left; } }
 """
 
 
 def _metric_card(title: str, value: str, subtitle: str, recommendation: str = "") -> str:
     klass = {"Comprar": "buy", "Observar": "watch", "Evitar": "avoid"}.get(recommendation, "")
-    return (
-        f'<article class="card {klass}">'
-        f"<span>{escape(title)}</span>"
-        f"<strong>{escape(value)}</strong>"
-        f"<span>{escape(subtitle)}</span>"
-        "</article>"
-    )
+    return f'<article class="card {klass}"><span>{escape(title)}</span><strong>{escape(value)}</strong><span>{escape(subtitle)}</span></article>'
 
 
 def _dimension_bar(row: dict[str, object]) -> str:
@@ -302,17 +299,15 @@ def _peer_selection_table(rows: list[dict[str, object]]) -> str:
         return "<p>Sem pares avaliados.</p>"
     rendered = []
     for row in rows:
-        rendered.append(
-            [
-                row.get("ticker", "-"),
-                _peer_badge(str(row.get("decision", "-"))),
-                f"{float(row.get('score') or 0):.2f}",
-                f"{float(row.get('evidence_weight') or 0):.2f}",
-                f"{float(row.get('data_confidence') or 0):.2f}",
-                row.get("main_reason", "-"),
-                row.get("multiples", "-"),
-            ]
-        )
+        rendered.append([
+            row.get("ticker", "-"),
+            _peer_badge(str(row.get("decision", "-"))),
+            f"{float(row.get('score') or 0):.2f}",
+            f"{float(row.get('evidence_weight') or 0):.2f}",
+            f"{float(row.get('data_confidence') or 0):.2f}",
+            row.get("why", "-"),
+            row.get("multiples", "-"),
+        ])
     return _html_table(["Ticker", "Decisao", "Score", "Evidencia", "Confianca", "Por que", "Multiplos"], rendered)
 
 
@@ -337,7 +332,11 @@ def _html_table(headers: list[str], rows: list[list[object]]) -> str:
     header_html = "".join(f"<th>{escape(str(header))}</th>" for header in headers)
     row_html = []
     for row in rows:
-        row_html.append("<tr>" + "".join(f"<td>{str(value) if str(value).startswith('<span class=\"peer-badge') else escape(str(value))}</td>" for value in row) + "</tr>")
+        cells = []
+        for value in row:
+            text = str(value)
+            cells.append(f"<td>{text if text.startswith('<span class=') else escape(text)}</td>")
+        row_html.append("<tr>" + "".join(cells) + "</tr>")
     return f"<table><thead><tr>{header_html}</tr></thead><tbody>{''.join(row_html)}</tbody></table>"
 
 
@@ -345,12 +344,10 @@ def _indicator_table(rows: list[dict[str, object]]) -> str:
     if not rows:
         return "<p>Sem dados disponiveis.</p>"
     headers = ["Grupo", "Indicador", "Valor", "Sinal", "Fonte", "Confianca", "Leitura"]
-    header_html = "".join(f"<th>{escape(str(header))}</th>" for header in headers)
     row_html = []
     for row in rows:
-        signal, label = _indicator_signal(str(row.get("indicator", "")), row.get("value"))
-        signal = str(row.get("signal") or signal)
-        label = str(row.get("signal_label") or label)
+        signal = str(row.get("signal") or "neutral")
+        label = str(row.get("signal_label") or "Neutro")
         cells = [
             escape(str(row.get("group", "-"))),
             escape(str(row.get("indicator", "-"))),
@@ -361,121 +358,18 @@ def _indicator_table(rows: list[dict[str, object]]) -> str:
             escape(str(row.get("explanation", "-"))),
         ]
         row_html.append("<tr>" + "".join(f"<td>{cell}</td>" for cell in cells) + "</tr>")
-    return f'<table class="indicator-table"><thead><tr>{header_html}</tr></thead><tbody>{"".join(row_html)}</tbody></table>'
+    return f'<table class="indicator-table"><thead><tr>{"".join(f"<th>{header}</th>" for header in headers)}</tr></thead><tbody>{"".join(row_html)}</tbody></table>'
 
 
 def _source_table(rows: list[dict[str, object]]) -> str:
     if not rows:
         return "<p>Sem fontes disponiveis.</p>"
-    preferred = {
-        "price",
-        "revenue",
-        "ebit",
-        "net_income",
-        "fcff",
-        "free_cash_flow_after_capex",
-        "total_assets",
-        "total_debt",
-        "cash",
-        "shares",
-    }
-    selected = [row for row in rows if row.get("metric") in preferred]
-    selected = selected or rows[:10]
+    preferred = {"price", "revenue", "ebit", "net_income", "fcff", "free_cash_flow_after_capex", "total_assets", "total_debt", "cash", "shares"}
+    selected = [row for row in rows if row.get("metric") in preferred] or rows[:10]
     return _html_table(
-        ["Metrica", "Valor", "Fonte", "Base", "Confianca"],
-        [
-            [
-                row.get("metric", "-"),
-                _fmt_number(row.get("value")),
-                row.get("source_detail") or row.get("source", "-"),
-                row.get("basis", "-"),
-                f"{float(row.get('confidence') or 0):.2f}",
-            ]
-            for row in selected[:12]
-        ],
+        ["Metrica", "Valor", "Fonte", "Base", "Moeda", "Confianca"],
+        [[row.get("metric", "-"), _fmt_number(row.get("value")), row.get("source_detail") or row.get("source", "-"), row.get("basis", "-"), row.get("currency") or "-", f"{float(row.get('confidence') or 0):.2f}"] for row in selected[:12]],
     )
-
-
-def _indicator_signal(indicator: str, value: object) -> tuple[str, str]:
-    try:
-        numeric = None if value is None else float(value)
-    except Exception:
-        numeric = None
-    if numeric is None:
-        return "missing", "Indisponivel"
-    if indicator in {"D.Y", "PL/Ativos", "M. Bruta", "M. EBITDA", "M. EBIT", "M. Liquida", "ROE", "ROA", "ROIC", "CAGR Receitas 5 anos", "CAGR Lucros 5 anos"}:
-        return _high_good_signal(numeric, *_indicator_thresholds(indicator))
-    if indicator == "Liq. corrente":
-        if numeric >= 1.5:
-            return "positive", "Favoravel"
-        if numeric < 1.0:
-            return "negative", "Atencao"
-        return "neutral", "Neutro"
-    if indicator == "Giro ativos":
-        if numeric >= 1.0:
-            return "positive", "Favoravel"
-        if numeric < 0.5:
-            return "negative", "Atencao"
-        return "neutral", "Neutro"
-    if indicator in {"Div. liquida/PL", "Div. liquida/EBITDA", "Div. liquida/EBIT"}:
-        return _low_good_signal(numeric, *_indicator_thresholds(indicator))
-    if indicator in {"P/L", "PEG Ratio", "P/VP", "EV/EBITDA", "EV/EBIT", "P/EBITDA", "P/EBIT", "P/Ativo", "P/SR", "P/Cap. Giro", "P/Ativo Circ. Liq."}:
-        if numeric < 0:
-            return "negative", "Atencao"
-        return _low_good_signal(numeric, *_indicator_thresholds(indicator))
-    if indicator in {"VPA", "LPA"}:
-        if numeric > 0:
-            return "positive", "Favoravel"
-        if numeric < 0:
-            return "negative", "Atencao"
-    return "neutral", "Neutro"
-
-
-def _indicator_thresholds(indicator: str) -> tuple[float, float]:
-    thresholds = {
-        "D.Y": (0.02, 0.00),
-        "P/L": (15.0, 30.0),
-        "PEG Ratio": (1.0, 2.0),
-        "P/VP": (1.5, 4.0),
-        "EV/EBITDA": (10.0, 18.0),
-        "EV/EBIT": (12.0, 22.0),
-        "P/EBITDA": (10.0, 18.0),
-        "P/EBIT": (12.0, 22.0),
-        "P/Ativo": (1.5, 4.0),
-        "P/SR": (2.0, 6.0),
-        "P/Cap. Giro": (5.0, 15.0),
-        "P/Ativo Circ. Liq.": (2.0, 8.0),
-        "Div. liquida/PL": (0.5, 1.5),
-        "Div. liquida/EBITDA": (2.0, 4.0),
-        "Div. liquida/EBIT": (3.0, 6.0),
-        "PL/Ativos": (0.50, 0.20),
-        "M. Bruta": (0.30, 0.10),
-        "M. EBITDA": (0.20, 0.08),
-        "M. EBIT": (0.15, 0.05),
-        "M. Liquida": (0.10, 0.02),
-        "ROE": (0.15, 0.05),
-        "ROA": (0.08, 0.02),
-        "ROIC": (0.12, 0.04),
-        "CAGR Receitas 5 anos": (0.08, 0.00),
-        "CAGR Lucros 5 anos": (0.08, 0.00),
-    }
-    return thresholds.get(indicator, (0.0, 0.0))
-
-
-def _high_good_signal(value: float, good: float, bad: float) -> tuple[str, str]:
-    if value >= good:
-        return "positive", "Favoravel"
-    if value <= bad:
-        return "negative", "Atencao"
-    return "neutral", "Neutro"
-
-
-def _low_good_signal(value: float, good: float, bad: float) -> tuple[str, str]:
-    if value <= good:
-        return "positive", "Favoravel"
-    if value >= bad:
-        return "negative", "Atencao"
-    return "neutral", "Neutro"
 
 
 def _fmt_indicator(row: dict[str, object]) -> str:
