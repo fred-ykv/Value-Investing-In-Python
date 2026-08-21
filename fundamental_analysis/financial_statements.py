@@ -45,15 +45,19 @@ def build_statement_metrics(statements: FinancialStatements) -> StatementMetrics
         "cfo": get_mapping_value(cf, "cfo", "Operating Cash Flow", source=source),
         "capex": get_mapping_value(cf, "capex", "Capital Expenditure", source=source),
         "depreciation_amortization": get_mapping_value(cf, "depreciation_amortization", "Depreciation And Amortization", source=source),
-        "change_in_nwc": get_mapping_value(cf, "change_in_nwc", "Change In Working Capital", "Change In Other Working Capital", source=source),
+        "change_in_nwc": get_mapping_value(cf, "change_in_nwc", "delta_nwc", "change_in_non_cash_working_capital", source=source),
+        "change_in_nwc_cash_effect": get_mapping_value(cf, "change_in_nwc_cash_effect", "Change In Working Capital", "Change In Other Working Capital", source=source),
         "shares": get_mapping_value(md, "shares", "shares_outstanding", "Shares Outstanding", source=source),
         "price": get_mapping_value(md, "price", "current_price", "Current Price", source=source),
         "market_cap": get_mapping_value(md, "market_cap", "Market Cap", source=source),
         "beta": get_mapping_value(md, "beta", "Beta", source=source),
     }
     values["tax_rate"] = compute_tax_rate(values)
+    values["nopat"] = compute_nopat(values)
     values["free_cash_flow_after_capex"] = compute_free_cash_flow_after_capex(values)
     values["fcff"] = compute_fcff(values)
+    values["net_debt"] = compute_net_debt(values)
+    values["invested_capital"] = compute_invested_capital(values)
     values["book_value_per_share"] = compute_bvps(values)
     values["ncav_per_share"] = compute_ncav(values)
     return StatementMetrics(values)
@@ -82,24 +86,36 @@ def compute_fcff(values: Mapping[str, MetricValue]) -> MetricValue:
     if ebit is None or tax_rate is None or depreciation is None or capex is None:
         return MetricValue("fcff", None, "missing", 0.0, "requires EBIT, tax rate, D&A, and capex", basis="derived")
 
-    change_in_nwc = values["change_in_nwc"].value
-    used_nwc_fallback = change_in_nwc is None
-    if used_nwc_fallback:
-        change_in_nwc = 0.0
+    economic_delta = values.get("change_in_nwc", MetricValue("change_in_nwc", None, "missing", 0.0))
+    cash_effect = values.get("change_in_nwc_cash_effect", MetricValue("change_in_nwc_cash_effect", None, "missing", 0.0))
+    used_nwc_fallback = not economic_delta.is_available and not cash_effect.is_available
+    if cash_effect.is_available:
+        working_capital_adjustment = float(cash_effect.value)
+        working_capital_metric = cash_effect
+        working_capital_note = "cash-flow statement working-capital effect added to FCFF"
+        formula = "nopat_plus_da_minus_capex_plus_nwc_cash_effect"
+    elif economic_delta.is_available:
+        working_capital_adjustment = -float(economic_delta.value)
+        working_capital_metric = economic_delta
+        working_capital_note = "economic increase in non-cash working capital subtracted from FCFF"
+        formula = "nopat_plus_da_minus_capex_minus_delta_nwc"
+    else:
+        working_capital_adjustment = 0.0
+        working_capital_metric = None
+        working_capital_note = "change_in_nwc unavailable, used explicit 0 approximation with confidence penalty"
+        formula = "nopat_plus_da_minus_capex_nwc_fallback_zero"
 
     normalized_capex = abs(capex)
-    fcff = ebit * (1.0 - tax_rate) + depreciation - normalized_capex - change_in_nwc
+    fcff = ebit * (1.0 - tax_rate) + depreciation - normalized_capex + working_capital_adjustment
     inputs = [values["ebit"], values["tax_rate"], values["depreciation_amortization"], values["capex"]]
-    if values["change_in_nwc"].is_available:
-        inputs.append(values["change_in_nwc"])
+    if working_capital_metric is not None:
+        inputs.append(working_capital_metric)
     confidence = sum(item.confidence for item in inputs if item.is_available) / len(inputs)
     if used_nwc_fallback:
         confidence = max(0.0, confidence - 0.15)
     if values["tax_rate"].is_fallback:
         confidence = max(0.0, confidence - 0.10)
-    note = "FCFF = EBIT * (1 - tax_rate) + D&A - abs(CAPEX) - change_in_nwc"
-    if used_nwc_fallback:
-        note += "; change_in_nwc unavailable, used explicit 0 approximation with confidence penalty"
+    note = f"FCFF = EBIT * (1 - tax_rate) + D&A - abs(CAPEX) + working_capital_adjustment; {working_capital_note}"
     return _derived_metric(
         "fcff",
         fcff,
@@ -107,7 +123,53 @@ def compute_fcff(values: Mapping[str, MetricValue]) -> MetricValue:
         confidence,
         note,
         is_fallback=used_nwc_fallback or values["tax_rate"].is_fallback,
-        formula="nopat_plus_da_minus_capex_minus_delta_nwc",
+        formula=formula,
+    )
+
+
+def compute_net_debt(values: Mapping[str, MetricValue]) -> MetricValue:
+    debt, cash = values["total_debt"], values["cash"]
+    if not debt.is_available or not cash.is_available:
+        return MetricValue("net_debt", None, "missing", 0.0, "requires total debt and cash", basis="derived")
+    return _derived_metric(
+        "net_debt",
+        float(debt.value) - float(cash.value),
+        (debt, cash),
+        (debt.confidence + cash.confidence) / 2.0,
+        "Net debt = total debt - cash",
+        formula="total_debt_minus_cash",
+    )
+
+
+def compute_nopat(values: Mapping[str, MetricValue]) -> MetricValue:
+    ebit, tax_rate = values["ebit"], values["tax_rate"]
+    if not ebit.is_available or not tax_rate.is_available:
+        return MetricValue("nopat", None, "missing", 0.0, "requires EBIT and tax rate", basis="derived")
+    return _derived_metric(
+        "nopat",
+        float(ebit.value) * (1.0 - float(tax_rate.value)),
+        (ebit, tax_rate),
+        (ebit.confidence + tax_rate.confidence) / 2.0,
+        "NOPAT = EBIT * (1 - tax rate)",
+        is_fallback=tax_rate.is_fallback,
+        formula="ebit_after_tax",
+    )
+
+
+def compute_invested_capital(values: Mapping[str, MetricValue]) -> MetricValue:
+    equity = values["equity"]
+    net_debt = values.get("net_debt")
+    if net_debt is None:
+        net_debt = compute_net_debt(values)
+    if not equity.is_available or not net_debt.is_available:
+        return MetricValue("invested_capital", None, "missing", 0.0, "requires equity, total debt, and cash", basis="derived")
+    return _derived_metric(
+        "invested_capital",
+        float(equity.value) + float(net_debt.value),
+        (equity, net_debt),
+        (equity.confidence + net_debt.confidence) / 2.0,
+        "Invested capital = equity + net debt",
+        formula="equity_plus_net_debt",
     )
 
 
@@ -181,3 +243,4 @@ def update_market_from_info(statements: FinancialStatements) -> FinancialStateme
                     market[target] = value
                     break
     return FinancialStatements(statements.ticker, statements.income_statement, statements.balance_sheet, statements.cash_flow, market, statements.info, statements.source)
+
