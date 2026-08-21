@@ -33,6 +33,10 @@ DISPLAY_LABELS = {
     "equity": "Patrimonio Liquido",
     "depreciation_amortization": "Depreciacao e Amortizacao",
     "change_in_nwc": "Variacao do Capital de Giro",
+    "change_in_nwc_cash_effect": "Efeito de Caixa do Capital de Giro",
+    "net_debt": "Divida Liquida",
+    "invested_capital": "Capital Investido",
+    "nopat": "Lucro Operacional apos Impostos (NOPAT)",
     "book_value_per_share": "Valor Patrimonial por Acao",
     "cfo_to_net_income": "Caixa Operacional / Lucro Liquido",
     "earnings_quality": "Qualidade do Lucro",
@@ -250,3 +254,4 @@ def _score_pct(value: float | None) -> str:
 
 def _normalize_usd(text: str) -> str:
     return re.sub(r"(?<!US)\$(?=\d)", "US$ ", text)
+
