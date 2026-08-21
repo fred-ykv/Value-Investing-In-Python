@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import math
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -63,6 +64,13 @@ class HistoricalCalibrationObservation:
         if self.price_start_date is not None and self.price_start_date < self.as_of:
             return False
         if not self.macro_point_in_time_validated:
+            return False
+        macro_rates = (
+            self.risk_free_rate,
+            self.equity_risk_premium,
+            self.discount_rate,
+        )
+        if any(value is None or not math.isfinite(value) for value in macro_rates):
             return False
         if self.risk_free_rate_date is None or self.risk_free_rate_date > self.as_of:
             return False

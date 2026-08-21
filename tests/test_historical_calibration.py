@@ -87,6 +87,13 @@ class HistoricalCalibrationTests(unittest.TestCase):
         self.assertAlmostEqual(summary.point_in_time_ratio, 0.90)
         self.assertTrue(any("point-in-time" in item for item in summary.warnings))
 
+    def test_missing_macro_rate_or_applied_discount_rate_invalidates_observation(self):
+        original = observations()[0]
+
+        self.assertFalse(replace(original, risk_free_rate=None).is_point_in_time_valid)
+        self.assertFalse(replace(original, equity_risk_premium=None).is_point_in_time_valid)
+        self.assertFalse(replace(original, discount_rate=None).is_point_in_time_valid)
+
     def test_inverse_score_relationship_blocks_calibration(self):
         summary = evaluate_historical_outcomes(observations(inverse=True), ASSUMPTIONS)
 
