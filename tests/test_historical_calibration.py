@@ -50,6 +50,19 @@ def observations(inverse=False, invalid_point_in_time_index=None):
                 max_drawdown=-0.30 + score * 0.10,
                 point_in_time_validated=valid,
                 latest_filing_date=as_of - timedelta(days=15) if valid else as_of + timedelta(days=15),
+                risk_free_rate=0.04,
+                risk_free_rate_date=as_of - timedelta(days=1),
+                equity_risk_premium=0.05,
+                erp_reference_year=as_of.year - 1,
+                erp_available_date=date(as_of.year, 1, 15),
+                macro_point_in_time_validated=True,
+                discount_rate=0.085,
+                discount_rate_label="WACC",
+                wacc=0.085,
+                cost_of_equity=0.095,
+                cost_of_capital_method="market_value_wacc",
+                cost_of_capital_confidence=0.81,
+                cost_of_capital_is_fallback=False,
             )
         )
     return result
@@ -110,8 +123,20 @@ class HistoricalCalibrationTests(unittest.TestCase):
         self.assertEqual(restored.price_end_date, date(2021, 4, 1))
         self.assertEqual(restored.filing_accession, "0000000000-20-000001")
         self.assertAlmostEqual(restored.fundamental_coverage, 0.85)
+        self.assertAlmostEqual(restored.risk_free_rate, 0.04)
+        self.assertEqual(restored.risk_free_rate_date, date(2020, 3, 30))
+        self.assertAlmostEqual(restored.equity_risk_premium, 0.05)
+        self.assertEqual(restored.erp_reference_year, 2019)
+        self.assertEqual(restored.erp_available_date, date(2020, 1, 15))
+        self.assertTrue(restored.macro_point_in_time_validated)
+        self.assertAlmostEqual(restored.discount_rate, 0.085)
+        self.assertEqual(restored.discount_rate_label, "WACC")
+        self.assertAlmostEqual(restored.wacc, 0.085)
+        self.assertAlmostEqual(restored.cost_of_equity, 0.095)
+        self.assertEqual(restored.cost_of_capital_method, "market_value_wacc")
+        self.assertAlmostEqual(restored.cost_of_capital_confidence, 0.81)
+        self.assertFalse(restored.cost_of_capital_is_fallback)
 
 
 if __name__ == "__main__":
     unittest.main()
-

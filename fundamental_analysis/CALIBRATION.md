@@ -35,6 +35,10 @@ data. A regra minima e:
 
 `latest_filing_date <= as_of`
 
+Taxa livre de risco, ERP e custo de capital tambem devem guardar valor, fonte e
+data de disponibilidade. Uma observacao so e valida quando a taxa do Treasury
+nao e futura e o ERP anual ja estava disponivel segundo a regra configurada.
+
 Para cada observacao, o protocolo mede no horizonte configurado:
 
 - retorno futuro da acao;
@@ -56,6 +60,7 @@ Spearman reduz a dependencia de uma relacao linear exata.
 - Nao escolher pesos olhando repetidamente para a mesma amostra de teste.
 - Separar periodo de desenvolvimento, validacao e teste final fora da amostra.
 - Registrar versao do codigo, fonte, data de coleta e premissas de mercado.
+- Registrar Ke, WACC ou taxa aplicada, metodo e eventual fallback por observacao.
 - Comparar retorno excedente com benchmark coerente com o grupo e o periodo.
 
 ## Criterio para alterar pesos
@@ -68,8 +73,7 @@ Depois da alteracao, o teste fora da amostra deve ser executado uma unica vez.
 ## Fonte historica
 
 O adaptador descrito em `POINT_IN_TIME_DATA.md` combina fatos padronizados da
-SEC EDGAR com precos ajustados e benchmarks. Dados atuais do Yahoo Finance nao
-sao reutilizados como se estivessem disponiveis no passado. A calibracao final
-ainda depende de cobertura suficiente e da avaliacao das premissas macro
-historicas descritas nas limitacoes do coletor.
-
+SEC EDGAR com precos ajustados, benchmarks, Treasury de 10 anos e ERP implicito
+historico. Dados atuais do Yahoo Finance nao sao reutilizados como se estivessem
+disponiveis no passado. A calibracao final ainda depende de cobertura suficiente,
+segmentacao por tipo de empresa e teste fora da amostra.

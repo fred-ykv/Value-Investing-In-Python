@@ -12,6 +12,7 @@ from .benchmark_universe import BenchmarkCase, DEFAULT_BENCHMARK_CASES
 from .config import POINT_IN_TIME, PointInTimeAssumptions
 from .data_sources import metric_value
 from .historical_calibration import HistoricalCalibrationObservation
+from .historical_macro import HistoricalMacroProvider, HistoricalMacroSnapshot
 from .historical_prices import (
     HistoricalPriceProvider,
     PriceOutcome,
@@ -63,6 +64,7 @@ def collect_point_in_time_observation(
     anchor: SecFilingAnchor,
     sec_client: SecEdgarClient,
     price_provider: HistoricalPriceProvider,
+    macro_provider: HistoricalMacroProvider,
     *,
     analyzer: AnalysisFunction = analyze_ticker_from_inputs,
     assumptions: PointInTimeAssumptions = POINT_IN_TIME,
@@ -82,7 +84,8 @@ def collect_point_in_time_observation(
             price_provider,
             assumptions,
         )
-        result = _analyze_snapshot(case, snapshot, outcome, analyzer)
+        macro = macro_provider.snapshot(as_of)
+        result = _analyze_snapshot(case, snapshot, outcome, macro, analyzer)
         data_dimension = result.score.dimensions.get("data_confidence")
         data_confidence = data_dimension.score if data_dimension is not None else 0.0
         coverage_ok = snapshot.audit.coverage_ratio >= assumptions.minimum_fundamental_coverage
@@ -91,8 +94,9 @@ def collect_point_in_time_observation(
             and coverage_ok
             and outcome.price_start_date >= as_of
             and snapshot.audit.latest_filing_date <= as_of
+            and macro.point_in_time_valid
         )
-        warnings = list(snapshot.audit.warnings)
+        warnings = [*snapshot.audit.warnings, *macro.warnings]
         if outcome.trailing_beta is None:
             warnings.append(
                 f"Beta historico indisponivel: {outcome.beta_observations} retornos comuns; "
@@ -115,6 +119,19 @@ def collect_point_in_time_observation(
             price_end_date=outcome.price_end_date,
             filing_accession=anchor.accession_number,
             fundamental_coverage=snapshot.audit.coverage_ratio,
+            risk_free_rate=float(macro.risk_free_rate.value),
+            risk_free_rate_date=macro.risk_free_observation_date,
+            equity_risk_premium=float(macro.equity_risk_premium.value),
+            erp_reference_year=macro.erp_reference_year,
+            erp_available_date=macro.erp_available_from,
+            macro_point_in_time_validated=macro.point_in_time_valid,
+            discount_rate=result.cost_of_capital.discount_rate,
+            discount_rate_label=result.cost_of_capital.discount_rate_label,
+            wacc=result.cost_of_capital.wacc,
+            cost_of_equity=result.cost_of_capital.cost_of_equity,
+            cost_of_capital_method=result.cost_of_capital.method,
+            cost_of_capital_confidence=result.cost_of_capital.confidence,
+            cost_of_capital_is_fallback=result.cost_of_capital.is_fallback,
         )
         return PointInTimeCollectionResult(
             ticker=case.ticker.upper(),
@@ -136,6 +153,7 @@ def collect_point_in_time_observation(
 def collect_benchmark_history(
     sec_client: SecEdgarClient,
     price_provider: HistoricalPriceProvider,
+    macro_provider: HistoricalMacroProvider,
     *,
     cases: Iterable[BenchmarkCase] = DEFAULT_BENCHMARK_CASES,
     start_year: int | None = None,
@@ -215,6 +233,7 @@ def collect_benchmark_history(
                     anchor,
                     sec_client,
                     price_provider,
+                    macro_provider,
                     analyzer=analyzer,
                     assumptions=assumptions,
                 )
@@ -245,17 +264,27 @@ def render_collection_markdown(dataset: PointInTimeDataset) -> str:
         f"- Taxa de sucesso: {dataset.success_rate:.1%}",
         "",
         "## Resultado por observacao",
-        "| Ticker | Data-base | Filing | Status | Cobertura | Benchmark | Avisos/erro |",
-        "|---|---|---|---|---:|---|---|",
+        "| Ticker | Data-base | Filing | Status | Cobertura | Rf / ERP / taxa aplicada | Benchmark | Avisos/erro |",
+        "|---|---|---|---|---:|---:|---|---|",
     ]
     for result in dataset.results:
         observation = result.observation
         coverage = f"{observation.fundamental_coverage:.1%}" if observation else "-"
         status = "ignorado" if result.skipped else "ok" if observation else "erro"
+        capital = (
+            f"{observation.risk_free_rate:.2%} / {observation.equity_risk_premium:.2%} / "
+            f"{observation.discount_rate:.2%} ({observation.discount_rate_label})"
+            if observation
+            and observation.risk_free_rate is not None
+            and observation.equity_risk_premium is not None
+            and observation.discount_rate is not None
+            else "-"
+        )
         lines.append(
             f"| {result.ticker} | {result.as_of or '-'} | {result.filing_accession or '-'} | "
             f"{status} | "
             f"{coverage} | "
+            f"{capital} | "
             f"{observation.benchmark_ticker if observation else '-'} | "
             f"{result.error or '; '.join(result.warnings) or '-'} |"
         )
@@ -266,6 +295,7 @@ def _analyze_snapshot(
     case: BenchmarkCase,
     snapshot: PointInTimeFundamentals,
     outcome: PriceOutcome,
+    macro: HistoricalMacroSnapshot,
     analyzer: AnalysisFunction,
 ) -> AnalysisResult:
     shares = snapshot.market_data.get("shares")
@@ -287,6 +317,7 @@ def _analyze_snapshot(
         "benchmark_group": case.benchmark_group,
         "sector_bucket": case.sector_bucket,
         "ticker": case.ticker,
+        **macro.market_overrides(),
     }
     if outcome.trailing_beta is not None:
         market_overrides["beta"] = metric_value(

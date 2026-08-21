@@ -181,6 +181,21 @@ class PointInTimeAssumptions:
     request_timeout_seconds: int = 30
     cache_directory: str = ".cache/sec_edgar"
     cache_max_age_hours: int = 24
+    macro_cache_directory: str = ".cache/historical_macro"
+    macro_cache_max_age_hours: int = 24
+    macro_http_user_agent: str = "Value-Investing-In-Python/1.0 historical-research"
+    treasury_csv_url_template: str = (
+        "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/"
+        "daily-treasury-rates.csv/{year}/all?_format=csv&field_tdr_date_value={year}"
+        "&page=&type=daily_treasury_yield_curve"
+    )
+    treasury_maturity_column: str = "10 Yr"
+    risk_free_max_staleness_days: int = 7
+    damodaran_historical_erp_url: str = (
+        "https://pages.stern.nyu.edu/adamodar/New_Home_Page/datafile/histimpl.html"
+    )
+    erp_publication_month: int = 1
+    erp_publication_day: int = 15
     annual_forms: Tuple[str, ...] = ("10-K", "20-F", "40-F")
     minimum_filing_lag_days: int = 1
     minimum_fundamental_coverage: float = 0.70
@@ -390,6 +405,8 @@ DATA_SOURCE_CONFIDENCE = {
     "sec_edgar": 0.90,
     "sec_edgar_derived": 0.82,
     "yfinance_historical": 0.75,
+    "us_treasury_historical": 0.95,
+    "damodaran_historical_erp": 0.78,
     "yfinance": 0.80,
     "yfinance_derived": 0.75,
     "finviz": 0.65,
@@ -401,4 +418,3 @@ DATA_SOURCE_CONFIDENCE = {
     "fallback": 0.50,
     "missing": 0.00,
 }
-

@@ -121,7 +121,14 @@ class ComparableTests(unittest.TestCase):
             {"revenue": 4_000_000, "ebit": 900_000, "net_income": 700_000},
             {"total_assets": 5_000_000, "total_liabilities": 900_000, "equity": 4_100_000, "cash": 1_000_000, "total_debt": 200_000, "current_assets": 2_000_000, "current_liabilities": 400_000},
             {"cfo": 800_000, "capex": -200_000, "depreciation_amortization": 120_000},
-            {"shares": 100_000, "price": 120, "wacc": 0.10, "growth_years": 0.04, "terminal_growth": 0.02},
+            {
+                "shares": 100_000,
+                "price": 120,
+                "wacc": 0.10,
+                "growth_years": 0.04,
+                "terminal_growth": 0.02,
+                "enable_peer_yahoo_enrichment": False,
+            },
             {"sector": "Industrials", "industry": "Metal Fabrication", "business_model": "metal_fabrication"},
         )
 
@@ -141,4 +148,3 @@ class ComparableTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

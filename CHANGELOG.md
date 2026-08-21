@@ -92,3 +92,7 @@ Original notebooks remain unchanged.
 - Fixed fundamental coverage so derived supplemental metrics cannot push the ratio above 100%.
 - Restored as-traded historical closes from Yahoo split events before combining prices with SEC share counts.
 - Documented the six-observation MLI/NUE pilot and the unresolved cyclical false-positive risk without changing score calibration.
+- Added point-in-time U.S. Treasury 10-year rates and historical Damodaran implied ERP to historical score reconstruction.
+- Added strict availability dates, staleness controls, source lineage, caching, and rejection of unavailable macro observations without a current-data fallback.
+- Persisted risk-free rate, ERP, Ke, WACC or applied discount rate, cost-of-capital method, confidence, and fallback status in historical calibration CSVs.
+- Re-ran the MLI/NUE pilot with 6/6 valid macro observations and documented recommendation sensitivity without changing score weights or thresholds.

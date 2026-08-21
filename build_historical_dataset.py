@@ -14,6 +14,7 @@ from fundamental_analysis.historical_calibration import (
     write_historical_calibration_csv,
 )
 from fundamental_analysis.historical_prices import YFinanceHistoricalPriceClient
+from fundamental_analysis.historical_macro import HistoricalMacroClient
 from fundamental_analysis.point_in_time_collection import (
     collect_benchmark_history,
     render_collection_markdown,
@@ -57,9 +58,11 @@ def main() -> int:
     outdir.mkdir(parents=True, exist_ok=True)
     sec_client = SecEdgarClient(user_agent=args.sec_user_agent)
     price_client = YFinanceHistoricalPriceClient()
+    macro_client = HistoricalMacroClient()
     dataset = collect_benchmark_history(
         sec_client,
         price_client,
+        macro_client,
         cases=cases,
         start_year=args.start_year,
         end_year=args.end_year,
@@ -83,4 +86,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

@@ -5,6 +5,8 @@ from datetime import date
 
 from fundamental_analysis.benchmark_universe import BenchmarkCase
 from fundamental_analysis.config import POINT_IN_TIME
+from fundamental_analysis.data_sources import metric_value
+from fundamental_analysis.historical_macro import HistoricalMacroSnapshot
 from fundamental_analysis.historical_prices import PricePoint, PriceSeries
 from fundamental_analysis.point_in_time_collection import (
     collect_benchmark_history,
@@ -41,6 +43,31 @@ class StaticPriceProvider:
         return self.series[ticker].between(start, end)
 
 
+class StaticMacroProvider:
+    def snapshot(self, as_of):
+        available_from = date(as_of.year, 1, 15)
+        return HistoricalMacroSnapshot(
+            as_of=as_of,
+            risk_free_rate=metric_value(
+                "risk_free_rate",
+                0.04,
+                "us_treasury_historical",
+                period_end=as_of,
+            ),
+            equity_risk_premium=metric_value(
+                "equity_risk_premium",
+                0.05,
+                "damodaran_historical_erp",
+                period_end=date(as_of.year - 1, 12, 31),
+                filing_date=available_from,
+            ),
+            risk_free_observation_date=as_of,
+            erp_reference_year=as_of.year - 1,
+            erp_available_from=available_from,
+            point_in_time_valid=True,
+        )
+
+
 class PointInTimeCollectionTests(unittest.TestCase):
     def test_builds_auditable_observation_without_current_peer_data(self):
         def get_json(url):
@@ -72,6 +99,7 @@ class PointInTimeCollectionTests(unittest.TestCase):
                 anchor,
                 sec_client,
                 StaticPriceProvider(),
+                StaticMacroProvider(),
                 assumptions=assumptions,
             )
 
@@ -84,6 +112,14 @@ class PointInTimeCollectionTests(unittest.TestCase):
         self.assertEqual(observation.price_start_date, date(2024, 2, 19))
         self.assertEqual(observation.benchmark_ticker, "SPY")
         self.assertAlmostEqual(observation.forward_return, 0.20)
+        self.assertAlmostEqual(observation.risk_free_rate, 0.04)
+        self.assertAlmostEqual(observation.equity_risk_premium, 0.05)
+        self.assertTrue(observation.macro_point_in_time_validated)
+        self.assertIsNotNone(observation.discount_rate)
+        self.assertIn(observation.discount_rate_label, {"WACC", "Custo do patrimonio (Ke)"})
+        self.assertIsNotNone(observation.cost_of_equity)
+        self.assertTrue(observation.cost_of_capital_method)
+        self.assertIsNotNone(observation.cost_of_capital_confidence)
         self.assertTrue(observation.is_point_in_time_valid)
 
     def test_incomplete_forward_window_is_skipped_instead_of_reported_as_error(self):
@@ -106,6 +142,7 @@ class PointInTimeCollectionTests(unittest.TestCase):
             dataset = collect_benchmark_history(
                 sec_client,
                 StaticPriceProvider(),
+                StaticMacroProvider(),
                 cases=[case],
                 start_year=2024,
                 end_year=2024,
@@ -121,4 +158,3 @@ class PointInTimeCollectionTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
