@@ -152,11 +152,17 @@ def build_valuations(company_type: CompanyType, values: Mapping[str, MetricValue
             ddm_bank(metric_value("dividend_per_share", market_data.get("dividend_per_share"), source), ke, terminal_growth, current_price),
         ]
     if company_type == CompanyType.GROWTH_TECH:
-        net_cash = metric_value("net_cash", (values["cash"].value or 0.0) - (values["total_debt"].value or 0.0), "derived")
+        net_debt = values["net_debt"]
+        net_cash = metric_value(
+            "net_cash",
+            None if not net_debt.is_available else -float(net_debt.value),
+            "derived",
+            "Net cash = cash - total debt",
+            confidence=net_debt.confidence,
+        )
         return [growth_tech_value(values["revenue"], metric_value("revenue_growth", market_data.get("revenue_growth"), source), metric_value("target_fcf_margin", market_data.get("target_fcf_margin"), source), net_cash, values["shares"], current_price, wacc), dcf_fcff(dcf_input)]
     eps = None if values["net_income"].value is None or values["shares"].value in (None, 0) else values["net_income"].value / values["shares"].value
-    invested = None if values["equity"].value is None else values["equity"].value + (values["total_debt"].value or 0.0) - (values["cash"].value or 0.0)
-    return [dcf_fcff(dcf_input), graham_value(metric_value("eps", eps, "derived"), values["book_value_per_share"], current_price), eva_value(metric_value("invested_capital", invested, "derived"), metric_value("roic", metrics.get("roic_proxy"), "derived"), wacc, terminal_growth, values["shares"], current_price)]
+    return [dcf_fcff(dcf_input), graham_value(metric_value("eps", eps, "derived"), values["book_value_per_share"], current_price), eva_value(values["invested_capital"], metric_value("roic", metrics.get("roic_proxy"), "derived"), wacc, terminal_growth, values["shares"], current_price, values["net_debt"])]
 
 
 def infer_cost_of_equity(values: Mapping[str, MetricValue], market_data: Mapping[str, object]) -> float:
