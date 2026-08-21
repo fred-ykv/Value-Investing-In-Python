@@ -96,6 +96,8 @@ def peer_multiple_values(market_data: Mapping[str, object]) -> dict[str, float |
     }
     if any(value is not None for value in values.values()):
         return values
+    if market_data.get("disable_sector_benchmark_fallback"):
+        return values
     return damodaran_fallback_multiple_values(market_data)
 
 
@@ -182,6 +184,8 @@ def peer_source(name: str, market_data: Mapping[str, object]) -> str:
     for alias in PEER_ALIASES[name]:
         if market_data.get(alias) is not None:
             return alias
+    if market_data.get("disable_sector_benchmark_fallback"):
+        return "missing"
     if damodaran_fallback_multiple_values(market_data).get(name) is not None:
         return "damodaran_sector_benchmark"
     return "missing"
@@ -247,3 +251,4 @@ def damodaran_benchmark_key(market_data: Mapping[str, object]) -> str | None:
     if any(term in text for term in ("pharma", "biotech", "drug", "healthcare")):
         return "pharma"
     return None
+

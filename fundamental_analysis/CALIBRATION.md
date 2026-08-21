@@ -67,10 +67,9 @@ Depois da alteracao, o teste fora da amostra deve ser executado uma unica vez.
 
 ## Fonte historica
 
-Esta entrega cria a camada de avaliacao e os formatos CSV, mas nao inventa um
-historico fundamentalista. A etapa seguinte deve implementar um adaptador de
-dados point-in-time, preferencialmente com fatos e datas de publicacao da SEC
-EDGAR, combinado com uma fonte de precos ajustados e benchmarks. Dados atuais
-do Yahoo Finance nao devem ser reutilizados como se estivessem disponiveis no
-passado.
+O adaptador descrito em `POINT_IN_TIME_DATA.md` combina fatos padronizados da
+SEC EDGAR com precos ajustados e benchmarks. Dados atuais do Yahoo Finance nao
+sao reutilizados como se estivessem disponiveis no passado. A calibracao final
+ainda depende de cobertura suficiente e da avaliacao das premissas macro
+historicas descritas nas limitacoes do coletor.
 

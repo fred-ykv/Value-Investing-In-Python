@@ -77,3 +77,14 @@ Original notebooks remain unchanged.
 - Added CSV, JSON, and Markdown calibration artifacts plus a documented anti-look-ahead protocol.
 - Preserved all current score weights and recommendation thresholds until empirical benchmark evidence is available.
 
+## Point-in-time historical collector
+
+- Added an SEC EDGAR Company Facts adapter anchored to original annual filing accession numbers and publication dates.
+- Added explicit filing lag, source lineage, metric coverage, caching, and SEC fair-access controls.
+- Added adjusted historical price outcomes, benchmark-relative returns, maximum drawdown, and trailing beta using only prior prices.
+- Added a benchmark history runner that skips incomplete forward windows and exports CSV, JSON, and Markdown audit artifacts.
+- Disabled current Yahoo peer enrichment and current sector-benchmark fallbacks during historical score reconstruction.
+- Extended historical observations with benchmark, price-window, filing-accession, and fundamental-coverage fields.
+- Documented remaining limitations, including annual-only statements and constant macro assumptions.
+- Preserved score weights and recommendation thresholds pending a sufficiently covered point-in-time sample.
+

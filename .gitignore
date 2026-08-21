@@ -6,6 +6,7 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.cache/
 
 # Local virtual environments and vendored dependencies
 .venv/
@@ -23,3 +24,4 @@ calibration_outputs/
 Thumbs.db
 .idea/
 .vscode/
+

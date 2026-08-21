@@ -6,6 +6,32 @@ from fundamental_analysis.main import analyze_ticker_from_inputs
 
 
 class ComparableTests(unittest.TestCase):
+    def test_historical_mode_disables_current_sector_benchmark_fallback(self):
+        result = analyze_ticker_from_inputs(
+            "HIST",
+            {"revenue": 1_000, "ebit": 150, "net_income": 100},
+            {
+                "total_assets": 1_500,
+                "total_liabilities": 600,
+                "equity": 900,
+                "cash": 200,
+                "total_debt": 300,
+                "current_assets": 600,
+                "current_liabilities": 300,
+            },
+            {"cfo": 170, "capex": -50, "depreciation_amortization": 40},
+            {
+                "shares": 100,
+                "price": 10,
+                "disable_sector_benchmark_fallback": True,
+                "enable_peer_yahoo_enrichment": False,
+            },
+            {"sector": "Technology", "industry": "Software"},
+        )
+
+        self.assertEqual(result.comparables.basis, "unavailable")
+        self.assertEqual(result.comparables.confidence, 0.0)
+
     def test_relative_discount_scores_better_than_premium(self):
         self.assertGreater(score_premium_discount(-0.25), score_premium_discount(0.25))
 
@@ -115,3 +141,4 @@ class ComparableTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
