@@ -68,7 +68,10 @@ def dcf_fcff(inputs: DCFInput) -> ValuationResult:
     terminal = projected[-1] * (1.0 + terminal_growth) / (wacc - terminal_growth)
     pv_terminal = terminal / ((1.0 + wacc) ** DCF.horizon_years)
     ev = pv_stage + pv_terminal
-    equity = ev - (inputs.debt.value or 0.0) + (inputs.cash.value or 0.0)
+    if not inputs.debt.is_available or not inputs.cash.is_available:
+        diagnostics.update({"error": "missing debt or cash for enterprise-to-equity bridge", "enterprise_value": ev})
+        return ValuationResult("dcf_fcff", None, max(0.0, confidence - 0.25), enterprise_value=ev, diagnostics=diagnostics)
+    equity = ev - float(inputs.debt.value) + float(inputs.cash.value)
     fair = equity / shares
     margin = None if inputs.current_price.value in (None, 0) else (fair / inputs.current_price.value) - 1.0
     diagnostics.update(
@@ -80,7 +83,7 @@ def dcf_fcff(inputs: DCFInput) -> ValuationResult:
             "pv_terminal_value": pv_terminal,
             "terminal_value_share": None if ev == 0 else pv_terminal / ev,
             "explicit_stage_share": None if ev == 0 else pv_stage / ev,
-            "net_debt_adjustment": (inputs.debt.value or 0.0) - (inputs.cash.value or 0.0),
+            "net_debt_adjustment": float(inputs.debt.value) - float(inputs.cash.value),
             "sensitivity": dcf_sensitivity(inputs),
         }
     )
@@ -116,7 +119,7 @@ def _dcf_fair_value(inputs: DCFInput) -> Optional[float]:
 
 def dcf_fcff_no_sensitivity(inputs: DCFInput) -> ValuationResult:
     fcff0, shares = inputs.fcff.value, inputs.shares.value
-    if fcff0 is None or shares in (None, 0):
+    if fcff0 is None or shares in (None, 0) or not inputs.debt.is_available or not inputs.cash.is_available:
         return ValuationResult("dcf_fcff", None, 0.0)
     wacc = inputs.wacc.value if inputs.wacc.value is not None else DCF.default_wacc
     growth_value = inputs.growth_years.value if inputs.growth_years.value is not None else DCF.default_growth_years
@@ -131,7 +134,7 @@ def dcf_fcff_no_sensitivity(inputs: DCFInput) -> ValuationResult:
     pv = sum(cf / ((1 + wacc) ** year) for year, cf in enumerate(projected, start=1))
     terminal = projected[-1] * (1 + g) / (wacc - g)
     ev = pv + terminal / ((1 + wacc) ** DCF.horizon_years)
-    fair = (ev - (inputs.debt.value or 0.0) + (inputs.cash.value or 0.0)) / shares
+    fair = (ev - float(inputs.debt.value) + float(inputs.cash.value)) / shares
     return ValuationResult("dcf_fcff", fair, 0.0)
 
 
@@ -143,17 +146,29 @@ def graham_value(eps: MetricValue, bvps: MetricValue, current_price: MetricValue
     return ValuationResult("graham", fair, weighted_confidence(eps, bvps), margin_of_safety=margin)
 
 
-def eva_value(invested_capital: MetricValue, roic: MetricValue, wacc: MetricValue, growth: MetricValue, shares: MetricValue, current_price: MetricValue) -> ValuationResult:
-    if invested_capital.value is None or shares.value in (None, 0):
-        return ValuationResult("eva", None, 0.0, diagnostics={"error": "missing invested capital or shares"})
+def eva_value(invested_capital: MetricValue, roic: MetricValue, wacc: MetricValue, growth: MetricValue, shares: MetricValue, current_price: MetricValue, net_debt: MetricValue | None = None) -> ValuationResult:
+    net_debt = net_debt or MetricValue("net_debt", None, "missing", 0.0)
+    if invested_capital.value is None or roic.value is None or shares.value in (None, 0) or net_debt.value is None:
+        return ValuationResult("eva", None, 0.0, diagnostics={"error": "missing invested capital, ROIC, shares, or net debt"})
     discount = wacc.value if wacc.value is not None else DCF.default_wacc
     g = growth.value if growth.value is not None else DCF.default_terminal_growth
     if discount <= g:
         g = max(0.0, discount - DCF.min_spread_wacc_terminal)
-    equity = invested_capital.value + (((roic.value or 0.0) - discount) * invested_capital.value / (discount - g))
+    economic_profit = (roic.value - discount) * invested_capital.value
+    pv_economic_profit = economic_profit * (1.0 + g) / (discount - g)
+    enterprise = invested_capital.value + pv_economic_profit
+    equity = enterprise - net_debt.value
     fair = equity / shares.value
     margin = None if current_price.value in (None, 0) else (fair / current_price.value) - 1.0
-    return ValuationResult("eva", fair, weighted_confidence(invested_capital, roic, wacc, shares), equity_value=equity, margin_of_safety=margin)
+    diagnostics = {
+        "invested_capital": invested_capital.value,
+        "economic_profit": economic_profit,
+        "pv_economic_profit": pv_economic_profit,
+        "net_debt_adjustment": net_debt.value,
+        "wacc": discount,
+        "terminal_growth": g,
+    }
+    return ValuationResult("eva", fair, weighted_confidence(invested_capital, roic, wacc, shares, net_debt), enterprise_value=enterprise, equity_value=equity, margin_of_safety=margin, diagnostics=diagnostics)
 
 
 def residual_income_bank(bvps: MetricValue, roe: MetricValue, ke: MetricValue, terminal_growth: MetricValue, current_price: MetricValue) -> ValuationResult:
@@ -179,8 +194,8 @@ def ddm_bank(dividend_per_share: MetricValue, ke: MetricValue, terminal_growth: 
 
 
 def growth_tech_value(revenue: MetricValue, revenue_growth: MetricValue, target_fcf_margin: MetricValue, net_cash: MetricValue, shares: MetricValue, current_price: MetricValue, discount_rate: MetricValue) -> ValuationResult:
-    if revenue.value is None or shares.value in (None, 0):
-        return ValuationResult("growth_tech", None, 0.0, diagnostics={"error": "missing revenue or shares"})
+    if revenue.value is None or shares.value in (None, 0) or net_cash.value is None:
+        return ValuationResult("growth_tech", None, 0.0, diagnostics={"error": "missing revenue, shares, or net cash"})
     revenue_growth_value = revenue_growth.value if revenue_growth.value is not None else 0.10
     growth = clamp(revenue_growth_value, -0.10, 0.50)
     margin = (
@@ -196,7 +211,8 @@ def growth_tech_value(revenue: MetricValue, revenue_growth: MetricValue, target_
         pv += projected_revenue * margin / ((1.0 + rate) ** year)
     terminal = projected_revenue * margin * (1.0 + g_term) / (rate - g_term)
     ev = pv + terminal / ((1.0 + rate) ** DCF.horizon_years)
-    equity = ev + (net_cash.value or 0.0)
+    equity = ev + net_cash.value
     fair = equity / shares.value
     mos = None if current_price.value in (None, 0) else (fair / current_price.value) - 1.0
     return ValuationResult("growth_tech", fair, weighted_confidence(revenue, revenue_growth, shares), enterprise_value=ev, equity_value=equity, margin_of_safety=mos, diagnostics={"growth": growth, "target_fcf_margin": margin, "discount_rate": rate})
+

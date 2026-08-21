@@ -195,11 +195,25 @@ class YahooFinanceClient:
                 "current_assets": _latest_statement_metric(balance_sheet, ("Current Assets", "Total Current Assets"), source_url=source_url, source_document="Yahoo Finance balance sheet", currency=currency),
                 "current_liabilities": _latest_statement_metric(balance_sheet, ("Current Liabilities", "Total Current Liabilities"), source_url=source_url, source_document="Yahoo Finance balance sheet", currency=currency),
             }
+            working_capital_cash_effect = _latest_statement_metric(
+                cashflow,
+                ("Change In Working Capital", "Change In Other Working Capital"),
+                source_url=source_url,
+                source_document="Yahoo Finance cash flow statement",
+                currency=currency,
+            )
+            if working_capital_cash_effect.is_available:
+                working_capital_cash_effect = replace(
+                    working_capital_cash_effect,
+                    name="change_in_nwc_cash_effect",
+                    note="Cash-flow statement effect; negative values are uses of cash",
+                    formula="cash_flow_statement_working_capital_effect",
+                )
             cash_flow = {
                 "cfo": _latest_statement_metric(cashflow, ("Operating Cash Flow", "Total Cash From Operating Activities"), source_url=source_url, source_document="Yahoo Finance cash flow statement", currency=currency),
                 "capex": _latest_statement_metric(cashflow, ("Capital Expenditure", "Capital Expenditures"), source_url=source_url, source_document="Yahoo Finance cash flow statement", currency=currency),
                 "depreciation_amortization": _latest_statement_metric(cashflow, ("Depreciation And Amortization", "Depreciation"), source_url=source_url, source_document="Yahoo Finance cash flow statement", currency=currency),
-                "change_in_nwc": _latest_statement_metric(cashflow, ("Change In Working Capital", "Change In Other Working Capital"), source_url=source_url, source_document="Yahoo Finance cash flow statement", currency=currency),
+                "change_in_nwc_cash_effect": working_capital_cash_effect,
             }
             market = {
                 "price": _info_metric("price", info.get("currentPrice") or info.get("regularMarketPrice"), info, source_url, quote_currency),
@@ -348,3 +362,4 @@ def _drop_none(values: Mapping[str, Any]) -> dict[str, Any]:
         for k, v in values.items()
         if not (v is None or (isinstance(v, MetricValue) and v.value is None))
     }
+

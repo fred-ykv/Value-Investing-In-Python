@@ -30,6 +30,42 @@ class FCFFLineageTests(unittest.TestCase):
         with_interest = compute_fcff(inputs(interest_expense=metric_value("interest_expense", 500, "manual")))
         self.assertEqual(base.value, with_interest.value)
 
+    def test_cash_flow_statement_effect_uses_the_opposite_sign_of_economic_delta(self):
+        economic = compute_fcff(inputs(change_in_nwc=metric_value("change_in_nwc", 50, "manual")))
+        cash_effect = compute_fcff(
+            inputs(
+                change_in_nwc=MetricValue("change_in_nwc", None, "missing", 0.0),
+                change_in_nwc_cash_effect=metric_value("change_in_nwc_cash_effect", -50, "yfinance"),
+            )
+        )
+
+        self.assertEqual(economic.value, 600)
+        self.assertEqual(cash_effect.value, economic.value)
+        self.assertEqual(cash_effect.formula, "nopat_plus_da_minus_capex_plus_nwc_cash_effect")
+        self.assertIn("cash-flow statement", cash_effect.note)
+
+    def test_nue_2025_cash_effect_is_not_added_back_with_inverted_sign(self):
+        metrics = build_statement_metrics(
+            FinancialStatements(
+                "NUE",
+                {"ebit": 2_738_000_000, "tax_provision": 530_000_000, "interest_expense": 170_000_000},
+                {"equity": 20_938_000_000, "total_debt": 7_121_000_000, "cash": 2_260_000_000},
+                {
+                    "cfo": 3_234_000_000,
+                    "capex": -3_422_000_000,
+                    "depreciation_amortization": 1_480_000_000,
+                    "change_in_nwc_cash_effect": -636_000_000,
+                },
+                {"shares": 226_875_676, "price": 240.48},
+                source="yfinance",
+            )
+        )
+
+        expected = 2_738_000_000 * (1.0 - (530_000_000 / (2_738_000_000 - 170_000_000))) + 1_480_000_000 - 3_422_000_000 - 636_000_000
+        self.assertAlmostEqual(metrics.values["fcff"].value, expected)
+        self.assertLess(metrics.values["fcff"].value, 0)
+        self.assertEqual(metrics.values["free_cash_flow_after_capex"].value, -188_000_000)
+
     def test_capex_sign_is_normalized_once(self):
         negative_capex = compute_fcff(inputs(capex=metric_value("capex", -200, "manual")))
         positive_capex = compute_fcff(inputs(capex=metric_value("capex", 200, "manual")))
@@ -82,7 +118,8 @@ class FCFFLineageTests(unittest.TestCase):
             ebit=sourced("ebit", 2_659_000_000, "Yahoo Finance income statement"),
             depreciation_amortization=sourced("depreciation_amortization", 1_000_000_000, "Yahoo Finance cash flow statement"),
             capex=sourced("capex", -3_422_000_000, "Yahoo Finance cash flow statement"),
-            change_in_nwc=sourced("change_in_nwc", -1_000_000_000, "Yahoo Finance cash flow statement"),
+            change_in_nwc=MetricValue("change_in_nwc", None, "missing", 0.0),
+            change_in_nwc_cash_effect=sourced("change_in_nwc_cash_effect", -1_000_000_000, "Yahoo Finance cash flow statement"),
         )
         values["cfo"] = sourced("cfo", 3_234_000_000, "Yahoo Finance cash flow statement")
 
@@ -108,3 +145,4 @@ class FCFFLineageTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
