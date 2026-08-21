@@ -1,4 +1,5 @@
 import unittest
+from datetime import date
 
 from fundamental_analysis.data_sources import MetricValue, metric_value
 from fundamental_analysis.financial_statements import FinancialStatements, build_statement_metrics, compute_fcff
@@ -60,6 +61,49 @@ class FCFFLineageTests(unittest.TestCase):
         self.assertEqual(metrics.values["free_cash_flow_after_capex"].value, 700)
         self.assertEqual(metrics.values["fcff"].formula, "nopat_plus_da_minus_capex_minus_delta_nwc")
         self.assertNotEqual(metrics.values["free_cash_flow_after_capex"].value, metrics.values["fcff"].value)
+
+    def test_derived_cash_flows_preserve_currency_period_and_source_documents(self):
+        period_end = date(2025, 12, 31)
+
+        def sourced(name, value, document):
+            return MetricValue(
+                name,
+                value,
+                "yfinance",
+                0.85,
+                source_url="https://finance.yahoo.com/quote/NUE",
+                source_document=document,
+                period_end=period_end,
+                currency="USD",
+                scale="raw",
+            )
+
+        values = inputs(
+            ebit=sourced("ebit", 2_659_000_000, "Yahoo Finance income statement"),
+            depreciation_amortization=sourced("depreciation_amortization", 1_000_000_000, "Yahoo Finance cash flow statement"),
+            capex=sourced("capex", -3_422_000_000, "Yahoo Finance cash flow statement"),
+            change_in_nwc=sourced("change_in_nwc", -1_000_000_000, "Yahoo Finance cash flow statement"),
+        )
+        values["cfo"] = sourced("cfo", 3_234_000_000, "Yahoo Finance cash flow statement")
+
+        fcff = compute_fcff(values)
+        statement_metrics = build_statement_metrics(
+            FinancialStatements(
+                "NUE",
+                {"ebit": values["ebit"]},
+                {},
+                {"cfo": values["cfo"], "capex": values["capex"]},
+                {},
+                source="yfinance",
+            )
+        )
+        fcf = statement_metrics.values["free_cash_flow_after_capex"]
+
+        for metric in (fcff, fcf):
+            self.assertEqual(metric.currency, "USD")
+            self.assertEqual(metric.period_end, period_end)
+            self.assertEqual(metric.source_url, "https://finance.yahoo.com/quote/NUE")
+            self.assertIn("Yahoo Finance", metric.source_document)
 
 
 if __name__ == "__main__":
