@@ -173,6 +173,36 @@ class CalibrationAssumptions:
 
 
 @dataclass(frozen=True)
+class PointInTimeAssumptions:
+    sec_base_url: str = "https://data.sec.gov"
+    sec_ticker_map_url: str = "https://www.sec.gov/files/company_tickers.json"
+    sec_user_agent_env: str = "SEC_USER_AGENT"
+    sec_max_requests_per_second: float = 8.0
+    request_timeout_seconds: int = 30
+    cache_directory: str = ".cache/sec_edgar"
+    cache_max_age_hours: int = 24
+    annual_forms: Tuple[str, ...] = ("10-K", "20-F", "40-F")
+    minimum_filing_lag_days: int = 1
+    minimum_fundamental_coverage: float = 0.70
+    price_start_max_lag_days: int = 7
+    price_end_max_lag_days: int = 7
+    forward_horizon_months: int = 12
+    beta_lookback_months: int = 24
+    minimum_beta_return_observations: int = 126
+    historical_start_year: int = 2015
+    max_annual_filings_per_company: int = 5
+    benchmark_by_group: Tuple[Tuple[str, str], ...] = (
+        ("tradicionais_ciclicas", "SPY"),
+        ("growth_tech", "QQQ"),
+        ("bancos_financeiras", "KBE"),
+        ("fcf_negativo_early_growth", "IWM"),
+    )
+
+    def benchmark_for_group(self, group: str) -> str:
+        return dict(self.benchmark_by_group).get(group, "SPY")
+
+
+@dataclass(frozen=True)
 class ComparableAssumptions:
     discount_for_strong_score: float = -0.30
     premium_for_weak_score: float = 0.30
@@ -299,6 +329,7 @@ SCENARIOS = ScenarioAssumptions()
 REVERSE_DCF = ReverseDCFAssumptions()
 CASH_FLOW_RECONCILIATION = CashFlowReconciliationAssumptions()
 CALIBRATION = CalibrationAssumptions()
+POINT_IN_TIME = PointInTimeAssumptions()
 COMPARABLES = ComparableAssumptions()
 PEER_SELECTION = PeerSelectionAssumptions()
 PEER_DISCOVERY = PeerDiscoveryAssumptions()
@@ -356,6 +387,9 @@ DAMODARAN_SECTOR_BENCHMARKS = {
 }
 
 DATA_SOURCE_CONFIDENCE = {
+    "sec_edgar": 0.90,
+    "sec_edgar_derived": 0.82,
+    "yfinance_historical": 0.75,
     "yfinance": 0.80,
     "yfinance_derived": 0.75,
     "finviz": 0.65,

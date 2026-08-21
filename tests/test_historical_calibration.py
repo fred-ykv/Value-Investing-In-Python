@@ -1,11 +1,15 @@
 import unittest
 from dataclasses import replace
 from datetime import date, timedelta
+from tempfile import TemporaryDirectory
+from pathlib import Path
 
 from fundamental_analysis.config import CalibrationAssumptions
 from fundamental_analysis.historical_calibration import (
     HistoricalCalibrationObservation,
     evaluate_historical_outcomes,
+    read_historical_calibration_csv,
+    write_historical_calibration_csv,
 )
 
 
@@ -86,6 +90,26 @@ class HistoricalCalibrationTests(unittest.TestCase):
 
         self.assertEqual(len(summary.buckets), 5)
         self.assertTrue(all(bucket.min_score == bucket.max_score for bucket in summary.buckets))
+
+    def test_csv_preserves_point_in_time_audit_fields(self):
+        original = replace(
+            observations()[0],
+            benchmark_ticker="SPY",
+            price_start_date=date(2020, 4, 1),
+            price_end_date=date(2021, 4, 1),
+            filing_accession="0000000000-20-000001",
+            fundamental_coverage=0.85,
+        )
+        with TemporaryDirectory() as tempdir:
+            path = Path(tempdir) / "history.csv"
+            write_historical_calibration_csv([original], path)
+            restored = read_historical_calibration_csv(path)[0]
+
+        self.assertEqual(restored.benchmark_ticker, "SPY")
+        self.assertEqual(restored.price_start_date, date(2020, 4, 1))
+        self.assertEqual(restored.price_end_date, date(2021, 4, 1))
+        self.assertEqual(restored.filing_accession, "0000000000-20-000001")
+        self.assertAlmostEqual(restored.fundamental_coverage, 0.85)
 
 
 if __name__ == "__main__":

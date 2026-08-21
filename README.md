@@ -53,6 +53,20 @@ Or pass your own tickers:
 python calibrate.py MLI AAPL JPM RIVN
 ```
 
+Build an auditable historical dataset from SEC EDGAR filings and adjusted
+prices after defining the SEC identification header required by its fair-access
+policy:
+
+```bash
+export SEC_USER_AGENT="Value Investing Research your-email@example.com"
+python build_historical_dataset.py MLI NUE --start-year 2020 --max-filings-per-company 3
+```
+
+See `fundamental_analysis/POINT_IN_TIME_DATA.md` before running the full
+benchmark. Historical collection uses raw close for valuation, adjusted close
+for performance, and intentionally disables current peer data and current
+sector-multiple fallbacks.
+
 Live ticker analysis and calibration use Yahoo Finance data and require the
 dependencies from `requirements.txt` plus network access.
 

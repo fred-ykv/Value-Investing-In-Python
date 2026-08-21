@@ -25,6 +25,11 @@ class HistoricalCalibrationObservation:
     max_drawdown: float | None
     point_in_time_validated: bool
     latest_filing_date: date | None = None
+    benchmark_ticker: str = ""
+    price_start_date: date | None = None
+    price_end_date: date | None = None
+    filing_accession: str = ""
+    fundamental_coverage: float = 0.0
 
     @property
     def excess_return(self) -> float | None:
@@ -40,7 +45,9 @@ class HistoricalCalibrationObservation:
     def is_point_in_time_valid(self) -> bool:
         if not self.point_in_time_validated:
             return False
-        return self.latest_filing_date is None or self.latest_filing_date <= self.as_of
+        if self.latest_filing_date is not None and self.latest_filing_date > self.as_of:
+            return False
+        return self.price_start_date is None or self.price_start_date >= self.as_of
 
 
 @dataclass(frozen=True)
@@ -238,6 +245,11 @@ def write_historical_calibration_csv(
         "max_drawdown",
         "point_in_time_validated",
         "latest_filing_date",
+        "benchmark_ticker",
+        "price_start_date",
+        "price_end_date",
+        "filing_accession",
+        "fundamental_coverage",
     ]
     with Path(path).open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
@@ -260,6 +272,19 @@ def write_historical_calibration_csv(
                         if observation.latest_filing_date is not None
                         else ""
                     ),
+                    "benchmark_ticker": observation.benchmark_ticker,
+                    "price_start_date": (
+                        observation.price_start_date.isoformat()
+                        if observation.price_start_date is not None
+                        else ""
+                    ),
+                    "price_end_date": (
+                        observation.price_end_date.isoformat()
+                        if observation.price_end_date is not None
+                        else ""
+                    ),
+                    "filing_accession": observation.filing_accession,
+                    "fundamental_coverage": f"{observation.fundamental_coverage:.6f}",
                 }
             )
 
@@ -269,6 +294,8 @@ def read_historical_calibration_csv(path: str | Path) -> list[HistoricalCalibrat
     with Path(path).open(newline="", encoding="utf-8") as handle:
         for row in csv.DictReader(handle):
             filing_date = row.get("latest_filing_date", "").strip()
+            price_start_date = row.get("price_start_date", "").strip()
+            price_end_date = row.get("price_end_date", "").strip()
             observations.append(
                 HistoricalCalibrationObservation(
                     ticker=row["ticker"].upper().strip(),
@@ -283,6 +310,11 @@ def read_historical_calibration_csv(path: str | Path) -> list[HistoricalCalibrat
                     point_in_time_validated=row.get("point_in_time_validated", "").lower()
                     in {"1", "true", "sim", "yes"},
                     latest_filing_date=date.fromisoformat(filing_date) if filing_date else None,
+                    benchmark_ticker=row.get("benchmark_ticker", "").upper().strip(),
+                    price_start_date=date.fromisoformat(price_start_date) if price_start_date else None,
+                    price_end_date=date.fromisoformat(price_end_date) if price_end_date else None,
+                    filing_accession=row.get("filing_accession", "").strip(),
+                    fundamental_coverage=float(row.get("fundamental_coverage", "0") or 0.0),
                 )
             )
     return observations

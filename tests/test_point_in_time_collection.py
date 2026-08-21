@@ -1,0 +1,124 @@
+import tempfile
+import unittest
+from dataclasses import replace
+from datetime import date
+
+from fundamental_analysis.benchmark_universe import BenchmarkCase
+from fundamental_analysis.config import POINT_IN_TIME
+from fundamental_analysis.historical_prices import PricePoint, PriceSeries
+from fundamental_analysis.point_in_time_collection import (
+    collect_benchmark_history,
+    collect_point_in_time_observation,
+)
+from fundamental_analysis.sec_edgar import SecEdgarClient
+from tests.sec_fixtures import company_facts_fixture, ticker_map_fixture
+
+
+class StaticPriceProvider:
+    def __init__(self):
+        dates = [
+            "2024-02-12",
+            "2024-02-13",
+            "2024-02-14",
+            "2024-02-19",
+            "2024-03-01",
+            "2024-03-18",
+        ]
+        self.series = {
+            "TEST": PriceSeries(
+                "TEST",
+                tuple(PricePoint(date.fromisoformat(day), value) for day, value in zip(dates, [9, 9.5, 9.2, 10, 9, 12])),
+                "fixture",
+            ),
+            "SPY": PriceSeries(
+                "SPY",
+                tuple(PricePoint(date.fromisoformat(day), value) for day, value in zip(dates, [99, 100, 99.5, 100, 102, 105])),
+                "fixture",
+            ),
+        }
+
+    def fetch_series(self, ticker, start, end):
+        return self.series[ticker].between(start, end)
+
+
+class PointInTimeCollectionTests(unittest.TestCase):
+    def test_builds_auditable_observation_without_current_peer_data(self):
+        def get_json(url):
+            return ticker_map_fixture() if "company_tickers" in url else company_facts_fixture()
+
+        assumptions = replace(
+            POINT_IN_TIME,
+            forward_horizon_months=1,
+            beta_lookback_months=1,
+            minimum_beta_return_observations=2,
+            benchmark_by_group=(("tradicionais_ciclicas", "SPY"),),
+        )
+        case = BenchmarkCase(
+            "TEST",
+            "tradicionais_ciclicas",
+            "industrial_machinery",
+            "Fixture industrial",
+        )
+        with tempfile.TemporaryDirectory() as tempdir:
+            sec_client = SecEdgarClient(
+                "Test Research test@example.com",
+                assumptions=assumptions,
+                cache_dir=tempdir,
+                json_getter=get_json,
+            )
+            anchor = sec_client.list_annual_filings("TEST", end_year=2024)[0]
+            result = collect_point_in_time_observation(
+                case,
+                anchor,
+                sec_client,
+                StaticPriceProvider(),
+                assumptions=assumptions,
+            )
+
+        self.assertEqual(result.error, "")
+        self.assertIsNotNone(result.observation)
+        observation = result.observation
+        self.assertEqual(observation.filing_accession, "0000001234-24-000001")
+        self.assertEqual(observation.latest_filing_date, date(2024, 2, 15))
+        self.assertEqual(observation.as_of, date(2024, 2, 16))
+        self.assertEqual(observation.price_start_date, date(2024, 2, 19))
+        self.assertEqual(observation.benchmark_ticker, "SPY")
+        self.assertAlmostEqual(observation.forward_return, 0.20)
+        self.assertTrue(observation.is_point_in_time_valid)
+
+    def test_incomplete_forward_window_is_skipped_instead_of_reported_as_error(self):
+        def get_json(url):
+            return ticker_map_fixture() if "company_tickers" in url else company_facts_fixture()
+
+        assumptions = replace(
+            POINT_IN_TIME,
+            forward_horizon_months=1,
+            benchmark_by_group=(("tradicionais_ciclicas", "SPY"),),
+        )
+        case = BenchmarkCase("TEST", "tradicionais_ciclicas", "industrial_machinery", "Fixture")
+        with tempfile.TemporaryDirectory() as tempdir:
+            sec_client = SecEdgarClient(
+                "Test Research test@example.com",
+                assumptions=assumptions,
+                cache_dir=tempdir,
+                json_getter=get_json,
+            )
+            dataset = collect_benchmark_history(
+                sec_client,
+                StaticPriceProvider(),
+                cases=[case],
+                start_year=2024,
+                end_year=2024,
+                max_filings_per_company=1,
+                assumptions=assumptions,
+                outcomes_available_through=date(2024, 2, 20),
+            )
+
+        self.assertEqual(len(dataset.results), 1)
+        self.assertEqual(len(dataset.skipped), 1)
+        self.assertEqual(len(dataset.errors), 0)
+
+
+if __name__ == "__main__":
+    unittest.main()
+
