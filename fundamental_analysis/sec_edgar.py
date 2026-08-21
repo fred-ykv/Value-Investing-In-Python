@@ -90,7 +90,13 @@ SEC_FACT_SPECS: dict[str, dict[str, _FactSpec]] = {
         "net_income": _FactSpec(("NetIncomeLoss", "ProfitLoss"), ("USD",), True),
         "tax_provision": _FactSpec(("IncomeTaxExpenseBenefit",), ("USD",), True),
         "interest_expense": _FactSpec(
-            ("InterestExpenseNonOperating", "InterestAndDebtExpense"),
+            (
+                "InterestExpenseNonOperating",
+                "InterestExpenseNonoperating",
+                "InterestAndDebtExpense",
+                "InterestExpense",
+                "InterestExpenseDebt",
+            ),
             ("USD",),
             True,
         ),
@@ -136,6 +142,7 @@ SEC_FACT_SPECS: dict[str, dict[str, _FactSpec]] = {
             (
                 "PaymentsToAcquirePropertyPlantAndEquipment",
                 "PaymentsForAdditionsToPropertyPlantAndEquipment",
+                "PaymentsToAcquireProductiveAssets",
             ),
             ("USD",),
             True,
@@ -271,6 +278,7 @@ class SecEdgarClient:
                 if selected.is_available:
                     sections[section][name] = selected
 
+        _complete_ebit(sections["income_statement"], payload, anchor, source_url)
         _complete_balance_sheet(sections["balance_sheet"], payload, anchor, source_url)
         _complete_total_debt(sections["balance_sheet"], payload, anchor, source_url)
         revenue = sections["income_statement"].get("revenue")
@@ -285,8 +293,10 @@ class SecEdgarClient:
         selected_names = tuple(
             sorted(name for section in sections.values() for name in section)
         )
-        missing = tuple(sorted(set(expected) - set(selected_names)))
-        coverage = len(selected_names) / len(expected) if expected else 0.0
+        expected_names = set(expected)
+        selected_expected_names = expected_names.intersection(selected_names)
+        missing = tuple(sorted(expected_names - selected_expected_names))
+        coverage = len(selected_expected_names) / len(expected) if expected else 0.0
         metric_dates = [
             metric.filing_date
             for section in sections.values()
@@ -303,6 +313,16 @@ class SecEdgarClient:
             )
         if missing:
             warnings.append("Metricas SEC ausentes: " + ", ".join(missing) + ".")
+        fallback_metrics = sorted(
+            metric.name
+            for section in sections.values()
+            for metric in section.values()
+            if metric.is_fallback
+        )
+        if fallback_metrics:
+            warnings.append(
+                "Metricas derivadas por fallback: " + ", ".join(fallback_metrics) + "."
+            )
         if not valid:
             warnings.append("Snapshot rejeitado pelo controle point-in-time.")
 
@@ -529,6 +549,58 @@ def _complete_balance_sheet(
     )
 
 
+def _complete_ebit(
+    income: dict[str, MetricValue],
+    payload: Mapping[str, Any],
+    anchor: SecFilingAnchor,
+    source_url: str,
+) -> None:
+    if "ebit" in income:
+        return
+    pretax_income = _select_metric(
+        payload,
+        "pretax_income",
+        _FactSpec(
+            (
+                "IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",
+                "IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments",
+            ),
+            ("USD",),
+            True,
+        ),
+        anchor,
+        source_url,
+    )
+    interest_expense = income.get("interest_expense")
+    if (
+        not pretax_income.is_available
+        or interest_expense is None
+        or not interest_expense.is_available
+    ):
+        return
+    income["ebit"] = metric_value(
+        "ebit",
+        float(pretax_income.value) + abs(float(interest_expense.value)),
+        "sec_edgar_derived",
+        "EBIT proxy = lucro antes dos impostos + despesa de juros; usado somente quando o EBIT reportado esta ausente",
+        source_url=source_url,
+        source_document=f"SEC EDGAR {anchor.form} {anchor.accession_number}",
+        period_start=pretax_income.period_start,
+        period_end=anchor.report_end,
+        filing_date=anchor.filed,
+        as_of=datetime.combine(anchor.filed, datetime.min.time()),
+        currency="USD",
+        scale="raw",
+        basis="derived",
+        is_fallback=True,
+        formula="pretax_income_plus_abs_interest_expense",
+        confidence=max(
+            0.0,
+            min(pretax_income.confidence, interest_expense.confidence) - 0.10,
+        ),
+    )
+
+
 def _complete_total_debt(
     balance: dict[str, MetricValue],
     payload: Mapping[str, Any],
@@ -672,4 +744,3 @@ def _parse_date(value: object) -> date | None:
         return date.fromisoformat(str(value)[:10])
     except ValueError:
         return None
-

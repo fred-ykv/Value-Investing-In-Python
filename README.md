@@ -63,9 +63,12 @@ python build_historical_dataset.py MLI NUE --start-year 2020 --max-filings-per-c
 ```
 
 See `fundamental_analysis/POINT_IN_TIME_DATA.md` before running the full
-benchmark. Historical collection uses raw close for valuation, adjusted close
-for performance, and intentionally disables current peer data and current
-sector-multiple fallbacks.
+benchmark. Historical collection reconstructs the as-traded close after later
+splits for valuation, uses adjusted close for performance, and intentionally
+disables current peer data and current sector-multiple fallbacks.
+
+The first live collection audit is documented in
+`fundamental_analysis/PILOT_MLI_NUE.md`.
 
 Live ticker analysis and calibration use Yahoo Finance data and require the
 dependencies from `requirements.txt` plus network access.

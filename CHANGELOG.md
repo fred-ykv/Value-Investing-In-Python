@@ -87,3 +87,8 @@ Original notebooks remain unchanged.
 - Extended historical observations with benchmark, price-window, filing-accession, and fundamental-coverage fields.
 - Documented remaining limitations, including annual-only statements and constant macro assumptions.
 - Preserved score weights and recommendation thresholds pending a sufficiently covered point-in-time sample.
+- Expanded SEC concept coverage for interest expense and productive-asset CAPEX after the MLI/NUE live pilot.
+- Added a lower-confidence, explicitly flagged EBIT proxy from pretax income plus interest expense when reported EBIT is unavailable.
+- Fixed fundamental coverage so derived supplemental metrics cannot push the ratio above 100%.
+- Restored as-traded historical closes from Yahoo split events before combining prices with SEC share counts.
+- Documented the six-observation MLI/NUE pilot and the unresolved cyclical false-positive risk without changing score calibration.
