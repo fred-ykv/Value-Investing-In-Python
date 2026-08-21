@@ -159,8 +159,14 @@ def _fix_source_html_values(html: str) -> str:
                 value_raw = _strip_tags(cells[1])
                 source_raw = _strip_tags(cells[2])
                 basis_raw = _strip_tags(cells[3])
-                confidence_raw = _strip_tags(cells[4])
-                currency = _currency_from_text(source_raw)
+                if len(cells) >= 6:
+                    currency_raw = _strip_tags(cells[4])
+                    confidence_raw = _strip_tags(cells[5])
+                else:
+                    currency_raw = ""
+                    confidence_raw = _strip_tags(cells[4])
+                currency = None if currency_raw in {"", "-"} else currency_raw
+                currency = currency or _currency_from_text(source_raw)
                 source_ref = _source_ref(sources, source_raw)
                 rendered = [
                     escape(_metric_label(metric_raw)),
