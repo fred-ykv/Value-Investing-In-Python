@@ -58,6 +58,14 @@ class HistoricalCalibrationObservation:
     critical_metric_coverage: float = 0.0
     missing_critical_metrics: str = ""
     analysis_input_validated: bool = False
+    security_cik: str = ""
+    universe_status: str = "active"
+    outcome_method: str = "market_price_12m"
+    lifecycle_event_type: str = ""
+    lifecycle_event_date: date | None = None
+    stock_terminal_date: date | None = None
+    terminal_value_per_share: float | None = None
+    lifecycle_source_url: str = ""
 
     @property
     def excess_return(self) -> float | None:
@@ -323,6 +331,14 @@ def write_historical_calibration_csv(
         "critical_metric_coverage",
         "missing_critical_metrics",
         "analysis_input_validated",
+        "security_cik",
+        "universe_status",
+        "outcome_method",
+        "lifecycle_event_type",
+        "lifecycle_event_date",
+        "stock_terminal_date",
+        "terminal_value_per_share",
+        "lifecycle_source_url",
     ]
     with Path(path).open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
@@ -411,6 +427,24 @@ def write_historical_calibration_csv(
                     "analysis_input_validated": (
                         "1" if observation.analysis_input_validated else "0"
                     ),
+                    "security_cik": observation.security_cik,
+                    "universe_status": observation.universe_status,
+                    "outcome_method": observation.outcome_method,
+                    "lifecycle_event_type": observation.lifecycle_event_type,
+                    "lifecycle_event_date": (
+                        observation.lifecycle_event_date.isoformat()
+                        if observation.lifecycle_event_date is not None
+                        else ""
+                    ),
+                    "stock_terminal_date": (
+                        observation.stock_terminal_date.isoformat()
+                        if observation.stock_terminal_date is not None
+                        else ""
+                    ),
+                    "terminal_value_per_share": _format_optional(
+                        observation.terminal_value_per_share
+                    ),
+                    "lifecycle_source_url": observation.lifecycle_source_url,
                 }
             )
 
@@ -425,6 +459,8 @@ def read_historical_calibration_csv(path: str | Path) -> list[HistoricalCalibrat
             risk_free_rate_date = row.get("risk_free_rate_date", "").strip()
             erp_reference_year = row.get("erp_reference_year", "").strip()
             erp_available_date = row.get("erp_available_date", "").strip()
+            lifecycle_event_date = row.get("lifecycle_event_date", "").strip()
+            stock_terminal_date = row.get("stock_terminal_date", "").strip()
             observations.append(
                 HistoricalCalibrationObservation(
                     ticker=row["ticker"].upper().strip(),
@@ -514,6 +550,33 @@ def read_historical_calibration_csv(path: str | Path) -> list[HistoricalCalibrat
                         row.get("analysis_input_validated", "").lower()
                         in {"1", "true", "sim", "yes"}
                     ),
+                    security_cik=row.get("security_cik", "").strip(),
+                    universe_status=(
+                        row.get("universe_status", "active").strip() or "active"
+                    ),
+                    outcome_method=(
+                        row.get("outcome_method", "market_price_12m").strip()
+                        or "market_price_12m"
+                    ),
+                    lifecycle_event_type=row.get(
+                        "lifecycle_event_type", ""
+                    ).strip(),
+                    lifecycle_event_date=(
+                        date.fromisoformat(lifecycle_event_date)
+                        if lifecycle_event_date
+                        else None
+                    ),
+                    stock_terminal_date=(
+                        date.fromisoformat(stock_terminal_date)
+                        if stock_terminal_date
+                        else None
+                    ),
+                    terminal_value_per_share=_parse_optional_float(
+                        row.get("terminal_value_per_share", "")
+                    ),
+                    lifecycle_source_url=row.get(
+                        "lifecycle_source_url", ""
+                    ).strip(),
                 )
             )
     return observations

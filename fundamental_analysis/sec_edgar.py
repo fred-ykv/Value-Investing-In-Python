@@ -80,14 +80,26 @@ SEC_FACT_SPECS: dict[str, dict[str, _FactSpec]] = {
         "revenue": _FactSpec(
             (
                 "RevenueFromContractWithCustomerExcludingAssessedTax",
+                "RevenueFromContractWithCustomerIncludingAssessedTax",
                 "Revenues",
                 "SalesRevenueNet",
+                "SalesRevenueGoodsNet",
+                "SalesRevenueServicesNet",
+                "LicenseAndServicesRevenue",
             ),
             ("USD",),
             True,
         ),
         "ebit": _FactSpec(("OperatingIncomeLoss",), ("USD",), True),
-        "net_income": _FactSpec(("NetIncomeLoss", "ProfitLoss"), ("USD",), True),
+        "net_income": _FactSpec(
+            (
+                "NetIncomeLoss",
+                "ProfitLoss",
+                "NetIncomeLossAvailableToCommonStockholdersBasic",
+            ),
+            ("USD",),
+            True,
+        ),
         "tax_provision": _FactSpec(("IncomeTaxExpenseBenefit",), ("USD",), True),
         "interest_expense": _FactSpec(
             (
@@ -203,8 +215,13 @@ class SecEdgarClient:
         self.cache_dir = Path(cache_dir or assumptions.cache_directory)
         self._last_request_at = 0.0
 
-    def resolve_cik(self, ticker: str) -> str:
+    def resolve_cik(self, ticker: str, cik_override: str | None = None) -> str:
         normalized = ticker.upper().strip()
+        if cik_override is not None:
+            candidate = str(cik_override).strip()
+            if not candidate.isdigit() or len(candidate) > 10:
+                raise ValueError(f"CIK explicito invalido para {normalized}: {candidate}")
+            return candidate.zfill(10)
         payload = self._load_json(self.assumptions.sec_ticker_map_url, "company_tickers.json")
         records: Iterable[object]
         if isinstance(payload, Mapping):
@@ -229,11 +246,12 @@ class SecEdgarClient:
         self,
         ticker: str,
         *,
+        cik_override: str | None = None,
         start_year: int | None = None,
         end_year: int | None = None,
         max_filings: int | None = None,
     ) -> list[SecFilingAnchor]:
-        cik = self.resolve_cik(ticker)
+        cik = self.resolve_cik(ticker, cik_override)
         payload = self.fetch_company_facts(cik)
         anchors = _annual_anchors(ticker.upper().strip(), cik, payload, self.assumptions)
         if start_year is not None:
@@ -252,9 +270,10 @@ class SecEdgarClient:
         as_of: date,
         *,
         anchor_accession: str | None = None,
+        cik_override: str | None = None,
     ) -> PointInTimeFundamentals:
         normalized_ticker = ticker.upper().strip()
-        cik = self.resolve_cik(normalized_ticker)
+        cik = self.resolve_cik(normalized_ticker, cik_override)
         payload = self.fetch_company_facts(cik)
         anchors = _annual_anchors(normalized_ticker, cik, payload, self.assumptions)
         available = [
@@ -382,10 +401,14 @@ class SecEdgarClient:
         as_of: date,
         *,
         max_filings: int = 10,
+        cik_override: str | None = None,
     ) -> list[PointInTimeFundamentals]:
         anchors = [
             anchor
-            for anchor in self.list_annual_filings(ticker)
+            for anchor in self.list_annual_filings(
+                ticker,
+                cik_override=cik_override,
+            )
             if (as_of - anchor.filed).days >= self.assumptions.minimum_filing_lag_days
         ]
         if max_filings <= 0:
@@ -395,6 +418,7 @@ class SecEdgarClient:
                 ticker,
                 as_of,
                 anchor_accession=anchor.accession_number,
+                cik_override=cik_override,
             )
             for anchor in anchors[-max_filings:]
         ]
@@ -766,6 +790,7 @@ def _complete_total_debt(
                     "DebtCurrent",
                     "ShortTermDebtCurrent",
                     "ConvertibleDebtCurrent",
+                    "ConvertibleNotesPayableCurrent",
                     "CapitalLeaseObligationsCurrent",
                     "NotesPayableCurrent",
                     "FinanceLeaseLiabilityCurrent",
@@ -784,6 +809,7 @@ def _complete_total_debt(
                     "LongTermDebtNoncurrent",
                     "LongTermDebtAndFinanceLeaseObligationsNoncurrent",
                     "ConvertibleDebtNoncurrent",
+                    "ConvertibleNotesPayableNoncurrent",
                     "ConvertibleLongTermNotesPayable",
                     "CapitalLeaseObligationsNoncurrent",
                     "LongTermNotesPayable",

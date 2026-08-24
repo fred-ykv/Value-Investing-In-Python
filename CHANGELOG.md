@@ -1,5 +1,23 @@
 # Changelog
 
+## Survivorship-aware historical universe
+
+- Added ten historical lifecycle cases covering cash acquisitions and an
+  equity cancellation, each linked to stable SEC CIK and official event data.
+- Added normalized CSV and composite historical-price clients for licensed or
+  institutional delisted-security histories with permanent identity checks.
+- Added terminal-return handling for cash consideration, benchmark reinvestment
+  to the original horizon, cancellation at zero, and lifecycle drawdown.
+- Persisted lifecycle status, event, terminal value, source, price end date,
+  and outcome method in calibration observations and reports.
+- Added readiness gates requiring delisted and adverse lifecycle coverage
+  before score recalibration can be considered.
+- Expanded SEC XBRL concept fallbacks and allowed explicit CIK overrides for
+  issuers absent from the current SEC ticker map.
+- Validated 46 of 50 critical annual SEC snapshots in a ten-company pilot;
+  score weights and recommendation thresholds remain unchanged pending audited
+  delisted-price histories.
+
 ## Temporal out-of-sample validation
 
 - Added a fixed temporal split between calibration and a 2022+ holdout sample.

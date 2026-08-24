@@ -2,6 +2,8 @@ import unittest
 
 from fundamental_analysis.benchmark_universe import (
     DEFAULT_BENCHMARK_CASES,
+    HISTORICAL_BENCHMARK_CASES,
+    HISTORICAL_LIFECYCLE_CASES,
     benchmark_group_counts,
     validate_benchmark_cases,
 )
@@ -52,6 +54,23 @@ class BenchmarkUniverseTests(unittest.TestCase):
 
         self.assertEqual(len(DEFAULT_BENCHMARK_CASES), 40)
         self.assertEqual(set(benchmark_group_counts().values()), {10})
+
+    def test_historical_universe_adds_audited_exits_without_changing_active_set(self):
+        validate_benchmark_cases(HISTORICAL_BENCHMARK_CASES)
+
+        self.assertEqual(len(HISTORICAL_LIFECYCLE_CASES), 10)
+        self.assertEqual(len(HISTORICAL_BENCHMARK_CASES), 50)
+        self.assertEqual(
+            sum(
+                case.lifecycle_event.event_type == "cancelled_zero"
+                for case in HISTORICAL_LIFECYCLE_CASES
+                if case.lifecycle_event is not None
+            ),
+            1,
+        )
+        self.assertTrue(
+            all(case.cik for case in HISTORICAL_LIFECYCLE_CASES)
+        )
 
 
 class CalibrationDiagnosticsTests(unittest.TestCase):
@@ -105,4 +124,3 @@ class CalibrationDiagnosticsTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

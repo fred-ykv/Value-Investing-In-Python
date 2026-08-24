@@ -1,4 +1,5 @@
 import unittest
+from dataclasses import replace
 from datetime import date, timedelta
 
 from fundamental_analysis.config import CalibrationAssumptions
@@ -30,6 +31,8 @@ ASSUMPTIONS = CalibrationAssumptions(
     minimum_validation_observations=4,
     minimum_observations_per_group_per_split=2,
     minimum_distinct_tickers_per_group_per_split=2,
+    minimum_lifecycle_tickers_in_calibration=0,
+    minimum_adverse_lifecycle_tickers_in_calibration=0,
 )
 
 
@@ -140,6 +143,26 @@ class OutOfSampleValidationTests(unittest.TestCase):
         self.assertFalse(report.is_ready_for_recalibration)
         self.assertTrue(
             any("Calibracao/group_b" in warning for warning in report.warnings)
+        )
+
+    def test_missing_delisted_and_adverse_cases_blocks_recalibration(self):
+        assumptions = replace(
+            ASSUMPTIONS,
+            minimum_lifecycle_tickers_in_calibration=2,
+            minimum_adverse_lifecycle_tickers_in_calibration=1,
+        )
+
+        report = evaluate_out_of_sample_validation(
+            self.build_observations(),
+            assumptions,
+        )
+
+        self.assertFalse(report.is_ready_for_recalibration)
+        self.assertTrue(
+            any("retiradas da bolsa" in warning for warning in report.warnings)
+        )
+        self.assertTrue(
+            any("cancelamento ou perda total" in warning for warning in report.warnings)
         )
 
 

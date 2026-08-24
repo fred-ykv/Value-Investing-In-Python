@@ -132,6 +132,9 @@ class PointInTimeCollectionTests(unittest.TestCase):
         self.assertEqual(observation.sector_bucket, "industrial_machinery")
         self.assertEqual(observation.critical_metric_coverage, 1.0)
         self.assertTrue(observation.analysis_input_validated)
+        self.assertEqual(observation.security_cik, "0000001234")
+        self.assertEqual(observation.universe_status, "active")
+        self.assertEqual(observation.outcome_method, "market_price_12m")
 
     def test_bank_critical_coverage_ignores_industrial_only_metrics(self):
         def get_json(url):

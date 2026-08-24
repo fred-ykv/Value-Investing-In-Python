@@ -17,6 +17,7 @@ env/
 # Generated analysis outputs
 work_outputs_live/
 calibration_outputs/
+historical_calibration_outputs/
 *.log
 
 # OS/editor files
@@ -24,4 +25,3 @@ calibration_outputs/
 Thumbs.db
 .idea/
 .vscode/
-

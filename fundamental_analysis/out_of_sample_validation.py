@@ -40,6 +40,8 @@ class OutOfSampleValidationReport:
     calibration_summary: HistoricalCalibrationSummary
     validation_summary: HistoricalCalibrationSummary
     segments: tuple[SegmentOutcomeSummary, ...]
+    lifecycle_calibration_tickers: int
+    adverse_lifecycle_calibration_tickers: int
     warnings: tuple[str, ...]
     is_ready_for_recalibration: bool
 
@@ -76,6 +78,16 @@ def evaluate_out_of_sample_validation(
             *_segment_summaries("validacao", validation),
         ]
     )
+    lifecycle_calibration_tickers = len(
+        {item.ticker for item in calibration if item.lifecycle_event_type}
+    )
+    adverse_lifecycle_calibration_tickers = len(
+        {
+            item.ticker
+            for item in calibration
+            if item.lifecycle_event_type == "cancelled_zero"
+        }
+    )
 
     warnings: list[str] = []
     if len(all_observations) < assumptions.minimum_historical_observations:
@@ -97,6 +109,24 @@ def evaluate_out_of_sample_validation(
             assumptions,
         )
     )
+    if (
+        lifecycle_calibration_tickers
+        < assumptions.minimum_lifecycle_tickers_in_calibration
+    ):
+        warnings.append(
+            "Calibracao sem cobertura suficiente de empresas retiradas da bolsa: "
+            f"{lifecycle_calibration_tickers} tickers; minimo "
+            f"{assumptions.minimum_lifecycle_tickers_in_calibration}."
+        )
+    if (
+        adverse_lifecycle_calibration_tickers
+        < assumptions.minimum_adverse_lifecycle_tickers_in_calibration
+    ):
+        warnings.append(
+            "Calibracao sem casos adversos de cancelamento ou perda total: "
+            f"{adverse_lifecycle_calibration_tickers} tickers; minimo "
+            f"{assumptions.minimum_adverse_lifecycle_tickers_in_calibration}."
+        )
     return OutOfSampleValidationReport(
         validation_start_date=cutoff,
         calibration_observations=calibration,
@@ -105,6 +135,10 @@ def evaluate_out_of_sample_validation(
         calibration_summary=calibration_summary,
         validation_summary=validation_summary,
         segments=segments,
+        lifecycle_calibration_tickers=lifecycle_calibration_tickers,
+        adverse_lifecycle_calibration_tickers=(
+            adverse_lifecycle_calibration_tickers
+        ),
         warnings=tuple(dict.fromkeys(warnings)),
         is_ready_for_recalibration=not warnings,
     )
@@ -148,6 +182,10 @@ def out_of_sample_payload(report: OutOfSampleValidationReport) -> dict[str, obje
         "calibration": _historical_summary_payload(report.calibration_summary),
         "validation": _historical_summary_payload(report.validation_summary),
         "segments": [asdict(segment) for segment in report.segments],
+        "lifecycle_calibration_tickers": report.lifecycle_calibration_tickers,
+        "adverse_lifecycle_calibration_tickers": (
+            report.adverse_lifecycle_calibration_tickers
+        ),
         "warnings": list(report.warnings),
         "is_ready_for_recalibration": report.is_ready_for_recalibration,
     }
@@ -163,6 +201,9 @@ def render_out_of_sample_markdown(report: OutOfSampleValidationReport) -> str:
         f"- Calibracao: {len(report.calibration_observations)} observacoes",
         f"- Validacao: {len(report.validation_observations)} observacoes",
         f"- Embargo temporal: {len(report.embargoed_observations)} observacoes",
+        f"- Tickers retirados da bolsa na calibracao: {report.lifecycle_calibration_tickers}",
+        "- Casos de cancelamento/perda total na calibracao: "
+        f"{report.adverse_lifecycle_calibration_tickers}",
         f"- Pronto para recalibrar: {'sim' if report.is_ready_for_recalibration else 'nao'}",
         "",
         "O holdout nao deve ser usado para escolher pesos, travas ou limites. "
@@ -196,6 +237,19 @@ def render_out_of_sample_markdown(report: OutOfSampleValidationReport) -> str:
         for segment in report.segments
         if segment.dimension == "recommendation"
     )
+    lines.extend(
+        [
+            "",
+            "## Resultado por permanencia no mercado",
+            "| Amostra | Status | N | Utilizaveis | Tickers | Score medio | Excesso medio | Acerto | Drawdown medio |",
+            "|---|---|---:|---:|---:|---:|---:|---:|---:|",
+        ]
+    )
+    lines.extend(
+        _recommendation_row(segment)
+        for segment in report.segments
+        if segment.dimension == "universe_status"
+    )
     lines.extend(["", "## Alertas"])
     if report.warnings:
         lines.extend(f"- {warning}" for warning in report.warnings)
@@ -212,6 +266,7 @@ def _segment_summaries(
     for dimension, selector in (
         ("benchmark_group", lambda item: item.benchmark_group or item.company_type),
         ("recommendation", lambda item: item.recommendation),
+        ("universe_status", lambda item: item.universe_status or "active"),
     ):
         grouped: dict[str, list[HistoricalCalibrationObservation]] = {}
         for observation in observations:

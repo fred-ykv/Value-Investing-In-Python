@@ -31,6 +31,32 @@ class SecEdgarClientTests(unittest.TestCase):
         self.assertEqual(filings[0].accession_number, "0000001234-24-000001")
         self.assertEqual(filings[0].report_end, date(2023, 12, 31))
 
+    def test_explicit_cik_keeps_delisted_company_resolvable(self):
+        def get_json(url):
+            if "company_tickers" in url:
+                return {}
+            return company_facts_fixture()
+
+        with tempfile.TemporaryDirectory() as tempdir:
+            client = SecEdgarClient(
+                "Test Research test@example.com",
+                cache_dir=tempdir,
+                json_getter=get_json,
+            )
+            filings = client.list_annual_filings(
+                "OLD",
+                cik_override="1234",
+            )
+            snapshot = client.build_snapshot(
+                "OLD",
+                date(2024, 2, 16),
+                cik_override="1234",
+            )
+
+        self.assertEqual(len(filings), 2)
+        self.assertEqual(snapshot.cik, "0000001234")
+        self.assertEqual(snapshot.ticker, "OLD")
+
     def test_snapshot_uses_only_facts_known_by_as_of_date(self):
         with tempfile.TemporaryDirectory() as tempdir:
             client = self.build_client(tempdir)
@@ -93,6 +119,30 @@ class SecEdgarClientTests(unittest.TestCase):
 
         self.assertEqual(snapshot.cash_flow["capex"].value, 50)
         self.assertEqual(snapshot.income_statement["interest_expense"].value, 10)
+
+    def test_accepts_including_tax_revenue_and_common_holder_income(self):
+        payload = deepcopy(company_facts_fixture())
+        gaap = payload["facts"]["us-gaap"]
+        gaap["RevenueFromContractWithCustomerIncludingAssessedTax"] = gaap.pop(
+            "RevenueFromContractWithCustomerExcludingAssessedTax"
+        )
+        gaap["NetIncomeLossAvailableToCommonStockholdersBasic"] = gaap.pop(
+            "NetIncomeLoss"
+        )
+
+        def get_json(url):
+            return ticker_map_fixture() if "company_tickers" in url else payload
+
+        with tempfile.TemporaryDirectory() as tempdir:
+            client = SecEdgarClient(
+                "Test Research test@example.com",
+                cache_dir=tempdir,
+                json_getter=get_json,
+            )
+            snapshot = client.build_snapshot("TEST", date(2024, 2, 16))
+
+        self.assertEqual(snapshot.income_statement["revenue"].value, 1_000)
+        self.assertEqual(snapshot.income_statement["net_income"].value, 100)
         self.assertFalse(snapshot.cash_flow["capex"].is_fallback)
         self.assertFalse(snapshot.income_statement["interest_expense"].is_fallback)
 

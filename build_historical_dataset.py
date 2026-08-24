@@ -8,14 +8,22 @@ from dataclasses import replace
 from datetime import date
 from pathlib import Path
 
-from fundamental_analysis.benchmark_universe import DEFAULT_BENCHMARK_CASES
+from fundamental_analysis.benchmark_universe import (
+    DEFAULT_BENCHMARK_CASES,
+    HISTORICAL_BENCHMARK_CASES,
+    HISTORICAL_LIFECYCLE_CASES,
+)
 from fundamental_analysis.config import CALIBRATION, POINT_IN_TIME
 from fundamental_analysis.historical_calibration import (
     evaluate_historical_outcomes,
     render_historical_calibration_markdown,
     write_historical_calibration_csv,
 )
-from fundamental_analysis.historical_prices import YFinanceHistoricalPriceClient
+from fundamental_analysis.historical_prices import (
+    CompositeHistoricalPriceClient,
+    CsvHistoricalPriceClient,
+    YFinanceHistoricalPriceClient,
+)
 from fundamental_analysis.historical_macro import HistoricalMacroClient
 from fundamental_analysis.point_in_time_collection import (
     collect_benchmark_history,
@@ -44,6 +52,23 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--outdir", default="historical_calibration_outputs")
     parser.add_argument(
+        "--universe",
+        choices=("active", "expanded", "lifecycle"),
+        default="active",
+        help=(
+            "active preserva o benchmark atual; expanded adiciona adquiridas e "
+            "falidas; lifecycle roda apenas as empresas retiradas da bolsa."
+        ),
+    )
+    parser.add_argument(
+        "--historical-prices-csv",
+        default=None,
+        help=(
+            "CSV normalizado com security_id,ticker,date,adjusted_close,raw_close,source. "
+            "Obrigatorio para universos com empresas retiradas da bolsa."
+        ),
+    )
+    parser.add_argument(
         "--validation-start-year",
         type=int,
         default=CALIBRATION.validation_start_year,
@@ -60,17 +85,35 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     requested = {ticker.upper().strip() for ticker in args.tickers}
+    universe = {
+        "active": DEFAULT_BENCHMARK_CASES,
+        "expanded": HISTORICAL_BENCHMARK_CASES,
+        "lifecycle": HISTORICAL_LIFECYCLE_CASES,
+    }[args.universe]
     cases = [
-        case for case in DEFAULT_BENCHMARK_CASES if not requested or case.ticker in requested
+        case for case in universe if not requested or case.ticker in requested
     ]
     unknown = requested - {case.ticker for case in cases}
     if unknown:
         raise SystemExit("Tickers fora do benchmark configurado: " + ", ".join(sorted(unknown)))
+    if args.universe != "active" and not args.historical_prices_csv:
+        raise SystemExit(
+            "O universo com empresas retiradas da bolsa exige --historical-prices-csv. "
+            "Yahoo e provedores baseados apenas em tickers atuais nao preservam essas series."
+        )
 
     outdir = Path(args.outdir)
     outdir.mkdir(parents=True, exist_ok=True)
     sec_client = SecEdgarClient(user_agent=args.sec_user_agent)
-    price_client = YFinanceHistoricalPriceClient()
+    yahoo_client = YFinanceHistoricalPriceClient()
+    price_client = (
+        CompositeHistoricalPriceClient(
+            CsvHistoricalPriceClient(args.historical_prices_csv),
+            yahoo_client,
+        )
+        if args.historical_prices_csv
+        else yahoo_client
+    )
     macro_client = HistoricalMacroClient()
     dataset = collect_benchmark_history(
         sec_client,

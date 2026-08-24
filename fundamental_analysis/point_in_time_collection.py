@@ -76,6 +76,7 @@ def collect_point_in_time_observation(
             case.ticker,
             as_of,
             anchor_accession=anchor.accession_number,
+            cik_override=case.cik or None,
         )
         cyclical_history = (
             [
@@ -84,6 +85,7 @@ def collect_point_in_time_observation(
                     case.ticker,
                     as_of,
                     max_filings=CYCLICAL.maximum_years,
+                    cik_override=case.cik or None,
                 )
             ]
             if case.is_cyclical
@@ -95,6 +97,7 @@ def collect_point_in_time_observation(
             as_of,
             price_provider,
             assumptions,
+            lifecycle_event=case.lifecycle_event,
         )
         macro = macro_provider.snapshot(as_of)
         result = _analyze_snapshot(
@@ -190,6 +193,20 @@ def collect_point_in_time_observation(
             critical_metric_coverage=critical_coverage,
             missing_critical_metrics=", ".join(missing_critical),
             analysis_input_validated=analysis_input_validated,
+            security_cik=snapshot.cik,
+            universe_status=case.universe_status,
+            outcome_method=outcome.outcome_method,
+            lifecycle_event_type=(
+                case.lifecycle_event.event_type if case.lifecycle_event else ""
+            ),
+            lifecycle_event_date=(
+                case.lifecycle_event.effective_date if case.lifecycle_event else None
+            ),
+            stock_terminal_date=outcome.stock_terminal_date,
+            terminal_value_per_share=outcome.terminal_value_per_share,
+            lifecycle_source_url=(
+                case.lifecycle_event.source_url if case.lifecycle_event else ""
+            ),
         )
         return PointInTimeCollectionResult(
             ticker=case.ticker.upper(),
@@ -233,6 +250,7 @@ def collect_benchmark_history(
         try:
             anchors = sec_client.list_annual_filings(
                 case.ticker,
+                cik_override=case.cik or None,
                 start_year=start_year,
                 end_year=end_year,
                 max_filings=None,
@@ -322,8 +340,8 @@ def render_collection_markdown(dataset: PointInTimeDataset) -> str:
         f"- Taxa de sucesso: {dataset.success_rate:.1%}",
         "",
         "## Resultado por observacao",
-        "| Ticker | Data-base | Filing | Status | Cobertura geral/critica | Ciclo | Rf / ERP / taxa aplicada | Benchmark | Avisos/erro |",
-        "|---|---|---|---|---:|---|---:|---|---|",
+        "| Ticker | Universo/resultado | Data-base | Filing | Status | Cobertura geral/critica | Ciclo | Rf / ERP / taxa aplicada | Benchmark | Avisos/erro |",
+        "|---|---|---|---|---|---:|---|---:|---|---|",
     ]
     for result in dataset.results:
         observation = result.observation
@@ -344,7 +362,8 @@ def render_collection_markdown(dataset: PointInTimeDataset) -> str:
             else "-"
         )
         lines.append(
-            f"| {result.ticker} | {result.as_of or '-'} | {result.filing_accession or '-'} | "
+            f"| {result.ticker} | {_lifecycle_audit_label(observation)} | "
+            f"{result.as_of or '-'} | {result.filing_accession or '-'} | "
             f"{status} | "
             f"{coverage} | "
             f"{_cycle_audit_label(observation)} | "
@@ -364,14 +383,19 @@ def _analyze_snapshot(
     cyclical_history: list[object],
 ) -> AnalysisResult:
     shares = snapshot.market_data.get("shares")
+    price_source_url = (
+        f"https://finance.yahoo.com/quote/{case.ticker}/history"
+        if "yfinance" in outcome.source
+        else ""
+    )
     market_overrides: dict[str, object] = {
         "price": metric_value(
             "price",
             outcome.start_price,
-            "yfinance_historical",
+            "historical_market_price",
             "Unadjusted close for valuation on first trading day on or after the analysis date",
-            source_url=f"https://finance.yahoo.com/quote/{case.ticker}/history",
-            source_document="Yahoo Finance historical close",
+            source_url=price_source_url,
+            source_document=outcome.source,
             period_end=outcome.price_start_date,
             as_of=datetime.combine(outcome.price_start_date, datetime.min.time()),
             currency="USD",
@@ -390,9 +414,9 @@ def _analyze_snapshot(
         market_overrides["beta"] = metric_value(
             "beta",
             outcome.trailing_beta,
-            "yfinance_historical",
+            "historical_market_price",
             f"Trailing beta from {outcome.beta_observations} daily return pairs known before analysis",
-            source_document="Yahoo Finance adjusted historical prices",
+            source_document=outcome.source,
             period_end=outcome.price_start_date - timedelta(days=1),
             as_of=datetime.combine(outcome.price_start_date, datetime.min.time()),
             formula="covariance_stock_benchmark_divided_by_benchmark_variance",
@@ -403,7 +427,7 @@ def _analyze_snapshot(
             outcome.start_price * float(shares.value),
             "sec_edgar_derived",
             "Historical unadjusted close multiplied by SEC shares outstanding",
-            source_document=(shares.source_document or "SEC EDGAR") + "; Yahoo Finance historical price",
+            source_document=(shares.source_document or "SEC EDGAR") + "; " + outcome.source,
             period_end=outcome.price_start_date,
             filing_date=shares.filing_date,
             currency="USD",
@@ -452,6 +476,19 @@ def _cycle_audit_label(
         return "nao aplicavel"
     status = "aplicada" if observation.cyclical_normalization_applied else "nao aplicada"
     return f"{status}; {observation.cyclical_normalization_years} anos"
+
+
+def _lifecycle_audit_label(
+    observation: HistoricalCalibrationObservation | None,
+) -> str:
+    if observation is None:
+        return "-"
+    if not observation.lifecycle_event_type:
+        return f"{observation.universe_status}; {observation.outcome_method}"
+    return (
+        f"{observation.universe_status}; {observation.lifecycle_event_type}; "
+        f"{observation.outcome_method}"
+    )
 
 
 def _classification_info(case: BenchmarkCase) -> dict[str, object]:

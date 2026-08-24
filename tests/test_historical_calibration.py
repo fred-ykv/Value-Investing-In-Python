@@ -133,6 +133,14 @@ class HistoricalCalibrationTests(unittest.TestCase):
             critical_metric_coverage=1.0,
             missing_critical_metrics="",
             analysis_input_validated=True,
+            security_cik="0000001234",
+            universe_status="acquired",
+            outcome_method="cash_acquisition_reinvested_in_benchmark",
+            lifecycle_event_type="cash_acquisition",
+            lifecycle_event_date=date(2020, 8, 1),
+            stock_terminal_date=date(2020, 7, 31),
+            terminal_value_per_share=34.0,
+            lifecycle_source_url="https://www.sec.gov/Archives/edgar/data/1234/filing.htm",
         )
         with TemporaryDirectory() as tempdir:
             path = Path(tempdir) / "history.csv"
@@ -171,6 +179,17 @@ class HistoricalCalibrationTests(unittest.TestCase):
         self.assertEqual(restored.critical_metric_coverage, 1.0)
         self.assertEqual(restored.missing_critical_metrics, "")
         self.assertTrue(restored.analysis_input_validated)
+        self.assertEqual(restored.security_cik, "0000001234")
+        self.assertEqual(restored.universe_status, "acquired")
+        self.assertEqual(
+            restored.outcome_method,
+            "cash_acquisition_reinvested_in_benchmark",
+        )
+        self.assertEqual(restored.lifecycle_event_type, "cash_acquisition")
+        self.assertEqual(restored.lifecycle_event_date, date(2020, 8, 1))
+        self.assertEqual(restored.stock_terminal_date, date(2020, 7, 31))
+        self.assertEqual(restored.terminal_value_per_share, 34.0)
+        self.assertIn("sec.gov", restored.lifecycle_source_url)
 
 
 if __name__ == "__main__":
