@@ -30,12 +30,16 @@ class PriceSeries:
     ticker: str
     points: tuple[PricePoint, ...]
     source: str
+    security_id: str = ""
+    issuer_cik: str = ""
 
     def between(self, start: date, end: date) -> "PriceSeries":
         return PriceSeries(
             self.ticker,
             tuple(point for point in self.points if start <= point.day <= end),
             self.source,
+            self.security_id,
+            self.issuer_cik,
         )
 
 
@@ -49,6 +53,7 @@ class CsvHistoricalPriceClient:
 
     REQUIRED_COLUMNS = {
         "security_id",
+        "issuer_cik",
         "ticker",
         "date",
         "adjusted_close",
@@ -63,6 +68,7 @@ class CsvHistoricalPriceClient:
     def _load(self) -> dict[str, PriceSeries]:
         by_ticker: dict[str, list[PricePoint]] = {}
         identities: dict[str, str] = {}
+        issuer_ciks: dict[str, str] = {}
         sources: dict[str, set[str]] = {}
         seen_days: dict[str, set[date]] = {}
         with self.path.open(newline="", encoding="utf-8") as handle:
@@ -76,16 +82,26 @@ class CsvHistoricalPriceClient:
             for line_number, row in enumerate(reader, start=2):
                 ticker = row["ticker"].upper().strip()
                 security_id = row["security_id"].strip()
+                issuer_cik = row["issuer_cik"].strip()
                 source = row["source"].strip()
-                if not ticker or not security_id or not source:
+                if not ticker or not security_id or not issuer_cik or not source:
                     raise ValueError(
-                        f"Identidade, ticker ou fonte ausente na linha {line_number}"
+                        f"Identidade, CIK, ticker ou fonte ausente na linha {line_number}"
                     )
+                if not issuer_cik.isdigit() or len(issuer_cik) > 10:
+                    raise ValueError(f"CIK do emissor invalido na linha {line_number}")
+                issuer_cik = issuer_cik.zfill(10)
                 previous_identity = identities.setdefault(ticker, security_id)
                 if previous_identity != security_id:
                     raise ValueError(
                         f"Mais de uma identidade permanente para {ticker}: "
                         f"{previous_identity}, {security_id}"
+                    )
+                previous_cik = issuer_ciks.setdefault(ticker, issuer_cik)
+                if previous_cik != issuer_cik:
+                    raise ValueError(
+                        f"Mais de um emissor para {ticker}: "
+                        f"{previous_cik}, {issuer_cik}"
                     )
                 try:
                     point = PricePoint(
@@ -121,8 +137,12 @@ class CsvHistoricalPriceClient:
                     tuple(points),
                     "normalized_csv["
                     + identities[ticker]
+                    + ";CIK"
+                    + issuer_ciks[ticker]
                     + "]:"
                     + ";".join(sorted(sources[ticker])),
+                    identities[ticker],
+                    issuer_ciks[ticker],
                 )
             )
             for ticker, points in by_ticker.items()
@@ -247,12 +267,24 @@ def calculate_price_outcome(
     provider: HistoricalPriceProvider,
     assumptions: PointInTimeAssumptions = POINT_IN_TIME,
     lifecycle_event: HistoricalLifecycleEvent | None = None,
+    expected_cik: str | None = None,
 ) -> PriceOutcome:
     target_end = add_months(as_of, assumptions.forward_horizon_months)
     lookback_start = add_months(as_of, -assumptions.beta_lookback_months) - timedelta(days=10)
     fetch_end = target_end + timedelta(days=assumptions.price_end_max_lag_days + 2)
     stock = normalize_price_series(provider.fetch_series(ticker, lookback_start, fetch_end))
     benchmark = normalize_price_series(provider.fetch_series(benchmark_ticker, lookback_start, fetch_end))
+    if expected_cik is not None:
+        cik_candidate = str(expected_cik).strip()
+        if not cik_candidate.isdigit() or len(cik_candidate) > 10:
+            raise ValueError(f"CIK esperado invalido para {ticker.upper().strip()}")
+        normalized_cik = cik_candidate.zfill(10)
+        if stock.issuer_cik != normalized_cik:
+            observed = stock.issuer_cik or "ausente"
+            raise LookupError(
+                f"Serie de {ticker.upper().strip()} pertence ao CIK {observed}; "
+                f"esperado {normalized_cik}"
+            )
 
     stock_start = _first_on_or_after(
         stock,
@@ -447,7 +479,13 @@ def normalize_price_series(series: PriceSeries) -> PriceSeries:
     points = tuple(by_day[day] for day in sorted(by_day))
     if not points:
         raise LookupError(f"Serie historica vazia para {series.ticker}")
-    return PriceSeries(series.ticker.upper().strip(), points, series.source)
+    return PriceSeries(
+        series.ticker.upper().strip(),
+        points,
+        series.source,
+        series.security_id,
+        series.issuer_cik,
+    )
 
 
 def maximum_drawdown(series: PriceSeries, start: date, end: date) -> float:

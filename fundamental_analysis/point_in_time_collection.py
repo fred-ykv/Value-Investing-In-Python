@@ -98,6 +98,7 @@ def collect_point_in_time_observation(
             price_provider,
             assumptions,
             lifecycle_event=case.lifecycle_event,
+            expected_cik=case.cik or None,
         )
         macro = macro_provider.snapshot(as_of)
         result = _analyze_snapshot(

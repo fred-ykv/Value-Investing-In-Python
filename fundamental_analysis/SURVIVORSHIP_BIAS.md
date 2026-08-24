@@ -55,20 +55,23 @@ de ativos ativos e delistados, util para descoberta e controle de universo.
 O CSV normalizado exige:
 
 ```text
-security_id,ticker,date,adjusted_close,raw_close,source
-PERMNO_12345,ZEN,2021-01-04,142.83,143.20,crsp_export
-PERMNO_12345,ZEN,2021-01-05,145.17,145.55,crsp_export
+security_id,issuer_cik,ticker,date,adjusted_close,raw_close,source
+PERMNO_12345,0001463172,ZEN,2021-01-04,142.83,143.20,crsp_export
+PERMNO_12345,0001463172,ZEN,2021-01-05,145.17,145.55,crsp_export
 ```
 
 - `security_id`: identidade permanente da seguranca, como PERMNO;
+- `issuer_cik`: CIK da empresa emissora, usado para reconciliar precos e SEC;
 - `ticker`: ticker historico canonico usado no benchmark;
 - `date`: data em `YYYY-MM-DD`;
 - `adjusted_close`: fechamento ajustado para retorno total;
 - `raw_close`: fechamento negociado, usado no valuation da data-base;
 - `source`: provedor ou exportacao que permite auditar a origem.
 
-Identidades inconsistentes, datas duplicadas, valores nao positivos e colunas
-ausentes geram erro explicito.
+Identidades ou CIKs inconsistentes, datas duplicadas, valores nao positivos e
+colunas ausentes geram erro explicito. Quando o universo informa um CIK, a
+coleta tambem rejeita uma serie sem CIK ou pertencente a outro emissor. Isso
+protege contra reutilizacao de ticker.
 
 ## Retorno de saida
 

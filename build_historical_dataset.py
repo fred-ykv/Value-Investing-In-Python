@@ -64,7 +64,8 @@ def parse_args() -> argparse.Namespace:
         "--historical-prices-csv",
         default=None,
         help=(
-            "CSV normalizado com security_id,ticker,date,adjusted_close,raw_close,source. "
+            "CSV normalizado com security_id,issuer_cik,ticker,date,"
+            "adjusted_close,raw_close,source. "
             "Obrigatorio para universos com empresas retiradas da bolsa."
         ),
     )

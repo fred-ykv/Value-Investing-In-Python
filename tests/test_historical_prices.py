@@ -159,9 +159,9 @@ class HistoricalPriceTests(unittest.TestCase):
 
     def test_normalized_csv_requires_permanent_identity_and_source(self):
         content = (
-            "security_id,ticker,date,adjusted_close,raw_close,source\n"
-            "CIK0000001234,OLD,2021-01-04,10.5,11.0,licensed_fixture\n"
-            "CIK0000001234,OLD,2021-01-05,11.0,11.5,licensed_fixture\n"
+            "security_id,issuer_cik,ticker,date,adjusted_close,raw_close,source\n"
+            "PERMNO_12345,0000001234,OLD,2021-01-04,10.5,11.0,licensed_fixture\n"
+            "PERMNO_12345,0000001234,OLD,2021-01-05,11.0,11.5,licensed_fixture\n"
         )
         with tempfile.TemporaryDirectory() as tempdir:
             path = Path(tempdir) / "prices.csv"
@@ -174,8 +174,39 @@ class HistoricalPriceTests(unittest.TestCase):
             )
 
         self.assertEqual(len(loaded.points), 2)
-        self.assertIn("CIK0000001234", loaded.source)
+        self.assertEqual(loaded.security_id, "PERMNO_12345")
+        self.assertEqual(loaded.issuer_cik, "0000001234")
         self.assertIn("licensed_fixture", loaded.source)
+
+    def test_expected_cik_rejects_reused_ticker_series(self):
+        provider = StaticPriceProvider(
+            {
+                "OLD": PriceSeries(
+                    "OLD",
+                    (
+                        PricePoint(date(2024, 1, 5), 100, 100),
+                        PricePoint(date(2024, 2, 5), 110, 110),
+                    ),
+                    "licensed_fixture",
+                    "PERMNO_12345",
+                    "0000009999",
+                ),
+                "SPY": series(
+                    "SPY",
+                    [("2024-01-05", 100), ("2024-02-05", 105)],
+                ),
+            }
+        )
+
+        with self.assertRaisesRegex(LookupError, "esperado 0000001234"):
+            calculate_price_outcome(
+                "OLD",
+                "SPY",
+                date(2024, 1, 4),
+                provider,
+                replace(POINT_IN_TIME, forward_horizon_months=1),
+                expected_cik="0000001234",
+            )
 
     def test_cash_acquisition_is_reinvested_in_benchmark_to_full_horizon(self):
         provider = StaticPriceProvider(
