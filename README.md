@@ -76,6 +76,23 @@ See `fundamental_analysis/BACKTEST_VALIDATION.md`.
 The first 40-company temporal benchmark and its no-recalibration decision are
 documented in `fundamental_analysis/BENCHMARK_TEMPORAL_40.md`.
 
+That active-company basket is diagnostic only: it still has survivorship bias.
+The expanded universe adds acquired companies and an equity cancellation using
+stable SEC CIK identifiers and audited terminal-event rules. Delisted prices
+must come from a normalized institutional or licensed CSV; the runner does not
+replace missing histories with zero or current-ticker data:
+
+```bash
+python build_historical_dataset.py --universe expanded \
+  --historical-prices-csv historical_prices.csv \
+  --start-year 2015 --end-year 2025 --max-filings-per-company 10
+```
+
+See `fundamental_analysis/SURVIVORSHIP_BIAS.md` for the event registry, CSV
+contract, return methodology, and remaining data limitation. Score weights and
+recommendation thresholds must remain unchanged until the expanded benchmark
+passes the temporal and lifecycle coverage controls.
+
 Cyclical traditional companies can also use auditable mid-cycle normalization
 for operating margin, net income, FCFF, and reinvestment. The DCF transitions
 from current to normalized FCFF instead of assuming an immediate recovery. See

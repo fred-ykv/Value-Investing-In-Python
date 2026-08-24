@@ -208,6 +208,8 @@ class CalibrationAssumptions:
     minimum_validation_observations: int = 40
     minimum_observations_per_group_per_split: int = 8
     minimum_distinct_tickers_per_group_per_split: int = 3
+    minimum_lifecycle_tickers_in_calibration: int = 5
+    minimum_adverse_lifecycle_tickers_in_calibration: int = 1
 
 
 @dataclass(frozen=True)
@@ -242,6 +244,7 @@ class PointInTimeAssumptions:
     weighted_average_shares_fallback_confidence: float = 0.75
     price_start_max_lag_days: int = 7
     price_end_max_lag_days: int = 7
+    terminal_event_price_max_lag_days: int = 10
     forward_horizon_months: int = 12
     beta_lookback_months: int = 24
     minimum_beta_return_observations: int = 126

@@ -37,6 +37,8 @@ calibracao atravesse o periodo reservado para validacao.
 - 90% de cobertura dos resultados futuros;
 - 95% de observacoes point-in-time validas;
 - pelo menos 8 observacoes e 3 tickers distintos por grupo em cada amostra;
+- pelo menos 5 tickers retirados da bolsa na calibracao;
+- pelo menos 1 ticker com evento adverso, como cancelamento sem recuperacao;
 - Spearman score x retorno excedente de pelo menos 0.10;
 - monotonicidade minima de 60% entre faixas de score.
 
@@ -55,11 +57,26 @@ O relatorio apresenta resultados gerais, por grupo de benchmark e por
 recomendacao. Uma media agregada positiva nao compensa ausencia de cobertura em
 bancos, empresas ciclicas, growth/tech ou casos de FCF negativo.
 
+## Universo sem vies de sobrevivencia
+
+O universo ampliado inclui empresas adquiridas e um cancelamento de acoes. O
+CIK da SEC preserva a identidade mesmo quando o ticker deixa de existir. Para
+aquisicoes em dinheiro, o valor recebido e reinvestido no benchmark ate o fim
+da janela de doze meses; para cancelamento sem recuperacao, o retorno terminal
+e `-100%`. A linhagem do evento e sua fonte oficial ficam no CSV.
+
+Executar somente as 40 empresas ativas nao autoriza recalibracao. O controle de
+prontidao bloqueia a decisao enquanto faltarem a cobertura minima de empresas
+retiradas da bolsa e pelo menos um desfecho adverso na calibracao. A metodologia
+e o contrato de importacao de precos estao em
+`fundamental_analysis/SURVIVORSHIP_BIAS.md`.
+
 ## Limitacoes remanescentes
 
-- O universo atual foi curado a partir de empresas hoje conhecidas e ainda tem
-  vies de sobrevivencia. Empresas extintas, falidas ou adquiridas devem entrar
-  em uma etapa posterior com identificadores e precos historicos adequados.
+- O universo historico inicial e curado e ainda nao representa toda a
+  distribuicao de listagens e deslistagens do mercado americano.
+- Precos de tickers retirados da bolsa exigem arquivo institucional ou
+  licenciado com identidade permanente; ausencia de preco nao vira retorno zero.
 - Yahoo Finance nao e uma fonte institucional de precos point-in-time.
 - O benchmark nao inclui custos de transacao, impostos, liquidez ou impacto de
   mercado.

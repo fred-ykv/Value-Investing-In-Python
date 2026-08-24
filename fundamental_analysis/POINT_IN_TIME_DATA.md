@@ -32,6 +32,13 @@ manter consistencia com as acoes historicas informadas no filing. Retorno
 futuro, benchmark, drawdown e beta usam fechamentos ajustados; o beta usa apenas
 retornos anteriores ao preco inicial.
 
+Para empresas cujo ticker nao existe mais, o universo historico fornece o CIK
+da SEC diretamente. Precos devem ser importados com uma identidade permanente,
+fonte e serie ajustada auditavel. Em aquisicao em dinheiro, a contraprestacao
+terminal e reinvestida no benchmark ate o horizonte original; em cancelamento
+sem recuperacao, o retorno terminal e `-100%`. O programa nao inventa precos
+para completar uma serie ausente.
+
 ## Premissas macro historicas
 
 O custo de capital e reconstruido com duas observacoes datadas:
@@ -86,6 +93,16 @@ Depois, rode o benchmark completo:
 ```text
 python build_historical_dataset.py --start-year 2015 --end-year 2025 --max-filings-per-company 10 --validation-start-year 2022
 ```
+
+Para incluir empresas retiradas da bolsa, informe um CSV historico normalizado:
+
+```text
+python build_historical_dataset.py --universe expanded --historical-prices-csv historical_prices.csv --start-year 2015 --end-year 2025 --max-filings-per-company 10 --validation-start-year 2022
+```
+
+O esquema, as validacoes e o registro inicial de eventos estao em
+`fundamental_analysis/SURVIVORSHIP_BIAS.md`. As opcoes `expanded` e
+`lifecycle` falham de forma explicita se o arquivo de precos nao for fornecido.
 
 Os arquivos sao gravados em `historical_calibration_outputs/`:
 
@@ -142,5 +159,7 @@ data-base. O ERP anual tambem passa por uma data conservadora de disponibilidade
   como custo da divida. O CSV identifica essa condicao para permitir filtros.
 - Pesos e limiares nao devem ser recalibrados antes de uma amostra ampla,
   segmentada por tipo de empresa e com validacao fora da amostra.
+- A cobertura SEC dos casos historicos foi validada, mas o benchmark economico
+  ampliado depende da importacao de precos de um provedor com deslistadas.
 - O benchmark de 40 empresas e sua decisao de governanca estao resumidos em
   `fundamental_analysis/BENCHMARK_TEMPORAL_40.md`.
