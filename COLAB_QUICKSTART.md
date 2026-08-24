@@ -22,6 +22,12 @@ Use as celulas abaixo na ordem.
 Execute a celula abaixo e digite o ticker quando o Colab perguntar.
 
 ```python
+import os
+
+# Recomendado para empresas ciclicas: permite ampliar o historico pela SEC.
+# Use seu nome/aplicacao e seu e-mail real; nao publique essa identificacao no GitHub.
+os.environ["SEC_USER_AGENT"] = "Value Investing Research seu-email@exemplo.com"
+
 from fundamental_analysis import run_colab_analysis
 
 LAST = {}
@@ -32,6 +38,13 @@ artifacts = run["artifacts"]
 
 Se voce apertar Enter sem digitar nada, o fallback sera `MLI`. O ticker fica
 salvo em `LAST["ticker"]` para reuso nas proximas celulas.
+
+Para empresas ciclicas, como siderurgicas, mineradoras, fabricantes de metais,
+maquinas pesadas e montadoras, o programa tenta combinar o historico anual do
+Yahoo com ate dez filings anuais da SEC. Sem `SEC_USER_AGENT`, ele continua a
+rodar, mas normalmente tera apenas quatro anos do Yahoo e pode preservar os
+valores correntes por historico insuficiente. Confira a secao **Normalizacao do
+ciclo** no relatorio.
 
 ## 4. Ver o relatorio HTML no proprio Colab
 

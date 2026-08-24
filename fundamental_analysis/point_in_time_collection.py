@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Callable, Iterable
 
 from .benchmark_universe import BenchmarkCase, DEFAULT_BENCHMARK_CASES
-from .config import POINT_IN_TIME, PointInTimeAssumptions
+from .config import CYCLICAL, POINT_IN_TIME, PointInTimeAssumptions
 from .data_sources import metric_value
 from .historical_calibration import HistoricalCalibrationObservation
 from .historical_macro import HistoricalMacroProvider, HistoricalMacroSnapshot
@@ -77,6 +77,18 @@ def collect_point_in_time_observation(
             as_of,
             anchor_accession=anchor.accession_number,
         )
+        cyclical_history = (
+            [
+                item.as_financial_statements()
+                for item in sec_client.build_annual_history(
+                    case.ticker,
+                    as_of,
+                    max_filings=CYCLICAL.maximum_years,
+                )
+            ]
+            if case.is_cyclical
+            else []
+        )
         outcome = calculate_price_outcome(
             case.ticker,
             benchmark_ticker,
@@ -85,7 +97,14 @@ def collect_point_in_time_observation(
             assumptions,
         )
         macro = macro_provider.snapshot(as_of)
-        result = _analyze_snapshot(case, snapshot, outcome, macro, analyzer)
+        result = _analyze_snapshot(
+            case,
+            snapshot,
+            outcome,
+            macro,
+            analyzer,
+            cyclical_history,
+        )
         data_dimension = result.score.dimensions.get("data_confidence")
         data_confidence = data_dimension.score if data_dimension is not None else 0.0
         coverage_ok = snapshot.audit.coverage_ratio >= assumptions.minimum_fundamental_coverage
@@ -96,7 +115,11 @@ def collect_point_in_time_observation(
             and snapshot.audit.latest_filing_date <= as_of
             and macro.point_in_time_valid
         )
-        warnings = [*snapshot.audit.warnings, *macro.warnings]
+        warnings = [
+            *snapshot.audit.warnings,
+            *macro.warnings,
+            *result.cyclical_normalization.warnings,
+        ]
         if outcome.trailing_beta is None:
             warnings.append(
                 f"Beta historico indisponivel: {outcome.beta_observations} retornos comuns; "
@@ -132,6 +155,25 @@ def collect_point_in_time_observation(
             cost_of_capital_method=result.cost_of_capital.method,
             cost_of_capital_confidence=result.cost_of_capital.confidence,
             cost_of_capital_is_fallback=result.cost_of_capital.is_fallback,
+            is_cyclical=result.cyclical_normalization.is_cyclical,
+            cyclical_normalization_applied=result.cyclical_normalization.applied,
+            cyclical_normalization_years=result.cyclical_normalization.sample_years,
+            cyclical_normalization_confidence=result.cyclical_normalization.confidence,
+            cycle_position=result.cyclical_normalization.cycle_position,
+            current_fcff=_valuation_diagnostic_number(
+                result,
+                "dcf_fcff",
+                "current_fcff",
+            ),
+            normalized_fcff=_metric_number(
+                result.cyclical_normalization.normalized_fcff
+            ),
+            normalized_operating_margin=(
+                result.cyclical_normalization.normalized_operating_margin
+            ),
+            normalized_reinvestment_margin=(
+                result.cyclical_normalization.normalized_reinvestment_margin
+            ),
         )
         return PointInTimeCollectionResult(
             ticker=case.ticker.upper(),
@@ -264,8 +306,8 @@ def render_collection_markdown(dataset: PointInTimeDataset) -> str:
         f"- Taxa de sucesso: {dataset.success_rate:.1%}",
         "",
         "## Resultado por observacao",
-        "| Ticker | Data-base | Filing | Status | Cobertura | Rf / ERP / taxa aplicada | Benchmark | Avisos/erro |",
-        "|---|---|---|---|---:|---:|---|---|",
+        "| Ticker | Data-base | Filing | Status | Cobertura | Ciclo | Rf / ERP / taxa aplicada | Benchmark | Avisos/erro |",
+        "|---|---|---|---|---:|---|---:|---|---|",
     ]
     for result in dataset.results:
         observation = result.observation
@@ -284,6 +326,7 @@ def render_collection_markdown(dataset: PointInTimeDataset) -> str:
             f"| {result.ticker} | {result.as_of or '-'} | {result.filing_accession or '-'} | "
             f"{status} | "
             f"{coverage} | "
+            f"{_cycle_audit_label(observation)} | "
             f"{capital} | "
             f"{observation.benchmark_ticker if observation else '-'} | "
             f"{result.error or '; '.join(result.warnings) or '-'} |"
@@ -297,6 +340,7 @@ def _analyze_snapshot(
     outcome: PriceOutcome,
     macro: HistoricalMacroSnapshot,
     analyzer: AnalysisFunction,
+    cyclical_history: list[object],
 ) -> AnalysisResult:
     shares = snapshot.market_data.get("shares")
     market_overrides: dict[str, object] = {
@@ -317,6 +361,8 @@ def _analyze_snapshot(
         "benchmark_group": case.benchmark_group,
         "sector_bucket": case.sector_bucket,
         "ticker": case.ticker,
+        "is_cyclical": case.is_cyclical,
+        "cyclical_history": cyclical_history,
         **macro.market_overrides(),
     }
     if outcome.trailing_beta is not None:
@@ -356,6 +402,35 @@ def _analyze_snapshot(
         statements.info,
         statements.source,
     )
+
+
+def _valuation_diagnostic_number(
+    result: AnalysisResult,
+    method: str,
+    key: str,
+) -> float | None:
+    valuation = next(
+        (item for item in result.valuations if item.method == method),
+        None,
+    )
+    if valuation is None:
+        return None
+    value = valuation.diagnostics.get(key)
+    return float(value) if value is not None else None
+
+
+def _metric_number(metric: object) -> float | None:
+    value = getattr(metric, "value", None)
+    return float(value) if value is not None else None
+
+
+def _cycle_audit_label(
+    observation: HistoricalCalibrationObservation | None,
+) -> str:
+    if observation is None or not observation.is_cyclical:
+        return "nao aplicavel"
+    status = "aplicada" if observation.cyclical_normalization_applied else "nao aplicada"
+    return f"{status}; {observation.cyclical_normalization_years} anos"
 
 
 def _classification_info(case: BenchmarkCase) -> dict[str, object]:

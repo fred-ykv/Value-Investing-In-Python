@@ -18,19 +18,20 @@ class BenchmarkCase:
     benchmark_group: str
     sector_bucket: str
     rationale: str
+    is_cyclical: bool = False
 
 
 DEFAULT_BENCHMARK_CASES: tuple[BenchmarkCase, ...] = (
-    BenchmarkCase("MLI", "tradicionais_ciclicas", "metal_fabrication", "Industrial de nicho com geracao de caixa e ciclo economico."),
-    BenchmarkCase("NUE", "tradicionais_ciclicas", "steel", "Siderurgia ciclica e intensiva em capital."),
-    BenchmarkCase("CAT", "tradicionais_ciclicas", "industrial_machinery", "Bens de capital com ciclo e base instalada."),
-    BenchmarkCase("DE", "tradicionais_ciclicas", "agricultural_machinery", "Maquinas agricolas e exposicao ao ciclo de commodities."),
+    BenchmarkCase("MLI", "tradicionais_ciclicas", "metal_fabrication", "Industrial de nicho com geracao de caixa e ciclo economico.", True),
+    BenchmarkCase("NUE", "tradicionais_ciclicas", "steel", "Siderurgia ciclica e intensiva em capital.", True),
+    BenchmarkCase("CAT", "tradicionais_ciclicas", "industrial_machinery", "Bens de capital com ciclo e base instalada.", True),
+    BenchmarkCase("DE", "tradicionais_ciclicas", "agricultural_machinery", "Maquinas agricolas e exposicao ao ciclo de commodities.", True),
     BenchmarkCase("HON", "tradicionais_ciclicas", "industrial_conglomerate", "Industrial diversificada com margens maduras."),
     BenchmarkCase("EMR", "tradicionais_ciclicas", "industrial_automation", "Automacao industrial e receitas recorrentes de servicos."),
     BenchmarkCase("ETN", "tradicionais_ciclicas", "electrical_equipment", "Eletrificacao industrial com crescimento e capital fisico."),
     BenchmarkCase("PH", "tradicionais_ciclicas", "motion_control", "Componentes industriais diversificados."),
-    BenchmarkCase("F", "tradicionais_ciclicas", "auto_manufacturers", "Montadora madura, ciclica e intensiva em capital."),
-    BenchmarkCase("GM", "tradicionais_ciclicas", "auto_manufacturers", "Montadora madura com financeira cativa."),
+    BenchmarkCase("F", "tradicionais_ciclicas", "auto_manufacturers", "Montadora madura, ciclica e intensiva em capital.", True),
+    BenchmarkCase("GM", "tradicionais_ciclicas", "auto_manufacturers", "Montadora madura com financeira cativa.", True),
     BenchmarkCase("MSFT", "growth_tech", "software", "Software de escala, nuvem e receitas recorrentes."),
     BenchmarkCase("AAPL", "growth_tech", "consumer_technology", "Ecossistema de hardware, servicos e forte conversao de caixa."),
     BenchmarkCase("GOOGL", "growth_tech", "digital_advertising", "Plataformas digitais com investimento elevado em tecnologia."),
@@ -93,4 +94,3 @@ def benchmark_tickers(
     cases = tuple(cases)
     validate_benchmark_cases(cases)
     return [case.ticker for case in cases]
-

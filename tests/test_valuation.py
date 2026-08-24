@@ -67,6 +67,37 @@ class DCFValuationTests(unittest.TestCase):
         self.assertAlmostEqual(result.fair_value_per_share, 100.0, places=6)
         self.assertAlmostEqual(result.diagnostics["sensitivity"]["10.0%"]["0.0%"], 100.0, places=6)
 
+    def test_cyclical_dcf_transitions_gradually_to_normalized_fcff(self):
+        base = dict(
+            shares=metric_value("shares", 1, "manual"),
+            wacc=metric_value("wacc", 0.10, "manual"),
+            growth_years=metric_value("growth_years", 0.0, "manual"),
+            terminal_growth=metric_value("terminal_growth", 0.0, "manual"),
+            debt=metric_value("debt", 0, "manual"),
+            cash=metric_value("cash", 0, "manual"),
+            current_price=metric_value("price", 100, "manual"),
+        )
+        current_only = dcf_fcff(DCFInput(fcff=metric_value("fcff", 100, "manual"), **base))
+        normalized_only = dcf_fcff(DCFInput(fcff=metric_value("fcff", 50, "manual"), **base))
+        transitioned = dcf_fcff(
+            DCFInput(
+                fcff=metric_value("fcff", 100, "manual"),
+                normalized_fcff=metric_value(
+                    "normalized_fcff",
+                    50,
+                    "cyclical_normalization",
+                    formula="normalized_nopat_minus_normalized_reinvestment",
+                ),
+                normalization_years=3,
+                **base,
+            )
+        )
+
+        self.assertGreater(transitioned.fair_value_per_share, normalized_only.fair_value_per_share)
+        self.assertLess(transitioned.fair_value_per_share, current_only.fair_value_per_share)
+        self.assertTrue(transitioned.diagnostics["cyclical_normalization"])
+        self.assertEqual(transitioned.diagnostics["normalization_years"], 3)
+
     def test_zero_growth_bank_ddm_is_not_replaced_by_default(self):
         result = ddm_bank(metric_value("dividend_per_share", 1.0, "manual"), metric_value("ke", 0.10, "manual"), metric_value("terminal_growth", 0.0, "manual"), metric_value("price", 10.0, "manual"))
         self.assertAlmostEqual(result.fair_value_per_share, 10.0, places=6)
@@ -92,4 +123,3 @@ class DCFValuationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

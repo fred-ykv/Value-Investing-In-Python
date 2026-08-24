@@ -357,6 +357,29 @@ class SecEdgarClient:
             audit,
         )
 
+    def build_annual_history(
+        self,
+        ticker: str,
+        as_of: date,
+        *,
+        max_filings: int = 10,
+    ) -> list[PointInTimeFundamentals]:
+        anchors = [
+            anchor
+            for anchor in self.list_annual_filings(ticker)
+            if (as_of - anchor.filed).days >= self.assumptions.minimum_filing_lag_days
+        ]
+        if max_filings <= 0:
+            return []
+        return [
+            self.build_snapshot(
+                ticker,
+                as_of,
+                anchor_accession=anchor.accession_number,
+            )
+            for anchor in anchors[-max_filings:]
+        ]
+
     def _load_json(self, url: str, cache_name: str) -> Mapping[str, Any]:
         cache_path = self.cache_dir / cache_name
         cache_is_fresh = (

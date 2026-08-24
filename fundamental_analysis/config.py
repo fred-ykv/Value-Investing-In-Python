@@ -156,6 +156,39 @@ class CashFlowReconciliationAssumptions:
 
 
 @dataclass(frozen=True)
+class CyclicalNormalizationAssumptions:
+    minimum_years: int = 5
+    target_years: int = 8
+    maximum_years: int = 10
+    winsor_tail_fraction: float = 0.10
+    minimum_confidence: float = 0.58
+    transition_years: int = 3
+    maximum_normalized_growth: float = 0.08
+    cycle_position_margin_gap: float = 0.02
+    maximum_fcff_crosscheck_gap: float = 0.03
+    nwc_fallback_confidence_penalty: float = 0.18
+    operating_margin_bounds: Tuple[float, float] = (-0.25, 0.50)
+    net_margin_bounds: Tuple[float, float] = (-0.30, 0.40)
+    fcff_margin_bounds: Tuple[float, float] = (-0.40, 0.50)
+    reinvestment_margin_bounds: Tuple[float, float] = (-0.30, 0.60)
+    tax_rate_bounds: Tuple[float, float] = (0.00, 0.45)
+    industry_keywords: Tuple[str, ...] = (
+        "steel",
+        "metal fabrication",
+        "metals",
+        "mining",
+        "commodity",
+        "chemicals",
+        "farm machinery",
+        "agricultural machinery",
+        "heavy machinery",
+        "construction machinery",
+        "auto manufacturers",
+        "automobile manufacturers",
+    )
+
+
+@dataclass(frozen=True)
 class CalibrationAssumptions:
     minimum_total_sample: int = 40
     minimum_sample_per_group: int = 8
@@ -343,6 +376,7 @@ SCORE = ScoreConfig()
 SCENARIOS = ScenarioAssumptions()
 REVERSE_DCF = ReverseDCFAssumptions()
 CASH_FLOW_RECONCILIATION = CashFlowReconciliationAssumptions()
+CYCLICAL = CyclicalNormalizationAssumptions()
 CALIBRATION = CalibrationAssumptions()
 POINT_IN_TIME = PointInTimeAssumptions()
 COMPARABLES = ComparableAssumptions()
@@ -415,6 +449,7 @@ DATA_SOURCE_CONFIDENCE = {
     "manual": 0.70,
     "notebook": 0.70,
     "derived": 0.75,
+    "cyclical_normalization": 0.75,
     "fallback": 0.50,
     "missing": 0.00,
 }

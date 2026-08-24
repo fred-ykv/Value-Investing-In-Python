@@ -85,6 +85,7 @@ class PointInTimeCollectionTests(unittest.TestCase):
             "tradicionais_ciclicas",
             "industrial_machinery",
             "Fixture industrial",
+            is_cyclical=True,
         )
         with tempfile.TemporaryDirectory() as tempdir:
             sec_client = SecEdgarClient(
@@ -121,6 +122,11 @@ class PointInTimeCollectionTests(unittest.TestCase):
         self.assertTrue(observation.cost_of_capital_method)
         self.assertIsNotNone(observation.cost_of_capital_confidence)
         self.assertTrue(observation.is_point_in_time_valid)
+        self.assertTrue(observation.is_cyclical)
+        self.assertFalse(observation.cyclical_normalization_applied)
+        self.assertEqual(observation.cyclical_normalization_years, 1)
+        self.assertIsNotNone(observation.current_fcff)
+        self.assertIsNone(observation.normalized_fcff)
 
     def test_incomplete_forward_window_is_skipped_instead_of_reported_as_error(self):
         def get_json(url):

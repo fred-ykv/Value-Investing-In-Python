@@ -225,6 +225,16 @@ class YahooFinanceClient:
             }
             if not market["revenue_growth"].is_available:
                 market["revenue_growth"] = _growth_from_statement(financials, ("Total Revenue", "Operating Revenue", "Revenue"), source_url=source_url)
+            cyclical_history = _yahoo_annual_history(
+                self.ticker,
+                financials,
+                cashflow,
+                info,
+                source_url,
+                currency,
+            )
+            if cyclical_history:
+                market["cyclical_history"] = cyclical_history
             statements = FinancialStatements(self.ticker, _drop_none(income), _drop_none(balance), _drop_none(cash_flow), _drop_none(market), info, "yfinance")
             return FetchResult("yfinance", True, statements, confidence_for_source("yfinance"))
         except Exception as exc:
@@ -284,6 +294,83 @@ def _growth_from_statement(statement: Any, aliases: Sequence[str], source_url: s
         period_end=_period_to_date(items[0][0]),
         basis="derived",
         formula="latest_revenue_divided_by_prior_revenue_minus_one",
+    )
+
+
+def _yahoo_annual_history(
+    ticker: str,
+    financials: Any,
+    cashflow: Any,
+    info: Mapping[str, Any],
+    source_url: str,
+    currency: str | None,
+) -> list[Any]:
+    from .financial_statements import FinancialStatements
+
+    periods = [
+        period
+        for period in getattr(financials, "columns", [])
+        if _period_to_date(period) is not None
+    ]
+    history: list[FinancialStatements] = []
+    for period in sorted(periods, key=lambda item: _period_to_date(item)):
+        income = {
+            "revenue": _statement_metric_at_period(financials, ("Total Revenue", "Operating Revenue", "Revenue"), period, source_url, "Yahoo Finance income statement", currency),
+            "ebit": _statement_metric_at_period(financials, ("Operating Income", "EBIT"), period, source_url, "Yahoo Finance income statement", currency),
+            "net_income": _statement_metric_at_period(financials, ("Net Income", "Net Income Common Stockholders"), period, source_url, "Yahoo Finance income statement", currency),
+            "tax_provision": _statement_metric_at_period(financials, ("Tax Provision", "Income Tax Expense"), period, source_url, "Yahoo Finance income statement", currency),
+            "interest_expense": _statement_metric_at_period(financials, ("Interest Expense",), period, source_url, "Yahoo Finance income statement", currency),
+        }
+        cash = {
+            "capex": _statement_metric_at_period(cashflow, ("Capital Expenditure", "Capital Expenditures"), period, source_url, "Yahoo Finance cash flow statement", currency),
+            "depreciation_amortization": _statement_metric_at_period(cashflow, ("Depreciation And Amortization", "Depreciation"), period, source_url, "Yahoo Finance cash flow statement", currency),
+            "change_in_nwc_cash_effect": _statement_metric_at_period(cashflow, ("Change In Working Capital", "Change In Other Working Capital"), period, source_url, "Yahoo Finance cash flow statement", currency),
+        }
+        if not income["revenue"].is_available:
+            continue
+        history.append(
+            FinancialStatements(
+                ticker,
+                _drop_none(income),
+                {},
+                _drop_none(cash),
+                {},
+                info,
+                "yfinance",
+            )
+        )
+    return history
+
+
+def _statement_metric_at_period(
+    statement: Any,
+    aliases: Sequence[str],
+    period: Any,
+    source_url: str,
+    source_document: str,
+    currency: str | None,
+) -> MetricValue:
+    row = _find_statement_row(statement, aliases)
+    if row is None:
+        return MetricValue(aliases[0], None, "missing", 0.0, "not found")
+    try:
+        raw_value = row.get(period) if hasattr(row, "get") else row[period]
+    except Exception:
+        raw_value = None
+    numeric = safe_float(raw_value)
+    if numeric is None:
+        return MetricValue(aliases[0], None, "missing", 0.0, "not found for annual period")
+    return metric_value(
+        aliases[0],
+        numeric,
+        "yfinance",
+        f"statement row: {getattr(row, 'name', aliases[0])}",
+        source_url=source_url,
+        source_document=source_document,
+        period_end=_period_to_date(period),
+        currency=currency,
+        scale="raw",
+        basis="reported",
     )
 
 
@@ -362,4 +449,3 @@ def _drop_none(values: Mapping[str, Any]) -> dict[str, Any]:
         for k, v in values.items()
         if not (v is None or (isinstance(v, MetricValue) and v.value is None))
     }
-

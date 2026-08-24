@@ -46,6 +46,21 @@ class SecEdgarClientTests(unittest.TestCase):
         self.assertTrue(snapshot.audit.point_in_time_valid)
         self.assertEqual(snapshot.audit.coverage_ratio, 1.0)
 
+    def test_annual_history_preserves_point_in_time_cutoff(self):
+        with tempfile.TemporaryDirectory() as tempdir:
+            client = self.build_client(tempdir)
+            history = client.build_annual_history("TEST", date(2025, 2, 16))
+
+        self.assertEqual(len(history), 2)
+        self.assertEqual(
+            [item.audit.anchor.accession_number for item in history],
+            ["0000001234-24-000001", "0000001234-25-000001"],
+        )
+        self.assertTrue(
+            all(item.audit.latest_filing_date <= date(2025, 2, 16) for item in history)
+        )
+        self.assertTrue(all(item.audit.point_in_time_valid for item in history))
+
     def test_filing_is_not_available_before_configured_lag(self):
         with tempfile.TemporaryDirectory() as tempdir:
             client = self.build_client(tempdir)
