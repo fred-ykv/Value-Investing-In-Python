@@ -107,10 +107,15 @@ def collect_point_in_time_observation(
         )
         data_dimension = result.score.dimensions.get("data_confidence")
         data_confidence = data_dimension.score if data_dimension is not None else 0.0
-        coverage_ok = snapshot.audit.coverage_ratio >= assumptions.minimum_fundamental_coverage
+        critical_coverage, missing_critical = _critical_metric_audit(
+            case,
+            snapshot,
+            assumptions,
+        )
+        analysis_input_validated = not missing_critical
         point_in_time_validated = (
             snapshot.audit.point_in_time_valid
-            and coverage_ok
+            and analysis_input_validated
             and outcome.price_start_date >= as_of
             and snapshot.audit.latest_filing_date <= as_of
             and macro.point_in_time_valid
@@ -120,6 +125,12 @@ def collect_point_in_time_observation(
             *macro.warnings,
             *result.cyclical_normalization.warnings,
         ]
+        if missing_critical:
+            warnings.append(
+                "Entradas criticas ausentes para o modelo: "
+                + ", ".join(missing_critical)
+                + "."
+            )
         if outcome.trailing_beta is None:
             warnings.append(
                 f"Beta historico indisponivel: {outcome.beta_observations} retornos comuns; "
@@ -174,6 +185,11 @@ def collect_point_in_time_observation(
             normalized_reinvestment_margin=(
                 result.cyclical_normalization.normalized_reinvestment_margin
             ),
+            benchmark_group=case.benchmark_group,
+            sector_bucket=case.sector_bucket,
+            critical_metric_coverage=critical_coverage,
+            missing_critical_metrics=", ".join(missing_critical),
+            analysis_input_validated=analysis_input_validated,
         )
         return PointInTimeCollectionResult(
             ticker=case.ticker.upper(),
@@ -306,12 +322,17 @@ def render_collection_markdown(dataset: PointInTimeDataset) -> str:
         f"- Taxa de sucesso: {dataset.success_rate:.1%}",
         "",
         "## Resultado por observacao",
-        "| Ticker | Data-base | Filing | Status | Cobertura | Ciclo | Rf / ERP / taxa aplicada | Benchmark | Avisos/erro |",
+        "| Ticker | Data-base | Filing | Status | Cobertura geral/critica | Ciclo | Rf / ERP / taxa aplicada | Benchmark | Avisos/erro |",
         "|---|---|---|---|---:|---|---:|---|---|",
     ]
     for result in dataset.results:
         observation = result.observation
-        coverage = f"{observation.fundamental_coverage:.1%}" if observation else "-"
+        coverage = (
+            f"{observation.fundamental_coverage:.1%} / "
+            f"{observation.critical_metric_coverage:.1%}"
+            if observation
+            else "-"
+        )
         status = "ignorado" if result.skipped else "ok" if observation else "erro"
         capital = (
             f"{observation.risk_free_rate:.2%} / {observation.equity_risk_premium:.2%} / "
@@ -458,3 +479,50 @@ def _classification_info(case: BenchmarkCase) -> dict[str, object]:
         "classification_source": "curated_benchmark_universe",
         "classification_rationale": case.rationale,
     }
+
+
+def _critical_metric_audit(
+    case: BenchmarkCase,
+    snapshot: PointInTimeFundamentals,
+    assumptions: PointInTimeAssumptions = POINT_IN_TIME,
+) -> tuple[float, tuple[str, ...]]:
+    if case.benchmark_group == "bancos_financeiras":
+        required = (
+            ("income_statement", "net_income"),
+            ("balance_sheet", "equity"),
+            ("market_data", "shares"),
+        )
+    elif case.benchmark_group in {"growth_tech", "fcf_negativo_early_growth"}:
+        required = (
+            ("income_statement", "revenue"),
+            ("balance_sheet", "cash"),
+            ("balance_sheet", "total_debt"),
+            ("market_data", "shares"),
+        )
+    else:
+        required = (
+            ("income_statement", "revenue"),
+            ("income_statement", "ebit"),
+            ("income_statement", "net_income"),
+            ("balance_sheet", "equity"),
+            ("balance_sheet", "cash"),
+            ("balance_sheet", "total_debt"),
+            ("cash_flow", "depreciation_amortization"),
+            ("cash_flow", "capex"),
+            ("market_data", "shares"),
+        )
+    sections = {
+        "income_statement": snapshot.income_statement,
+        "balance_sheet": snapshot.balance_sheet,
+        "cash_flow": snapshot.cash_flow,
+        "market_data": snapshot.market_data,
+    }
+    missing = tuple(
+        f"{section}.{metric}"
+        for section, metric in required
+        if metric not in sections[section]
+        or not sections[section][metric].is_available
+        or sections[section][metric].confidence
+        < assumptions.minimum_critical_metric_confidence
+    )
+    return (len(required) - len(missing)) / len(required), missing

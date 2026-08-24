@@ -203,6 +203,11 @@ class CalibrationAssumptions:
     minimum_point_in_time_ratio: float = 0.95
     minimum_spearman_correlation: float = 0.10
     minimum_monotonic_bucket_ratio: float = 0.60
+    validation_start_year: int = 2022
+    minimum_calibration_observations: int = 60
+    minimum_validation_observations: int = 40
+    minimum_observations_per_group_per_split: int = 8
+    minimum_distinct_tickers_per_group_per_split: int = 3
 
 
 @dataclass(frozen=True)
@@ -232,13 +237,16 @@ class PointInTimeAssumptions:
     annual_forms: Tuple[str, ...] = ("10-K", "20-F", "40-F")
     minimum_filing_lag_days: int = 1
     minimum_fundamental_coverage: float = 0.70
+    minimum_critical_metric_confidence: float = 0.30
+    zero_debt_fallback_confidence: float = 0.35
+    weighted_average_shares_fallback_confidence: float = 0.75
     price_start_max_lag_days: int = 7
     price_end_max_lag_days: int = 7
     forward_horizon_months: int = 12
     beta_lookback_months: int = 24
     minimum_beta_return_observations: int = 126
     historical_start_year: int = 2015
-    max_annual_filings_per_company: int = 5
+    max_annual_filings_per_company: int = 10
     benchmark_by_group: Tuple[Tuple[str, str], ...] = (
         ("tradicionais_ciclicas", "SPY"),
         ("growth_tech", "QQQ"),

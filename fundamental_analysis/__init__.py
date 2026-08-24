@@ -12,6 +12,7 @@ from .benchmark_universe import DEFAULT_BENCHMARK_CASES, benchmark_tickers
 from .historical_calibration import evaluate_historical_outcomes
 from .historical_prices import YFinanceHistoricalPriceClient, calculate_price_outcome
 from .historical_macro import HistoricalMacroClient
+from .out_of_sample_validation import evaluate_out_of_sample_validation
 from .point_in_time_collection import collect_benchmark_history, collect_point_in_time_observation
 from .sec_edgar import SecEdgarClient
 from .scenarios import build_scenarios
@@ -40,6 +41,7 @@ __all__ = [
     "YFinanceHistoricalPriceClient",
     "calculate_price_outcome",
     "HistoricalMacroClient",
+    "evaluate_out_of_sample_validation",
     "collect_point_in_time_observation",
     "collect_benchmark_history",
     "build_scenarios",

@@ -51,7 +51,7 @@ DEFAULT_BENCHMARK_CASES: tuple[BenchmarkCase, ...] = (
     BenchmarkCase("USB", "bancos_financeiras", "regional_bank", "Banco regional de grande porte."),
     BenchmarkCase("PNC", "bancos_financeiras", "regional_bank", "Banco regional diversificado."),
     BenchmarkCase("TFC", "bancos_financeiras", "regional_bank", "Banco regional com risco de credito e depositos."),
-    BenchmarkCase("BK", "bancos_financeiras", "custody_bank", "Custodia e servicos financeiros baseados em tarifas."),
+    BenchmarkCase("BNY", "bancos_financeiras", "custody_bank", "Custodia e servicos financeiros baseados em tarifas."),
     BenchmarkCase("RIVN", "fcf_negativo_early_growth", "electric_vehicles", "Caso de estresse: escala industrial e queima de caixa devem ser confirmadas na data-base."),
     BenchmarkCase("LCID", "fcf_negativo_early_growth", "electric_vehicles", "Caso de estresse: demanda, financiamento e runway devem ser confirmados na data-base."),
     BenchmarkCase("RKLB", "fcf_negativo_early_growth", "aerospace", "Empresa em expansao com capex e risco de execucao."),

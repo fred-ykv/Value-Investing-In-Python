@@ -121,6 +121,224 @@ class SecEdgarClientTests(unittest.TestCase):
         self.assertLess(ebit.confidence, snapshot.income_statement["net_income"].confidence)
         self.assertIn("Metricas derivadas por fallback: ebit.", snapshot.audit.warnings)
 
+    def test_uses_us_gaap_fallback_for_shares_when_dei_concept_is_missing(self):
+        payload = deepcopy(company_facts_fixture())
+        dei_units = payload["facts"]["dei"].pop(
+            "EntityCommonStockSharesOutstanding"
+        )
+        payload["facts"]["us-gaap"]["CommonStockSharesOutstanding"] = dei_units
+
+        def get_json(url):
+            return ticker_map_fixture() if "company_tickers" in url else payload
+
+        with tempfile.TemporaryDirectory() as tempdir:
+            client = SecEdgarClient(
+                "Test Research test@example.com",
+                cache_dir=tempdir,
+                json_getter=get_json,
+            )
+            snapshot = client.build_snapshot("TEST", date(2024, 2, 16))
+
+        shares = snapshot.market_data["shares"]
+        self.assertEqual(shares.value, 100)
+        self.assertTrue(shares.is_fallback)
+        self.assertIn("us-gaap", shares.formula)
+
+    def test_uses_weighted_average_diluted_shares_as_last_filing_fallback(self):
+        payload = deepcopy(company_facts_fixture())
+        payload["facts"]["dei"].pop("EntityCommonStockSharesOutstanding")
+        payload["facts"]["us-gaap"]["WeightedAverageNumberOfDilutedSharesOutstanding"] = {
+            "label": "Diluted shares",
+            "description": "Diluted shares",
+            "units": {
+                "shares": [
+                    {
+                        "val": 125,
+                        "start": "2023-01-01",
+                        "end": "2023-12-31",
+                        "filed": "2024-02-15",
+                        "accn": "0000001234-24-000001",
+                        "form": "10-K",
+                    }
+                ]
+            },
+        }
+
+        def get_json(url):
+            return ticker_map_fixture() if "company_tickers" in url else payload
+
+        with tempfile.TemporaryDirectory() as tempdir:
+            client = SecEdgarClient(
+                "Test Research test@example.com",
+                cache_dir=tempdir,
+                json_getter=get_json,
+            )
+            snapshot = client.build_snapshot("TEST", date(2024, 2, 16))
+
+        shares = snapshot.market_data["shares"]
+        self.assertEqual(shares.value, 125)
+        self.assertTrue(shares.is_fallback)
+        self.assertEqual(
+            shares.confidence,
+            client.assumptions.weighted_average_shares_fallback_confidence,
+        )
+        self.assertIn("WeightedAverageNumberOfDilutedSharesOutstanding", shares.formula)
+
+    def test_accepts_complete_debt_and_capital_lease_concept(self):
+        payload = deepcopy(company_facts_fixture())
+        gaap = payload["facts"]["us-gaap"]
+        gaap["DebtAndCapitalLeaseObligations"] = gaap.pop("LongTermDebt")
+        gaap.pop("ShortTermBorrowings")
+
+        def get_json(url):
+            return ticker_map_fixture() if "company_tickers" in url else payload
+
+        with tempfile.TemporaryDirectory() as tempdir:
+            client = SecEdgarClient(
+                "Test Research test@example.com",
+                cache_dir=tempdir,
+                json_getter=get_json,
+            )
+            snapshot = client.build_snapshot("TEST", date(2024, 2, 16))
+
+        self.assertEqual(snapshot.balance_sheet["total_debt"].value, 300)
+
+    def test_sums_debt_current_and_noncurrent_concepts(self):
+        payload = deepcopy(company_facts_fixture())
+        gaap = payload["facts"]["us-gaap"]
+        gaap["LongTermDebtNoncurrent"] = gaap.pop("LongTermDebt")
+        gaap["DebtCurrent"] = gaap.pop("ShortTermBorrowings")
+
+        def get_json(url):
+            return ticker_map_fixture() if "company_tickers" in url else payload
+
+        with tempfile.TemporaryDirectory() as tempdir:
+            client = SecEdgarClient(
+                "Test Research test@example.com",
+                cache_dir=tempdir,
+                json_getter=get_json,
+            )
+            snapshot = client.build_snapshot("TEST", date(2024, 2, 16))
+
+        self.assertEqual(snapshot.balance_sheet["total_debt"].value, 350)
+
+    def test_sums_notes_payable_current_and_noncurrent_concepts(self):
+        payload = deepcopy(company_facts_fixture())
+        gaap = payload["facts"]["us-gaap"]
+        gaap["LongTermNotesPayable"] = gaap.pop("LongTermDebt")
+        gaap["NotesPayableCurrent"] = gaap.pop("ShortTermBorrowings")
+
+        def get_json(url):
+            return ticker_map_fixture() if "company_tickers" in url else payload
+
+        with tempfile.TemporaryDirectory() as tempdir:
+            client = SecEdgarClient(
+                "Test Research test@example.com",
+                cache_dir=tempdir,
+                json_getter=get_json,
+            )
+            snapshot = client.build_snapshot("TEST", date(2024, 2, 16))
+
+        self.assertEqual(snapshot.balance_sheet["total_debt"].value, 350)
+
+    def test_ebit_proxy_accepts_net_nonoperating_interest_with_extra_penalty(self):
+        payload = deepcopy(company_facts_fixture())
+        gaap = payload["facts"]["us-gaap"]
+        gaap[
+            "IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest"
+        ] = gaap.pop("OperatingIncomeLoss")
+        interest = gaap.pop("InterestExpenseNonOperating")
+        for fact in interest["units"]["USD"]:
+            fact["val"] = -abs(fact["val"])
+        gaap["InterestIncomeExpenseNonoperatingNet"] = interest
+
+        def get_json(url):
+            return ticker_map_fixture() if "company_tickers" in url else payload
+
+        with tempfile.TemporaryDirectory() as tempdir:
+            client = SecEdgarClient(
+                "Test Research test@example.com",
+                cache_dir=tempdir,
+                json_getter=get_json,
+            )
+            snapshot = client.build_snapshot("TEST", date(2024, 2, 16))
+
+        ebit = snapshot.income_statement["ebit"]
+        self.assertEqual(ebit.value, 150)
+        self.assertTrue(ebit.is_fallback)
+        self.assertIn("juros liquidos", ebit.note)
+        self.assertLess(ebit.confidence, 0.80)
+
+    def test_uses_auditable_zero_debt_fallback_without_financing_evidence(self):
+        payload = deepcopy(company_facts_fixture())
+        gaap = payload["facts"]["us-gaap"]
+        gaap.pop("LongTermDebt")
+        gaap.pop("ShortTermBorrowings")
+        gaap.pop("InterestExpenseNonOperating")
+
+        def get_json(url):
+            return ticker_map_fixture() if "company_tickers" in url else payload
+
+        with tempfile.TemporaryDirectory() as tempdir:
+            client = SecEdgarClient(
+                "Test Research test@example.com",
+                cache_dir=tempdir,
+                json_getter=get_json,
+            )
+            snapshot = client.build_snapshot("TEST", date(2024, 2, 16))
+
+        debt = snapshot.balance_sheet["total_debt"]
+        self.assertEqual(debt.value, 0.0)
+        self.assertTrue(debt.is_fallback)
+        self.assertEqual(
+            debt.formula,
+            "zero_debt_absence_of_anchor_financing_evidence",
+        )
+        self.assertEqual(debt.confidence, client.assumptions.zero_debt_fallback_confidence)
+
+    def test_does_not_assume_zero_debt_when_interest_evidence_exists(self):
+        payload = deepcopy(company_facts_fixture())
+        gaap = payload["facts"]["us-gaap"]
+        gaap.pop("LongTermDebt")
+        gaap.pop("ShortTermBorrowings")
+
+        def get_json(url):
+            return ticker_map_fixture() if "company_tickers" in url else payload
+
+        with tempfile.TemporaryDirectory() as tempdir:
+            client = SecEdgarClient(
+                "Test Research test@example.com",
+                cache_dir=tempdir,
+                json_getter=get_json,
+            )
+            snapshot = client.build_snapshot("TEST", date(2024, 2, 16))
+
+        self.assertNotIn("total_debt", snapshot.balance_sheet)
+
+    def test_discloses_operating_lease_without_treating_it_as_financial_debt(self):
+        payload = deepcopy(company_facts_fixture())
+        gaap = payload["facts"]["us-gaap"]
+        gaap.pop("LongTermDebt")
+        gaap.pop("ShortTermBorrowings")
+        gaap.pop("InterestExpenseNonOperating")
+        gaap["OperatingLeaseLiability"] = gaap["Assets"].copy()
+
+        def get_json(url):
+            return ticker_map_fixture() if "company_tickers" in url else payload
+
+        with tempfile.TemporaryDirectory() as tempdir:
+            client = SecEdgarClient(
+                "Test Research test@example.com",
+                cache_dir=tempdir,
+                json_getter=get_json,
+            )
+            snapshot = client.build_snapshot("TEST", date(2024, 2, 16))
+
+        debt = snapshot.balance_sheet["total_debt"]
+        self.assertEqual(debt.value, 0.0)
+        self.assertIn("arrendamento operacional", debt.note)
+        self.assertIn("ajuste simetrico de EBIT e FCFF", debt.note)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -9,6 +9,7 @@ from fundamental_analysis.data_sources import metric_value
 from fundamental_analysis.historical_macro import HistoricalMacroSnapshot
 from fundamental_analysis.historical_prices import PricePoint, PriceSeries
 from fundamental_analysis.point_in_time_collection import (
+    _critical_metric_audit,
     collect_benchmark_history,
     collect_point_in_time_observation,
 )
@@ -127,6 +128,59 @@ class PointInTimeCollectionTests(unittest.TestCase):
         self.assertEqual(observation.cyclical_normalization_years, 1)
         self.assertIsNotNone(observation.current_fcff)
         self.assertIsNone(observation.normalized_fcff)
+        self.assertEqual(observation.benchmark_group, "tradicionais_ciclicas")
+        self.assertEqual(observation.sector_bucket, "industrial_machinery")
+        self.assertEqual(observation.critical_metric_coverage, 1.0)
+        self.assertTrue(observation.analysis_input_validated)
+
+    def test_bank_critical_coverage_ignores_industrial_only_metrics(self):
+        def get_json(url):
+            return ticker_map_fixture() if "company_tickers" in url else company_facts_fixture()
+
+        with tempfile.TemporaryDirectory() as tempdir:
+            client = SecEdgarClient(
+                "Test Research test@example.com",
+                cache_dir=tempdir,
+                json_getter=get_json,
+            )
+            snapshot = client.build_snapshot("TEST", date(2024, 2, 16))
+        sparse_snapshot = replace(
+            snapshot,
+            income_statement={
+                "net_income": snapshot.income_statement["net_income"],
+            },
+            balance_sheet={
+                "equity": snapshot.balance_sheet["equity"],
+            },
+            cash_flow={},
+            market_data={
+                "shares": snapshot.market_data["shares"],
+            },
+        )
+
+        bank_case = BenchmarkCase(
+            "TEST",
+            "bancos_financeiras",
+            "diversified_bank",
+            "Fixture bank",
+        )
+        traditional_case = BenchmarkCase(
+            "TEST",
+            "tradicionais_ciclicas",
+            "industrial_machinery",
+            "Fixture industrial",
+        )
+        bank_coverage, bank_missing = _critical_metric_audit(bank_case, sparse_snapshot)
+        traditional_coverage, traditional_missing = _critical_metric_audit(
+            traditional_case,
+            sparse_snapshot,
+        )
+
+        self.assertEqual(bank_coverage, 1.0)
+        self.assertEqual(bank_missing, ())
+        self.assertLess(traditional_coverage, 1.0)
+        self.assertIn("income_statement.revenue", traditional_missing)
+        self.assertIn("cash_flow.capex", traditional_missing)
 
     def test_incomplete_forward_window_is_skipped_instead_of_reported_as_error(self):
         def get_json(url):

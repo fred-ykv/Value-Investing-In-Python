@@ -1,5 +1,22 @@
 # Changelog
 
+## Temporal out-of-sample validation
+
+- Added a fixed temporal split between calibration and a 2022+ holdout sample.
+- Added an embargo for calibration observations whose forward outcomes overlap the holdout.
+- Persisted benchmark group and sector bucket in every historical observation.
+- Added minimum observation and distinct-ticker coverage controls per group and split.
+- Added segmented excess return, hit rate, drawdown, and Spearman diagnostics by group and recommendation.
+- Added Markdown and JSON out-of-sample artifacts to the historical dataset runner.
+- Increased the default annual filing window to ten years while preserving point-in-time cutoffs.
+- Kept score weights, gates, and recommendation thresholds unchanged.
+- Added profile-specific critical-input validation with configurable confidence floors.
+- Expanded audited SEC XBRL fallbacks for debt, finance leases, notes payable, diluted shares, and net interest used by the EBIT proxy.
+- Added an explicit low-confidence zero-financial-debt approximation only when the anchor filing has no positive financing evidence.
+- Kept operating leases outside financial debt until EBIT and FCFF can be adjusted symmetrically, while disclosing the limitation in metric lineage.
+- Updated the Bank of New York Mellon benchmark ticker from `BK` to the SEC-listed `BNY`.
+- Completed a 345-observation, 40-company temporal benchmark; the score failed the economic validation gates, so no weights or thresholds were changed.
+
 ## Cyclical normalization
 
 - Added explicit cyclical classification with curated benchmark overrides and conservative sector keywords.
