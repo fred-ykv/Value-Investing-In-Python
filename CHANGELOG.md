@@ -1,5 +1,17 @@
 # Changelog
 
+## Cyclical normalization
+
+- Added explicit cyclical classification with curated benchmark overrides and conservative sector keywords.
+- Added five-to-ten-year normalization of operating margin, net margin, tax rate, FCFF margin, and reinvestment margin using bounded winsorized averages.
+- Applied normalized ratios to current revenue instead of averaging nominal historical dollars.
+- Added a component FCFF calculation (`normalized NOPAT - normalized reinvestment`) with a direct FCFF-margin reconciliation control.
+- Added gradual three-year DCF transition from current to normalized FCFF, normalized EPS for Graham, and normalized ROIC for EVA.
+- Preserved current values whenever history or confidence is insufficient and surfaced the reason in HTML, Markdown, JSON, and historical CSV outputs.
+- Added SEC EDGAR annual-history enrichment for live and point-in-time analyses without using future filings.
+- Persisted cyclical status, sample length, confidence, cycle position, current/normalized FCFF, and normalized margins in calibration observations.
+- Kept score weights and recommendation thresholds unchanged pending a broader out-of-sample benchmark.
+
 ## Refactor foundation
 
 - Added a modular Python package under `fundamental_analysis/`.

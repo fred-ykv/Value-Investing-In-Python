@@ -119,6 +119,15 @@ class HistoricalCalibrationTests(unittest.TestCase):
             price_end_date=date(2021, 4, 1),
             filing_accession="0000000000-20-000001",
             fundamental_coverage=0.85,
+            is_cyclical=True,
+            cyclical_normalization_applied=True,
+            cyclical_normalization_years=8,
+            cyclical_normalization_confidence=0.79,
+            cycle_position="acima_do_meio_do_ciclo",
+            current_fcff=125.0,
+            normalized_fcff=95.0,
+            normalized_operating_margin=0.14,
+            normalized_reinvestment_margin=0.06,
         )
         with TemporaryDirectory() as tempdir:
             path = Path(tempdir) / "history.csv"
@@ -143,6 +152,15 @@ class HistoricalCalibrationTests(unittest.TestCase):
         self.assertEqual(restored.cost_of_capital_method, "market_value_wacc")
         self.assertAlmostEqual(restored.cost_of_capital_confidence, 0.81)
         self.assertFalse(restored.cost_of_capital_is_fallback)
+        self.assertTrue(restored.is_cyclical)
+        self.assertTrue(restored.cyclical_normalization_applied)
+        self.assertEqual(restored.cyclical_normalization_years, 8)
+        self.assertAlmostEqual(restored.cyclical_normalization_confidence, 0.79)
+        self.assertEqual(restored.cycle_position, "acima_do_meio_do_ciclo")
+        self.assertAlmostEqual(restored.current_fcff, 125.0)
+        self.assertAlmostEqual(restored.normalized_fcff, 95.0)
+        self.assertAlmostEqual(restored.normalized_operating_margin, 0.14)
+        self.assertAlmostEqual(restored.normalized_reinvestment_margin, 0.06)
 
 
 if __name__ == "__main__":

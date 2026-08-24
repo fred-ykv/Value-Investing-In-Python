@@ -5,7 +5,7 @@ import math
 from dataclasses import dataclass, field
 from typing import Optional
 
-from .config import DCF, GROWTH_TECH
+from .config import CYCLICAL, DCF, GROWTH_TECH
 from .data_sources import MetricValue, clamp, metric_value, weighted_confidence
 
 
@@ -31,6 +31,8 @@ class DCFInput:
     debt: MetricValue
     cash: MetricValue
     current_price: MetricValue
+    normalized_fcff: MetricValue | None = None
+    normalization_years: int = 0
 
 
 def dcf_fcff(inputs: DCFInput) -> ValuationResult:
@@ -43,6 +45,7 @@ def dcf_fcff(inputs: DCFInput) -> ValuationResult:
     growth = clamp(inputs.growth_years.value if inputs.growth_years.value is not None else DCF.default_growth_years, DCF.min_growth_years, DCF.max_growth_years)
     terminal_growth = clamp(inputs.terminal_growth.value if inputs.terminal_growth.value is not None else DCF.default_terminal_growth, DCF.min_terminal_growth, DCF.max_terminal_growth)
     diagnostics: dict[str, object] = {
+        "current_fcff": fcff0,
         "fcff_definition": inputs.fcff.formula or "unknown",
         "fcff_note": inputs.fcff.note,
         "discount_rate_label": "WACC" if inputs.wacc.name == "wacc" else "Taxa de desconto proxy",
@@ -50,20 +53,42 @@ def dcf_fcff(inputs: DCFInput) -> ValuationResult:
         "discount_rate_note": inputs.wacc.note,
         "fallback_assumptions": fallback_assumptions(inputs),
     }
+    normalized_fcff = inputs.normalized_fcff
+    uses_normalization = bool(normalized_fcff and normalized_fcff.is_available)
+    if uses_normalization:
+        diagnostics.update(
+            {
+                "cyclical_normalization": True,
+                "normalized_fcff": normalized_fcff.value,
+                "normalization_years": max(1, inputs.normalization_years),
+                "normalized_fcff_definition": normalized_fcff.formula,
+                "normalized_fcff_note": normalized_fcff.note,
+            }
+        )
     if wacc <= terminal_growth:
         terminal_growth = max(0.0, wacc - DCF.min_spread_wacc_terminal)
         diagnostics["terminal_growth_adjusted"] = terminal_growth
-    confidence = weighted_confidence(inputs.fcff, inputs.shares, inputs.wacc, inputs.growth_years, inputs.terminal_growth)
+    confidence_metrics = [
+        inputs.fcff,
+        inputs.shares,
+        inputs.wacc,
+        inputs.growth_years,
+        inputs.terminal_growth,
+    ]
+    if uses_normalization:
+        confidence_metrics.append(normalized_fcff)
+    confidence = weighted_confidence(*confidence_metrics)
     if inputs.fcff.is_fallback:
         confidence = max(0.0, confidence - 0.10)
     if fcff0 < 0:
-        confidence = max(0.0, confidence - DCF.negative_fcff_confidence_penalty)
+        penalty = (
+            DCF.negative_fcff_confidence_penalty / 2.0
+            if uses_normalization and float(normalized_fcff.value) > 0
+            else DCF.negative_fcff_confidence_penalty
+        )
+        confidence = max(0.0, confidence - penalty)
         diagnostics["negative_fcff"] = True
-    projected = []
-    value = fcff0
-    for _ in range(DCF.horizon_years):
-        value *= 1.0 + growth
-        projected.append(value)
+    projected = _project_fcff(inputs, growth)
     pv_stage = sum(cf / ((1.0 + wacc) ** year) for year, cf in enumerate(projected, start=1))
     terminal = projected[-1] * (1.0 + terminal_growth) / (wacc - terminal_growth)
     pv_terminal = terminal / ((1.0 + wacc) ** DCF.horizon_years)
@@ -98,7 +123,18 @@ def dcf_sensitivity(inputs: DCFInput) -> dict[str, dict[str, Optional[float]]]:
             if wacc <= g:
                 row[f"{g:.1%}"] = None
                 continue
-            temp = DCFInput(inputs.fcff, inputs.shares, metric_value("wacc", wacc, "derived"), inputs.growth_years, metric_value("terminal_growth", g, "derived"), inputs.debt, inputs.cash, inputs.current_price)
+            temp = DCFInput(
+                inputs.fcff,
+                inputs.shares,
+                metric_value("wacc", wacc, "derived"),
+                inputs.growth_years,
+                metric_value("terminal_growth", g, "derived"),
+                inputs.debt,
+                inputs.cash,
+                inputs.current_price,
+                inputs.normalized_fcff,
+                inputs.normalization_years,
+            )
             row[f"{g:.1%}"] = _dcf_fair_value(temp)
         matrix[f"{wacc:.1%}"] = row
     return matrix
@@ -106,7 +142,10 @@ def dcf_sensitivity(inputs: DCFInput) -> dict[str, dict[str, Optional[float]]]:
 
 def fallback_assumptions(inputs: DCFInput) -> list[str]:
     assumptions = []
-    for metric in (inputs.fcff, inputs.wacc, inputs.growth_years, inputs.terminal_growth):
+    metrics = [inputs.fcff, inputs.wacc, inputs.growth_years, inputs.terminal_growth]
+    if inputs.normalized_fcff is not None:
+        metrics.append(inputs.normalized_fcff)
+    for metric in metrics:
         if metric.is_fallback:
             assumptions.append(f"{metric.name}: {metric.note or metric.source}")
     return assumptions
@@ -127,10 +166,7 @@ def dcf_fcff_no_sensitivity(inputs: DCFInput) -> ValuationResult:
     g = inputs.terminal_growth.value if inputs.terminal_growth.value is not None else DCF.default_terminal_growth
     if wacc <= g:
         return ValuationResult("dcf_fcff", None, 0.0)
-    value, projected = fcff0, []
-    for _ in range(DCF.horizon_years):
-        value *= 1 + growth
-        projected.append(value)
+    projected = _project_fcff(inputs, growth)
     pv = sum(cf / ((1 + wacc) ** year) for year, cf in enumerate(projected, start=1))
     terminal = projected[-1] * (1 + g) / (wacc - g)
     ev = pv + terminal / ((1 + wacc) ** DCF.horizon_years)
@@ -138,12 +174,43 @@ def dcf_fcff_no_sensitivity(inputs: DCFInput) -> ValuationResult:
     return ValuationResult("dcf_fcff", fair, 0.0)
 
 
+def _project_fcff(inputs: DCFInput, growth: float) -> list[float]:
+    current = float(inputs.fcff.value)
+    normalized = inputs.normalized_fcff
+    if normalized is None or not normalized.is_available:
+        value = current
+        projected: list[float] = []
+        for _ in range(DCF.horizon_years):
+            value *= 1.0 + growth
+            projected.append(value)
+        return projected
+
+    target = float(normalized.value)
+    transition_years = max(1, inputs.normalization_years or CYCLICAL.transition_years)
+    projected = []
+    for year in range(1, DCF.horizon_years + 1):
+        transition = min(1.0, year / transition_years)
+        mid_cycle_base = current + (target - current) * transition
+        projected.append(mid_cycle_base * ((1.0 + growth) ** year))
+    return projected
+
+
 def graham_value(eps: MetricValue, bvps: MetricValue, current_price: MetricValue) -> ValuationResult:
     if eps.value is None or bvps.value is None or eps.value <= 0 or bvps.value <= 0:
         return ValuationResult("graham", None, 0.0, diagnostics={"error": "requires positive EPS and BVPS"})
     fair = math.sqrt(22.5 * eps.value * bvps.value)
     margin = None if current_price.value in (None, 0) else (fair / current_price.value) - 1.0
-    return ValuationResult("graham", fair, weighted_confidence(eps, bvps), margin_of_safety=margin)
+    return ValuationResult(
+        "graham",
+        fair,
+        weighted_confidence(eps, bvps),
+        margin_of_safety=margin,
+        diagnostics={
+            "eps_source": eps.source,
+            "eps_note": eps.note,
+            "cyclical_normalization": eps.source == "cyclical_normalization",
+        },
+    )
 
 
 def eva_value(invested_capital: MetricValue, roic: MetricValue, wacc: MetricValue, growth: MetricValue, shares: MetricValue, current_price: MetricValue, net_debt: MetricValue | None = None) -> ValuationResult:
@@ -167,6 +234,9 @@ def eva_value(invested_capital: MetricValue, roic: MetricValue, wacc: MetricValu
         "net_debt_adjustment": net_debt.value,
         "wacc": discount,
         "terminal_growth": g,
+        "roic_source": roic.source,
+        "roic_note": roic.note,
+        "cyclical_normalization": roic.source == "cyclical_normalization",
     }
     return ValuationResult("eva", fair, weighted_confidence(invested_capital, roic, wacc, shares, net_debt), enterprise_value=enterprise, equity_value=equity, margin_of_safety=margin, diagnostics=diagnostics)
 
@@ -215,4 +285,3 @@ def growth_tech_value(revenue: MetricValue, revenue_growth: MetricValue, target_
     fair = equity / shares.value
     mos = None if current_price.value in (None, 0) else (fair / current_price.value) - 1.0
     return ValuationResult("growth_tech", fair, weighted_confidence(revenue, revenue_growth, shares), enterprise_value=ev, equity_value=equity, margin_of_safety=mos, diagnostics={"growth": growth, "target_fcf_margin": margin, "discount_rate": rate})
-

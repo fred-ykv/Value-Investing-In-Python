@@ -47,6 +47,19 @@ desconto efetivamente aplicada, metodo, confianca e uso de fallback. A
 observacao deixa de ser point-in-time valida se uma das premissas macro ainda
 nao estava disponivel na data-base. Nao existe fallback para taxas atuais.
 
+## Normalizacao point-in-time de empresas ciclicas
+
+Os casos ciclicos definidos no universo de benchmark carregam ate dez filings
+anuais que ja estavam disponiveis na data-base. Margens operacionais, lucro,
+FCFF e reinvestimento sao normalizados ao longo do ciclo sem consultar
+classificacao ou demonstrativos atuais. O CSV registra se o ajuste foi aplicado,
+anos usados, confianca, posicao no ciclo, FCFF corrente e normalizado, margem
+operacional normalizada e margem de reinvestimento normalizada.
+
+Historico insuficiente ou baixa confianca nao invalida a observacao inteira: os
+valores correntes sao preservados e a razao fica registrada nos avisos. A
+metodologia completa esta em `fundamental_analysis/CYCLICAL_NORMALIZATION.md`.
+
 ## Identificacao obrigatoria na SEC
 
 A SEC exige um `User-Agent` que identifique a aplicacao e um contato. Defina:
@@ -76,7 +89,7 @@ python build_historical_dataset.py --start-year 2015 --max-filings-per-company 5
 
 Os arquivos sao gravados em `historical_calibration_outputs/`:
 
-- `historical_observations.csv`: observacoes, premissas macro e custo de capital;
+- `historical_observations.csv`: observacoes, premissas macro, custo de capital e auditoria da normalizacao ciclica;
 - `collection_manifest.json`: trilha detalhada de sucessos, avisos e erros;
 - `collection_report.md`: cobertura por ticker e filing;
 - `historical_calibration.md`: Spearman, monotonicidade, retorno e drawdown.

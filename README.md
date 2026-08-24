@@ -69,6 +69,12 @@ disables current peer data and current sector-multiple fallbacks. It stores the
 historical risk-free rate, ERP, Ke, WACC or applied discount rate, method,
 confidence, and fallback status for every observation.
 
+Cyclical traditional companies can also use auditable mid-cycle normalization
+for operating margin, net income, FCFF, and reinvestment. The DCF transitions
+from current to normalized FCFF instead of assuming an immediate recovery. See
+`fundamental_analysis/CYCLICAL_NORMALIZATION.md` for formulas, safeguards, and
+limitations.
+
 The first live collection audit is documented in
 `fundamental_analysis/PILOT_MLI_NUE.md`.
 

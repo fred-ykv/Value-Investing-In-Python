@@ -44,6 +44,15 @@ class HistoricalCalibrationObservation:
     cost_of_capital_method: str = ""
     cost_of_capital_confidence: float | None = None
     cost_of_capital_is_fallback: bool = False
+    is_cyclical: bool = False
+    cyclical_normalization_applied: bool = False
+    cyclical_normalization_years: int = 0
+    cyclical_normalization_confidence: float | None = None
+    cycle_position: str = ""
+    current_fcff: float | None = None
+    normalized_fcff: float | None = None
+    normalized_operating_margin: float | None = None
+    normalized_reinvestment_margin: float | None = None
 
     @property
     def excess_return(self) -> float | None:
@@ -290,6 +299,15 @@ def write_historical_calibration_csv(
         "cost_of_capital_method",
         "cost_of_capital_confidence",
         "cost_of_capital_is_fallback",
+        "is_cyclical",
+        "cyclical_normalization_applied",
+        "cyclical_normalization_years",
+        "cyclical_normalization_confidence",
+        "cycle_position",
+        "current_fcff",
+        "normalized_fcff",
+        "normalized_operating_margin",
+        "normalized_reinvestment_margin",
     ]
     with Path(path).open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
@@ -353,6 +371,23 @@ def write_historical_calibration_csv(
                     ),
                     "cost_of_capital_is_fallback": (
                         "1" if observation.cost_of_capital_is_fallback else "0"
+                    ),
+                    "is_cyclical": "1" if observation.is_cyclical else "0",
+                    "cyclical_normalization_applied": (
+                        "1" if observation.cyclical_normalization_applied else "0"
+                    ),
+                    "cyclical_normalization_years": observation.cyclical_normalization_years,
+                    "cyclical_normalization_confidence": _format_optional(
+                        observation.cyclical_normalization_confidence
+                    ),
+                    "cycle_position": observation.cycle_position,
+                    "current_fcff": _format_optional(observation.current_fcff),
+                    "normalized_fcff": _format_optional(observation.normalized_fcff),
+                    "normalized_operating_margin": _format_optional(
+                        observation.normalized_operating_margin
+                    ),
+                    "normalized_reinvestment_margin": _format_optional(
+                        observation.normalized_reinvestment_margin
                     ),
                 }
             )
@@ -419,6 +454,31 @@ def read_historical_calibration_csv(path: str | Path) -> list[HistoricalCalibrat
                     cost_of_capital_is_fallback=(
                         row.get("cost_of_capital_is_fallback", "").lower()
                         in {"1", "true", "sim", "yes"}
+                    ),
+                    is_cyclical=(
+                        row.get("is_cyclical", "").lower()
+                        in {"1", "true", "sim", "yes"}
+                    ),
+                    cyclical_normalization_applied=(
+                        row.get("cyclical_normalization_applied", "").lower()
+                        in {"1", "true", "sim", "yes"}
+                    ),
+                    cyclical_normalization_years=int(
+                        row.get("cyclical_normalization_years", "0") or 0
+                    ),
+                    cyclical_normalization_confidence=_parse_optional_float(
+                        row.get("cyclical_normalization_confidence", "")
+                    ),
+                    cycle_position=row.get("cycle_position", "").strip(),
+                    current_fcff=_parse_optional_float(row.get("current_fcff", "")),
+                    normalized_fcff=_parse_optional_float(
+                        row.get("normalized_fcff", "")
+                    ),
+                    normalized_operating_margin=_parse_optional_float(
+                        row.get("normalized_operating_margin", "")
+                    ),
+                    normalized_reinvestment_margin=_parse_optional_float(
+                        row.get("normalized_reinvestment_margin", "")
                     ),
                 )
             )

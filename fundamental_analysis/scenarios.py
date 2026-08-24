@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Callable, Mapping
 
 from .config import CompanyType, DCF, GROWTH_TECH, REVERSE_DCF, SCENARIOS, ScenarioCase
+from .cyclical_normalization import CyclicalNormalizationResult
 from .data_sources import MetricValue, clamp, metric_value, safe_float, weighted_confidence
 from .metrics import MetricPack
 from .valuation import DCFInput, ValuationResult, dcf_fcff_no_sensitivity
@@ -54,6 +55,8 @@ def build_scenarios(
     for case in SCENARIOS.cases:
         scenario_market = scenario_market_data(case, metrics, market_data, cost_of_capital)
         scenario_values = scenario_statement_values(values, case)
+        normalized_fcff = scenario_normalized_fcff(market_data, case)
+        normalization = market_data.get("cyclical_normalization")
         dcf_input = DCFInput(
             scenario_values["fcff"],
             scenario_values["shares"],
@@ -63,6 +66,11 @@ def build_scenarios(
             scenario_values["total_debt"],
             scenario_values["cash"],
             scenario_values["price"],
+            normalized_fcff,
+            normalization.transition_years
+            if normalized_fcff is not None
+            and isinstance(normalization, CyclicalNormalizationResult)
+            else 0,
         )
         valuations = valuation_builder(company_type, scenario_values, metrics, scenario_market, source, dcf_input)
         results.append(
@@ -126,7 +134,7 @@ def build_reverse_dcf(
     return ReverseDCFResult(target, implied, base_growth, discount_rate, terminal_growth, confidence, status, interpretation, assumptions)
 
 
-def scenario_market_data(case: ScenarioCase, metrics: MetricPack, market_data: Mapping[str, object], cost_of_capital: float) -> dict[str, float]:
+def scenario_market_data(case: ScenarioCase, metrics: MetricPack, market_data: Mapping[str, object], cost_of_capital: float) -> dict[str, object]:
     base_growth = first_number(market_data.get("growth_years"), market_data.get("revenue_growth"), metrics.get("revenue_growth"), DCF.default_growth_years)
     base_terminal_growth = first_number(market_data.get("terminal_growth"), DCF.default_terminal_growth)
     base_revenue_growth = first_number(market_data.get("revenue_growth"), base_growth)
@@ -134,7 +142,7 @@ def scenario_market_data(case: ScenarioCase, metrics: MetricPack, market_data: M
     discount_rate = max(0.01, cost_of_capital + case.discount_rate_delta)
     terminal_growth = clamp(base_terminal_growth + case.terminal_growth_delta, DCF.min_terminal_growth, min(DCF.max_terminal_growth, discount_rate - DCF.min_spread_wacc_terminal))
     growth_years = clamp(base_growth + case.growth_delta, DCF.min_growth_years, DCF.max_growth_years)
-    return {
+    result = {
         **{key: float(value) for key, value in market_data.items() if isinstance(value, (int, float))},
         "wacc": discount_rate,
         "ke": discount_rate,
@@ -143,6 +151,10 @@ def scenario_market_data(case: ScenarioCase, metrics: MetricPack, market_data: M
         "revenue_growth": clamp(base_revenue_growth + case.growth_delta, -0.20, 0.60),
         "target_fcf_margin": clamp(base_target_fcf_margin + case.target_fcf_margin_delta, -0.20, 0.40),
     }
+    normalization = market_data.get("cyclical_normalization")
+    if isinstance(normalization, CyclicalNormalizationResult):
+        result["cyclical_normalization"] = normalization
+    return result
 
 
 def scenario_statement_values(values: Mapping[str, MetricValue], case: ScenarioCase) -> dict[str, MetricValue]:
@@ -167,6 +179,35 @@ def scenario_assumptions(case: ScenarioCase, market_data: Mapping[str, object]) 
 def adjusted_fcff(value: float, adjustment: float) -> float:
     factor = 1.0 + adjustment if value >= 0 else 1.0 - adjustment
     return value * max(0.0, factor)
+
+
+def scenario_normalized_fcff(
+    market_data: Mapping[str, object],
+    case: ScenarioCase,
+) -> MetricValue | None:
+    normalization = market_data.get("cyclical_normalization")
+    if not isinstance(normalization, CyclicalNormalizationResult) or not normalization.applied:
+        return None
+    metric = normalization.normalized_fcff
+    if not metric.is_available:
+        return None
+    return metric_value(
+        "normalized_fcff",
+        adjusted_fcff(float(metric.value), case.fcff_adjustment),
+        "scenario",
+        f"{case.label}: FCFF normalizado ajustado para o cenario",
+        source_url=metric.source_url,
+        source_document=metric.source_document,
+        period_start=metric.period_start,
+        period_end=metric.period_end,
+        filing_date=metric.filing_date,
+        as_of=metric.as_of,
+        currency=metric.currency,
+        scale=metric.scale,
+        basis="scenario",
+        formula="scenario_adjusted_normalized_fcff",
+        confidence=metric.confidence,
+    )
 
 
 def aggregate_fair_value(valuations: list[ValuationResult]) -> float | None:
@@ -248,4 +289,3 @@ def reverse_dcf_interpretation(implied_growth: float, base_growth: float | None)
         else:
             read += " A exigencia esta proxima da premissa base."
     return status, read
-
