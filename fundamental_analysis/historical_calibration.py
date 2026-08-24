@@ -29,6 +29,7 @@ class HistoricalCalibrationObservation:
     benchmark_ticker: str = ""
     price_start_date: date | None = None
     price_end_date: date | None = None
+    price_source: str = ""
     filing_accession: str = ""
     fundamental_coverage: float = 0.0
     risk_free_rate: float | None = None
@@ -302,6 +303,7 @@ def write_historical_calibration_csv(
         "benchmark_ticker",
         "price_start_date",
         "price_end_date",
+        "price_source",
         "filing_accession",
         "fundamental_coverage",
         "risk_free_rate",
@@ -372,6 +374,7 @@ def write_historical_calibration_csv(
                         if observation.price_end_date is not None
                         else ""
                     ),
+                    "price_source": observation.price_source,
                     "filing_accession": observation.filing_accession,
                     "fundamental_coverage": f"{observation.fundamental_coverage:.6f}",
                     "risk_free_rate": _format_optional(observation.risk_free_rate),
@@ -478,6 +481,7 @@ def read_historical_calibration_csv(path: str | Path) -> list[HistoricalCalibrat
                     benchmark_ticker=row.get("benchmark_ticker", "").upper().strip(),
                     price_start_date=date.fromisoformat(price_start_date) if price_start_date else None,
                     price_end_date=date.fromisoformat(price_end_date) if price_end_date else None,
+                    price_source=row.get("price_source", "").strip(),
                     filing_accession=row.get("filing_accession", "").strip(),
                     fundamental_coverage=float(row.get("fundamental_coverage", "0") or 0.0),
                     risk_free_rate=_parse_optional_float(row.get("risk_free_rate", "")),

@@ -1,5 +1,21 @@
 # Changelog
 
+## Delisted-price provider and preflight
+
+- Added a Tiingo EOD client for the ten historical lifecycle cases, including
+  the audited BBBY to BBBYQ provider alias.
+- Added fail-closed identity controls for issuer name, SEC CIK, provider
+  ticker, first price date, and last price date.
+- Added a preflight that checks observation density and maximum calendar gaps
+  before SEC collection or score evaluation begins.
+- Added `--price-source tiingo` with the token read only from
+  `TIINGO_API_KEY`; secrets never enter URLs or report artifacts.
+- Persisted the complete stock and benchmark price lineage in every historical
+  calibration observation.
+- Documented free-plan limits, internal-use licensing, verified symbol
+  coverage, Colab setup, and CRSP reconciliation requirements.
+- Kept score weights, gates, and recommendation thresholds unchanged.
+
 ## Survivorship-aware historical universe
 
 - Added ten historical lifecycle cases covering cash acquisitions and an

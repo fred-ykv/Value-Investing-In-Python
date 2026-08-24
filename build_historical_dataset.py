@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from dataclasses import replace
 from datetime import date
 from pathlib import Path
@@ -24,6 +25,7 @@ from fundamental_analysis.historical_prices import (
     CsvHistoricalPriceClient,
     YFinanceHistoricalPriceClient,
 )
+from fundamental_analysis.institutional_prices import TiingoHistoricalPriceClient
 from fundamental_analysis.historical_macro import HistoricalMacroClient
 from fundamental_analysis.point_in_time_collection import (
     collect_benchmark_history,
@@ -70,6 +72,15 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--price-source",
+        choices=("auto", "csv", "tiingo"),
+        default="auto",
+        help=(
+            "auto usa CSV e/ou TIINGO_API_KEY quando disponiveis; csv ou tiingo "
+            "exigem explicitamente a respectiva entrada."
+        ),
+    )
+    parser.add_argument(
         "--validation-start-year",
         type=int,
         default=CALIBRATION.validation_start_year,
@@ -97,10 +108,30 @@ def main() -> int:
     unknown = requested - {case.ticker for case in cases}
     if unknown:
         raise SystemExit("Tickers fora do benchmark configurado: " + ", ".join(sorted(unknown)))
-    if args.universe != "active" and not args.historical_prices_csv:
+    tiingo_token = os.environ.get(POINT_IN_TIME.tiingo_api_key_env, "").strip()
+    if args.price_source == "csv" and not args.historical_prices_csv:
         raise SystemExit(
-            "O universo com empresas retiradas da bolsa exige --historical-prices-csv. "
-            "Yahoo e provedores baseados apenas em tickers atuais nao preservam essas series."
+            "--price-source csv exige --historical-prices-csv."
+        )
+    if args.price_source == "tiingo" and not tiingo_token:
+        raise SystemExit(
+            f"--price-source tiingo exige {POINT_IN_TIME.tiingo_api_key_env}."
+        )
+
+    historical_providers = []
+    if args.price_source in {"auto", "csv"} and args.historical_prices_csv:
+        historical_providers.append(
+            CsvHistoricalPriceClient(args.historical_prices_csv)
+        )
+    if args.price_source in {"auto", "tiingo"} and tiingo_token:
+        historical_providers.append(
+            TiingoHistoricalPriceClient(api_token=tiingo_token)
+        )
+    if args.universe != "active" and not historical_providers:
+        raise SystemExit(
+            "O universo com empresas retiradas da bolsa exige um CSV auditado "
+            f"ou {POINT_IN_TIME.tiingo_api_key_env}. Yahoo e provedores baseados "
+            "apenas em tickers atuais nao preservam essas series."
         )
 
     outdir = Path(args.outdir)
@@ -108,11 +139,8 @@ def main() -> int:
     sec_client = SecEdgarClient(user_agent=args.sec_user_agent)
     yahoo_client = YFinanceHistoricalPriceClient()
     price_client = (
-        CompositeHistoricalPriceClient(
-            CsvHistoricalPriceClient(args.historical_prices_csv),
-            yahoo_client,
-        )
-        if args.historical_prices_csv
+        CompositeHistoricalPriceClient(*historical_providers, yahoo_client)
+        if historical_providers
         else yahoo_client
     )
     macro_client = HistoricalMacroClient()

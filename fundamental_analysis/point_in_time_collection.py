@@ -155,6 +155,7 @@ def collect_point_in_time_observation(
             benchmark_ticker=benchmark_ticker,
             price_start_date=outcome.price_start_date,
             price_end_date=outcome.price_end_date,
+            price_source=outcome.source,
             filing_accession=anchor.accession_number,
             fundamental_coverage=snapshot.audit.coverage_ratio,
             risk_free_rate=float(macro.risk_free_rate.value),

@@ -102,7 +102,19 @@ python build_historical_dataset.py --universe expanded --historical-prices-csv h
 
 O esquema, as validacoes e o registro inicial de eventos estao em
 `fundamental_analysis/SURVIVORSHIP_BIAS.md`. As opcoes `expanded` e
-`lifecycle` falham de forma explicita se o arquivo de precos nao for fornecido.
+`lifecycle` falham de forma explicita se nenhuma fonte auditada for fornecida.
+
+Como alternativa operacional ao CSV, defina `TIINGO_API_KEY`, execute o
+preflight e selecione o provedor:
+
+```text
+python check_historical_price_source.py --provider tiingo
+python build_historical_dataset.py --universe lifecycle --price-source tiingo
+```
+
+O adaptador valida nome, CIK, simbolo historico, datas extremas, quantidade de
+pregoes e lacunas. A chave segue no cabecalho HTTPS e nao entra nos artefatos.
+Detalhes: `fundamental_analysis/TIINGO_HISTORICAL_PRICES.md`.
 
 Os arquivos sao gravados em `historical_calibration_outputs/`:
 
