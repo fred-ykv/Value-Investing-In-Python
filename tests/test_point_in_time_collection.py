@@ -112,6 +112,7 @@ class PointInTimeCollectionTests(unittest.TestCase):
         self.assertEqual(observation.latest_filing_date, date(2024, 2, 15))
         self.assertEqual(observation.as_of, date(2024, 2, 16))
         self.assertEqual(observation.price_start_date, date(2024, 2, 19))
+        self.assertIn("fixture", observation.price_source)
         self.assertEqual(observation.benchmark_ticker, "SPY")
         self.assertAlmostEqual(observation.forward_return, 0.20)
         self.assertAlmostEqual(observation.risk_free_rate, 0.04)

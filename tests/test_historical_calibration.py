@@ -117,6 +117,7 @@ class HistoricalCalibrationTests(unittest.TestCase):
             benchmark_ticker="SPY",
             price_start_date=date(2020, 4, 1),
             price_end_date=date(2021, 4, 1),
+            price_source="tiingo_eod:TEST;yfinance_historical",
             filing_accession="0000000000-20-000001",
             fundamental_coverage=0.85,
             is_cyclical=True,
@@ -150,6 +151,10 @@ class HistoricalCalibrationTests(unittest.TestCase):
         self.assertEqual(restored.benchmark_ticker, "SPY")
         self.assertEqual(restored.price_start_date, date(2020, 4, 1))
         self.assertEqual(restored.price_end_date, date(2021, 4, 1))
+        self.assertEqual(
+            restored.price_source,
+            "tiingo_eod:TEST;yfinance_historical",
+        )
         self.assertEqual(restored.filing_accession, "0000000000-20-000001")
         self.assertAlmostEqual(restored.fundamental_coverage, 0.85)
         self.assertAlmostEqual(restored.risk_free_rate, 0.04)

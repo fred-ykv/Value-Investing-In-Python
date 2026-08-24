@@ -42,15 +42,21 @@ Yahoo Finance e APIs que validam somente o mapa atual de tickers nao preservam
 necessariamente series de empresas extintas. O sistema nao preenche essa lacuna
 com zero, ultimo preco ou ticker reutilizado.
 
-Para o universo `expanded` ou `lifecycle`, forneca um CSV obtido de uma base com
-cobertura de delistings. CRSP usa o identificador permanente PERMNO para seguir
-uma acao por mudancas de nome, fusoes e reorganizacoes. Nasdaq Data Link oferece
-bases premium de precos e fundamentos; Alpha Vantage oferece uma lista historica
-de ativos ativos e delistados, util para descoberta e controle de universo.
+Para o universo `expanded` ou `lifecycle`, use Tiingo EOD ou forneca um CSV
+obtido de uma base com cobertura de delistings. CRSP usa o identificador
+permanente PERMNO para seguir uma acao por mudancas de nome, fusoes e
+reorganizacoes. Nasdaq Data Link oferece bases premium de precos e fundamentos;
+Alpha Vantage oferece uma lista historica de ativos ativos e delistados, util
+para descoberta e controle de universo.
 
 - CRSP e PERMNO: https://www.crsp.org/research/
 - Nasdaq Data Link: https://docs.data.nasdaq.com/docs/data-organization
 - Alpha Vantage Listing Status: https://www.alphavantage.co/documentation/#listing-status
+
+O runner tambem possui um adaptador Tiingo EOD. A fonte publica precos brutos e
+ajustados por splits e dividendos, e a cobertura oficial inclui os dez casos do
+registro historico. O uso exige token e preflight; veja
+`fundamental_analysis/TIINGO_HISTORICAL_PRICES.md`.
 
 O CSV normalizado exige:
 
@@ -104,6 +110,13 @@ Piloto apenas com empresas retiradas da bolsa:
 
 ```text
 python build_historical_dataset.py --universe lifecycle --historical-prices-csv C:\dados\historical_prices.csv
+```
+
+Benchmark historico via Tiingo:
+
+```text
+python check_historical_price_source.py --provider tiingo
+python build_historical_dataset.py --universe lifecycle --price-source tiingo
 ```
 
 ## Controles de governanca

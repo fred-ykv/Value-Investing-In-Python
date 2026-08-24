@@ -79,8 +79,8 @@ documented in `fundamental_analysis/BENCHMARK_TEMPORAL_40.md`.
 That active-company basket is diagnostic only: it still has survivorship bias.
 The expanded universe adds acquired companies and an equity cancellation using
 stable SEC CIK identifiers and audited terminal-event rules. Delisted prices
-must come from a normalized institutional or licensed CSV; the runner does not
-replace missing histories with zero or current-ticker data:
+must come from Tiingo EOD or a normalized institutional/licensed CSV; the
+runner does not replace missing histories with zero or current-ticker data:
 
 ```bash
 python build_historical_dataset.py --universe expanded \
@@ -92,6 +92,18 @@ See `fundamental_analysis/SURVIVORSHIP_BIAS.md` for the event registry, CSV
 contract, return methodology, and remaining data limitation. Score weights and
 recommendation thresholds must remain unchanged until the expanded benchmark
 passes the temporal and lifecycle coverage controls.
+
+For an operational delisted-price source, the runner supports Tiingo EOD with
+the token stored only in `TIINGO_API_KEY`. Run the price preflight before the
+SEC benchmark:
+
+```bash
+python check_historical_price_source.py --provider tiingo
+python build_historical_dataset.py --universe lifecycle --price-source tiingo
+```
+
+See `fundamental_analysis/TIINGO_HISTORICAL_PRICES.md` for identity controls,
+verified symbol coverage, Colab setup, licensing limits, and the gradual run.
 
 Cyclical traditional companies can also use auditable mid-cycle normalization
 for operating margin, net income, FCFF, and reinvestment. The DCF transitions

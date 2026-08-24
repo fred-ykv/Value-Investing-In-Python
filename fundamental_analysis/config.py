@@ -224,6 +224,8 @@ class PointInTimeAssumptions:
     macro_cache_directory: str = ".cache/historical_macro"
     macro_cache_max_age_hours: int = 24
     macro_http_user_agent: str = "Value-Investing-In-Python/1.0 historical-research"
+    tiingo_api_key_env: str = "TIINGO_API_KEY"
+    tiingo_base_url: str = "https://api.tiingo.com/tiingo/daily"
     treasury_csv_url_template: str = (
         "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/"
         "daily-treasury-rates.csv/{year}/all?_format=csv&field_tdr_date_value={year}"
