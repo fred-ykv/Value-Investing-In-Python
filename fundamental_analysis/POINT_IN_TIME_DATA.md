@@ -84,7 +84,7 @@ python build_historical_dataset.py MLI NUE --start-year 2020 --max-filings-per-c
 Depois, rode o benchmark completo:
 
 ```text
-python build_historical_dataset.py --start-year 2015 --max-filings-per-company 5
+python build_historical_dataset.py --start-year 2015 --end-year 2025 --max-filings-per-company 10 --validation-start-year 2022
 ```
 
 Os arquivos sao gravados em `historical_calibration_outputs/`:
@@ -93,6 +93,28 @@ Os arquivos sao gravados em `historical_calibration_outputs/`:
 - `collection_manifest.json`: trilha detalhada de sucessos, avisos e erros;
 - `collection_report.md`: cobertura por ticker e filing;
 - `historical_calibration.md`: Spearman, monotonicidade, retorno e drawdown.
+- `out_of_sample_validation.md`: calibracao, embargo, holdout e resultados por grupo;
+- `out_of_sample_validation.json`: diagnosticos temporais em formato estruturado.
+
+O protocolo detalhado esta em `fundamental_analysis/BACKTEST_VALIDATION.md`.
+
+## Entradas criticas por perfil
+
+A cobertura geral da SEC nao basta para validar uma observacao. O coletor exige
+as entradas que sustentam o modelo daquele perfil e rejeita metricas com
+confianca inferior ao piso definido em `config.py`:
+
+- bancos: lucro liquido, patrimonio e acoes;
+- growth/tech e early growth: receita, caixa, divida e acoes;
+- tradicionais: receita, EBIT, lucro, patrimonio, caixa, divida, depreciacao,
+  CAPEX e acoes.
+
+Quando o filing nao publica a quantidade instantanea consolidada de acoes, a
+media anual diluida pode ser usada como fallback explicitamente identificado e
+com confianca reduzida. Divida zero so e aproximada quando nao ha conceito de
+divida nem evidencia financeira positiva no filing ancora. Arrendamentos
+operacionais sao informados na nota, mas nao sao somados a divida sem o ajuste
+simetrico de EBIT e FCFF.
 
 ## Protecoes contra vazamento
 
@@ -120,3 +142,5 @@ data-base. O ERP anual tambem passa por uma data conservadora de disponibilidade
   como custo da divida. O CSV identifica essa condicao para permitir filtros.
 - Pesos e limiares nao devem ser recalibrados antes de uma amostra ampla,
   segmentada por tipo de empresa e com validacao fora da amostra.
+- O benchmark de 40 empresas e sua decisao de governanca estao resumidos em
+  `fundamental_analysis/BENCHMARK_TEMPORAL_40.md`.

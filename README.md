@@ -69,6 +69,13 @@ disables current peer data and current sector-multiple fallbacks. It stores the
 historical risk-free rate, ERP, Ke, WACC or applied discount rate, method,
 confidence, and fallback status for every observation.
 
+The historical runner also creates a time-separated calibration and holdout
+report. Forward outcomes that overlap the start of the holdout are embargoed,
+and coverage is checked by benchmark group before any score change is allowed.
+See `fundamental_analysis/BACKTEST_VALIDATION.md`.
+The first 40-company temporal benchmark and its no-recalibration decision are
+documented in `fundamental_analysis/BENCHMARK_TEMPORAL_40.md`.
+
 Cyclical traditional companies can also use auditable mid-cycle normalization
 for operating margin, net income, FCFF, and reinvestment. The DCF transitions
 from current to normalized FCFF instead of assuming an immediate recovery. See

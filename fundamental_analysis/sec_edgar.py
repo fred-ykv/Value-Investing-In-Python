@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping
@@ -96,6 +96,7 @@ SEC_FACT_SPECS: dict[str, dict[str, _FactSpec]] = {
                 "InterestAndDebtExpense",
                 "InterestExpense",
                 "InterestExpenseDebt",
+                "InterestExpenseOperating",
             ),
             ("USD",),
             True,
@@ -123,6 +124,11 @@ SEC_FACT_SPECS: dict[str, dict[str, _FactSpec]] = {
         "total_debt": _FactSpec(
             (
                 "LongTermDebtAndFinanceLeaseObligations",
+                "LongTermDebtAndCapitalLeaseObligationsCurrentAndNoncurrent",
+                "LongTermDebtAndCapitalLeaseObligationsIncludingCurrentMaturities",
+                "LongTermDebtAndCapitalLeaseObligations",
+                "DebtAndCapitalLeaseObligations",
+                "FinanceLeaseLiability",
                 "LongTermDebt",
                 "DebtCurrentAndNoncurrent",
             ),
@@ -280,7 +286,20 @@ class SecEdgarClient:
 
         _complete_ebit(sections["income_statement"], payload, anchor, source_url)
         _complete_balance_sheet(sections["balance_sheet"], payload, anchor, source_url)
-        _complete_total_debt(sections["balance_sheet"], payload, anchor, source_url)
+        _complete_total_debt(
+            sections["balance_sheet"],
+            payload,
+            anchor,
+            source_url,
+            self.assumptions,
+        )
+        _complete_shares(
+            sections["market_data"],
+            payload,
+            anchor,
+            source_url,
+            self.assumptions,
+        )
         revenue = sections["income_statement"].get("revenue")
         if revenue is not None:
             growth = _derive_revenue_growth(payload, revenue, anchor, source_url)
@@ -572,6 +591,63 @@ def _complete_balance_sheet(
     )
 
 
+def _complete_shares(
+    market_data: dict[str, MetricValue],
+    payload: Mapping[str, Any],
+    anchor: SecFilingAnchor,
+    source_url: str,
+    assumptions: PointInTimeAssumptions,
+) -> None:
+    if "shares" in market_data:
+        return
+    fallback = _select_metric(
+        payload,
+        "shares",
+        _FactSpec(
+            ("CommonStockSharesOutstanding",),
+            ("shares",),
+            False,
+            taxonomy="us-gaap",
+            instant_window_days=120,
+        ),
+        anchor,
+        source_url,
+    )
+    if fallback.is_available:
+        market_data["shares"] = replace(
+            fallback,
+            confidence=max(0.0, fallback.confidence - 0.05),
+            note="Fallback us-gaap para quantidade de acoes em circulacao.",
+            is_fallback=True,
+        )
+        return
+    weighted_average = _select_metric(
+        payload,
+        "shares",
+        _FactSpec(
+            (
+                "WeightedAverageNumberOfDilutedSharesOutstanding",
+                "WeightedAverageNumberOfSharesOutstandingBasic",
+            ),
+            ("shares",),
+            True,
+        ),
+        anchor,
+        source_url,
+    )
+    if weighted_average.is_available:
+        market_data["shares"] = replace(
+            weighted_average,
+            confidence=assumptions.weighted_average_shares_fallback_confidence,
+            note=(
+                "Fallback para a media anual diluida de acoes porque o filing nao "
+                "publicou uma quantidade instantanea consolidada."
+            ),
+            basis="derived",
+            is_fallback=True,
+        )
+
+
 def _complete_ebit(
     income: dict[str, MetricValue],
     payload: Mapping[str, Any],
@@ -595,6 +671,23 @@ def _complete_ebit(
         source_url,
     )
     interest_expense = income.get("interest_expense")
+    net_interest_proxy = False
+    if interest_expense is None or not interest_expense.is_available:
+        interest_expense = _select_metric(
+            payload,
+            "interest_expense",
+            _FactSpec(
+                (
+                    "InterestIncomeExpenseNonoperatingNet",
+                    "InterestIncomeExpenseNet",
+                ),
+                ("USD",),
+                True,
+            ),
+            anchor,
+            source_url,
+        )
+        net_interest_proxy = interest_expense.is_available
     if (
         not pretax_income.is_available
         or interest_expense is None
@@ -605,7 +698,13 @@ def _complete_ebit(
         "ebit",
         float(pretax_income.value) + abs(float(interest_expense.value)),
         "sec_edgar_derived",
-        "EBIT proxy = lucro antes dos impostos + despesa de juros; usado somente quando o EBIT reportado esta ausente",
+        "EBIT proxy = lucro antes dos impostos + despesa de juros; usado somente "
+        "quando o EBIT reportado esta ausente"
+        + (
+            "; juros liquidos nao operacionais usados como aproximacao adicional"
+            if net_interest_proxy
+            else ""
+        ),
         source_url=source_url,
         source_document=f"SEC EDGAR {anchor.form} {anchor.accession_number}",
         period_start=pretax_income.period_start,
@@ -619,7 +718,8 @@ def _complete_ebit(
         formula="pretax_income_plus_abs_interest_expense",
         confidence=max(
             0.0,
-            min(pretax_income.confidence, interest_expense.confidence) - 0.10,
+            min(pretax_income.confidence, interest_expense.confidence)
+            - (0.20 if net_interest_proxy else 0.10),
         ),
     )
 
@@ -629,9 +729,21 @@ def _complete_total_debt(
     payload: Mapping[str, Any],
     anchor: SecFilingAnchor,
     source_url: str,
+    assumptions: PointInTimeAssumptions,
 ) -> None:
     existing = balance.get("total_debt")
-    if existing is not None and (existing.formula or "").endswith("DebtCurrentAndNoncurrent"):
+    complete_concepts = (
+        "DebtCurrentAndNoncurrent",
+        "LongTermDebtAndFinanceLeaseObligations",
+        "LongTermDebtAndCapitalLeaseObligationsCurrentAndNoncurrent",
+        "LongTermDebtAndCapitalLeaseObligationsIncludingCurrentMaturities",
+        "LongTermDebtAndCapitalLeaseObligations",
+        "DebtAndCapitalLeaseObligations",
+        "FinanceLeaseLiability",
+    )
+    if existing is not None and any(
+        (existing.formula or "").endswith(concept) for concept in complete_concepts
+    ):
         return
     short_term = _select_metric(
         payload,
@@ -648,7 +760,19 @@ def _complete_total_debt(
         current = _select_metric(
             payload,
             "debt_current",
-            _FactSpec(("LongTermDebtCurrent",), ("USD",), False),
+            _FactSpec(
+                (
+                    "LongTermDebtCurrent",
+                    "DebtCurrent",
+                    "ShortTermDebtCurrent",
+                    "ConvertibleDebtCurrent",
+                    "CapitalLeaseObligationsCurrent",
+                    "NotesPayableCurrent",
+                    "FinanceLeaseLiabilityCurrent",
+                ),
+                ("USD",),
+                False,
+            ),
             anchor,
             source_url,
         )
@@ -656,7 +780,16 @@ def _complete_total_debt(
             payload,
             "debt_noncurrent",
             _FactSpec(
-                ("LongTermDebtNoncurrent", "LongTermDebtAndFinanceLeaseObligationsNoncurrent"),
+                (
+                    "LongTermDebtNoncurrent",
+                    "LongTermDebtAndFinanceLeaseObligationsNoncurrent",
+                    "ConvertibleDebtNoncurrent",
+                    "ConvertibleLongTermNotesPayable",
+                    "CapitalLeaseObligationsNoncurrent",
+                    "LongTermNotesPayable",
+                    "NotesPayableNoncurrent",
+                    "FinanceLeaseLiabilityNoncurrent",
+                ),
                 ("USD",),
                 False,
             ),
@@ -667,6 +800,52 @@ def _complete_total_debt(
             metric for metric in (current, noncurrent, short_term) if metric.is_available
         ]
     if not components:
+        financing_evidence = _anchor_financing_evidence(
+            payload,
+            anchor,
+            source_url,
+        )
+        if financing_evidence:
+            return
+        operating_lease = _select_metric(
+            payload,
+            "operating_lease_liability",
+            _FactSpec(
+                ("OperatingLeaseLiability",),
+                ("USD",),
+                False,
+            ),
+            anchor,
+            source_url,
+        )
+        lease_note = (
+            " O filing reporta passivo de arrendamento operacional, que permanece "
+            "fora da divida financeira porque o modelo ainda nao faz o ajuste "
+            "simetrico de EBIT e FCFF exigido pela capitalizacao de leases."
+            if operating_lease.is_available
+            and abs(float(operating_lease.value)) > 0.0
+            else ""
+        )
+        balance["total_debt"] = metric_value(
+            "total_debt",
+            0.0,
+            "sec_edgar_derived",
+            "Aproximacao conservadora de divida zero: o filing ancora nao apresenta "
+            "conceito padronizado de divida nem despesa financeira positiva. Revisar "
+            "manualmente notas de divida e arrendamentos antes de uma decisao."
+            + lease_note,
+            source_url=source_url,
+            source_document=f"SEC EDGAR {anchor.form} {anchor.accession_number}",
+            period_end=anchor.report_end,
+            filing_date=anchor.filed,
+            as_of=datetime.combine(anchor.filed, datetime.min.time()),
+            currency="USD",
+            scale="raw",
+            basis="derived",
+            is_fallback=True,
+            formula="zero_debt_absence_of_anchor_financing_evidence",
+            confidence=assumptions.zero_debt_fallback_confidence,
+        )
         return
     balance["total_debt"] = metric_value(
         "total_debt",
@@ -683,6 +862,54 @@ def _complete_total_debt(
         formula="sum_available_debt_components",
         confidence=min(metric.confidence for metric in components),
     )
+
+
+def _anchor_financing_evidence(
+    payload: Mapping[str, Any],
+    anchor: SecFilingAnchor,
+    source_url: str,
+) -> tuple[str, ...]:
+    debt = _select_metric(
+        payload,
+        "debt_evidence",
+        _FactSpec(
+            (
+                "DebtInstrumentCarryingAmount",
+                "NotesPayableCurrent",
+                "NotesPayableNoncurrent",
+                "ConvertibleNotesPayableCurrent",
+                "ConvertibleNotesPayableNoncurrent",
+            ),
+            ("USD",),
+            False,
+        ),
+        anchor,
+        source_url,
+    )
+    interest = _select_metric(
+        payload,
+        "interest_evidence",
+        _FactSpec(
+            (
+                "InterestExpenseNonOperating",
+                "InterestExpenseNonoperating",
+                "InterestAndDebtExpense",
+                "InterestExpense",
+                "InterestExpenseDebt",
+                "InterestExpenseDebtExcludingAmortization",
+            ),
+            ("USD",),
+            True,
+        ),
+        anchor,
+        source_url,
+    )
+    evidence: list[str] = []
+    if debt.is_available and abs(float(debt.value)) > 0.0:
+        evidence.append(debt.formula or "debt_evidence")
+    if interest.is_available and abs(float(interest.value)) > 0.0:
+        evidence.append(interest.formula or "interest_evidence")
+    return tuple(evidence)
 
 
 def _derive_revenue_growth(

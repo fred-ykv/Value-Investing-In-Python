@@ -53,6 +53,11 @@ class HistoricalCalibrationObservation:
     normalized_fcff: float | None = None
     normalized_operating_margin: float | None = None
     normalized_reinvestment_margin: float | None = None
+    benchmark_group: str = ""
+    sector_bucket: str = ""
+    critical_metric_coverage: float = 0.0
+    missing_critical_metrics: str = ""
+    analysis_input_validated: bool = False
 
     @property
     def excess_return(self) -> float | None:
@@ -249,6 +254,11 @@ def _spearman(left: list[float], right: list[float]) -> float:
     return numerator / denominator if denominator else 0.0
 
 
+def spearman_correlation(left: list[float], right: list[float]) -> float:
+    """Public tie-aware Spearman helper used by segmented validation reports."""
+    return _spearman(left, right)
+
+
 def _average_ranks(values: list[float]) -> list[float]:
     ordered = sorted(enumerate(values), key=lambda item: item[1])
     ranks = [0.0] * len(values)
@@ -308,6 +318,11 @@ def write_historical_calibration_csv(
         "normalized_fcff",
         "normalized_operating_margin",
         "normalized_reinvestment_margin",
+        "benchmark_group",
+        "sector_bucket",
+        "critical_metric_coverage",
+        "missing_critical_metrics",
+        "analysis_input_validated",
     ]
     with Path(path).open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
@@ -388,6 +403,13 @@ def write_historical_calibration_csv(
                     ),
                     "normalized_reinvestment_margin": _format_optional(
                         observation.normalized_reinvestment_margin
+                    ),
+                    "benchmark_group": observation.benchmark_group,
+                    "sector_bucket": observation.sector_bucket,
+                    "critical_metric_coverage": f"{observation.critical_metric_coverage:.6f}",
+                    "missing_critical_metrics": observation.missing_critical_metrics,
+                    "analysis_input_validated": (
+                        "1" if observation.analysis_input_validated else "0"
                     ),
                 }
             )
@@ -479,6 +501,18 @@ def read_historical_calibration_csv(path: str | Path) -> list[HistoricalCalibrat
                     ),
                     normalized_reinvestment_margin=_parse_optional_float(
                         row.get("normalized_reinvestment_margin", "")
+                    ),
+                    benchmark_group=row.get("benchmark_group", "").strip(),
+                    sector_bucket=row.get("sector_bucket", "").strip(),
+                    critical_metric_coverage=float(
+                        row.get("critical_metric_coverage", "0") or 0.0
+                    ),
+                    missing_critical_metrics=row.get(
+                        "missing_critical_metrics", ""
+                    ).strip(),
+                    analysis_input_validated=(
+                        row.get("analysis_input_validated", "").lower()
+                        in {"1", "true", "sim", "yes"}
                     ),
                 )
             )

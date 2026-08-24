@@ -128,6 +128,11 @@ class HistoricalCalibrationTests(unittest.TestCase):
             normalized_fcff=95.0,
             normalized_operating_margin=0.14,
             normalized_reinvestment_margin=0.06,
+            benchmark_group="tradicionais_ciclicas",
+            sector_bucket="industrial_machinery",
+            critical_metric_coverage=1.0,
+            missing_critical_metrics="",
+            analysis_input_validated=True,
         )
         with TemporaryDirectory() as tempdir:
             path = Path(tempdir) / "history.csv"
@@ -161,6 +166,11 @@ class HistoricalCalibrationTests(unittest.TestCase):
         self.assertAlmostEqual(restored.normalized_fcff, 95.0)
         self.assertAlmostEqual(restored.normalized_operating_margin, 0.14)
         self.assertAlmostEqual(restored.normalized_reinvestment_margin, 0.06)
+        self.assertEqual(restored.benchmark_group, "tradicionais_ciclicas")
+        self.assertEqual(restored.sector_bucket, "industrial_machinery")
+        self.assertEqual(restored.critical_metric_coverage, 1.0)
+        self.assertEqual(restored.missing_critical_metrics, "")
+        self.assertTrue(restored.analysis_input_validated)
 
 
 if __name__ == "__main__":
