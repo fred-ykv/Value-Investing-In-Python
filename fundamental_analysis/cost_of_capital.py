@@ -31,6 +31,7 @@ class CostOfCapitalResult:
     is_fallback: bool
     sources: dict[str, str] = field(default_factory=dict)
     component_confidences: dict[str, float] = field(default_factory=dict)
+    component_fallbacks: dict[str, bool] = field(default_factory=dict)
     notes: tuple[str, ...] = ()
 
     def discount_rate_metric(self) -> MetricValue:
@@ -64,18 +65,21 @@ def calculate_cost_of_capital(
     notes: list[str] = []
     sources: dict[str, str] = {}
     component_confidences: dict[str, float] = {}
+    component_fallbacks: dict[str, bool] = {}
 
     risk_free = _input_observation(market_data.get("risk_free_rate"), source)
     if risk_free.value is None:
         risk_free = _Observation(MARKET.risk_free_rate, MARKET.risk_free_rate_source, confidence_for_source("fallback"), True)
     sources["risk_free_rate"] = risk_free.source
     component_confidences["risk_free_rate"] = risk_free.confidence
+    component_fallbacks["risk_free_rate"] = risk_free.is_fallback
 
     equity_risk_premium = _input_observation(market_data.get("equity_risk_premium"), source)
     if equity_risk_premium.value is None:
         equity_risk_premium = _Observation(MARKET.equity_risk_premium, MARKET.equity_risk_premium_source, confidence_for_source("fallback"), True)
     sources["equity_risk_premium"] = equity_risk_premium.source
     component_confidences["equity_risk_premium"] = equity_risk_premium.confidence
+    component_fallbacks["equity_risk_premium"] = equity_risk_premium.is_fallback
 
     beta = _input_observation(market_data.get("beta"), source)
     if beta.value is None:
@@ -89,6 +93,7 @@ def calculate_cost_of_capital(
         beta = _Observation(bounded_beta, beta.source, max(0.0, beta.confidence - 0.15), True)
     sources["beta"] = beta.source
     component_confidences["beta"] = beta.confidence
+    component_fallbacks["beta"] = beta.is_fallback
 
     explicit_ke = _input_observation(market_data.get("ke"), source)
     if explicit_ke.value is not None:
@@ -102,10 +107,13 @@ def calculate_cost_of_capital(
         ke_fallback = risk_free.is_fallback or beta.is_fallback or equity_risk_premium.is_fallback
         sources["cost_of_equity"] = "CAPM: taxa livre de risco + beta x premio de risco"
     component_confidences["cost_of_equity"] = ke_confidence
+    component_fallbacks["cost_of_equity"] = ke_fallback
 
     if company_type == CompanyType.FINANCIAL:
         notes.append("Bancos e financeiras usam custo do patrimonio (Ke); WACC nao e aplicado aos modelos de Lucro Residual e DDM.")
         component_confidences["discount_rate"] = ke_confidence
+        component_fallbacks["discount_rate"] = ke_fallback
+        sources["discount_rate"] = "Custo do patrimonio (Ke)"
         return CostOfCapitalResult(
             company_type=company_type.value,
             method="ke_for_financial_company",
@@ -128,6 +136,7 @@ def calculate_cost_of_capital(
             is_fallback=ke_fallback,
             sources=sources,
             component_confidences=component_confidences,
+            component_fallbacks=component_fallbacks,
             notes=tuple(notes),
         )
 
@@ -140,6 +149,9 @@ def calculate_cost_of_capital(
     component_confidences["market_value_equity"] = equity.confidence
     component_confidences["debt_value"] = debt.confidence
     component_confidences["tax_rate"] = tax_rate.confidence
+    component_fallbacks["market_value_equity"] = equity.is_fallback
+    component_fallbacks["debt_value"] = debt.is_fallback
+    component_fallbacks["tax_rate"] = tax_rate.is_fallback
 
     explicit_cost_of_debt = _input_observation(market_data.get("cost_of_debt"), source)
     if explicit_cost_of_debt.value is not None:
@@ -155,12 +167,16 @@ def calculate_cost_of_capital(
         )
         sources["pre_tax_cost_of_debt"] = debt_cost_source
     component_confidences["pre_tax_cost_of_debt"] = debt_cost_confidence
+    component_fallbacks["pre_tax_cost_of_debt"] = debt_cost_fallback
 
     resolved_tax_rate = clamp(tax_rate.value if tax_rate.value is not None else 0.0, 0.0, 0.45)
     if tax_rate.value is None:
         notes.append("Aliquota de imposto indisponivel; beneficio fiscal da divida foi assumido como zero.")
     after_tax_cost_of_debt = pre_tax_cost_of_debt * (1.0 - resolved_tax_rate)
     component_confidences["after_tax_cost_of_debt"] = min(debt_cost_confidence, tax_rate.confidence) if debt.value else debt_cost_confidence
+    component_fallbacks["after_tax_cost_of_debt"] = (
+        debt_cost_fallback or (bool(debt.value) and tax_rate.is_fallback)
+    )
 
     capital_total = None
     if equity.value is not None and equity.value > 0 and debt.value is not None and debt.value >= 0:
@@ -180,6 +196,15 @@ def calculate_cost_of_capital(
         )
         component_confidences["capital_weights"] = (equity.confidence + debt.confidence) / 2.0
         component_confidences["calculated_wacc"] = capital_confidence
+        component_fallbacks["capital_weights"] = equity.is_fallback or debt.is_fallback
+        component_fallbacks["calculated_wacc"] = (
+            ke_fallback
+            or component_fallbacks["capital_weights"]
+            or (
+                bool(debt_weight)
+                and (debt_cost_fallback or tax_rate.is_fallback)
+            )
+        )
     else:
         equity_weight = None
         debt_weight = None
@@ -213,6 +238,7 @@ def calculate_cost_of_capital(
         method = "ke_proxy_missing_capital_structure"
         sources["discount_rate"] = "Ke usado como proxy por falta de estrutura de capital completa"
     component_confidences["discount_rate"] = confidence
+    component_fallbacks["discount_rate"] = is_fallback
 
     return CostOfCapitalResult(
         company_type=company_type.value,
@@ -236,6 +262,7 @@ def calculate_cost_of_capital(
         is_fallback=is_fallback,
         sources=sources,
         component_confidences=component_confidences,
+        component_fallbacks=component_fallbacks,
         notes=tuple(notes),
     )
 
@@ -315,3 +342,4 @@ def _bounded_rate(value: float) -> float:
 
 def _bounded_debt_rate(value: float) -> float:
     return clamp(value, 0.0, MARKET.max_pre_tax_cost_of_debt)
+

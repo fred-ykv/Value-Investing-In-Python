@@ -121,8 +121,26 @@ class PointInTimeCollectionTests(unittest.TestCase):
         self.assertIsNotNone(observation.discount_rate)
         self.assertIn(observation.discount_rate_label, {"WACC", "Custo do patrimonio (Ke)"})
         self.assertIsNotNone(observation.cost_of_equity)
+        self.assertIsNotNone(observation.beta)
+        self.assertIsNotNone(observation.calculated_wacc)
+        self.assertIsNotNone(observation.pre_tax_cost_of_debt)
+        self.assertIsNotNone(observation.after_tax_cost_of_debt)
+        self.assertIsNotNone(observation.tax_rate)
+        self.assertIsNotNone(observation.market_value_equity)
+        self.assertIsNotNone(observation.debt_value)
+        self.assertIsNotNone(observation.equity_weight)
+        self.assertIsNotNone(observation.debt_weight)
         self.assertTrue(observation.cost_of_capital_method)
         self.assertIsNotNone(observation.cost_of_capital_confidence)
+        self.assertIn("discount_rate", dict(observation.cost_of_capital_sources))
+        self.assertIn(
+            "discount_rate",
+            dict(observation.cost_of_capital_component_confidences),
+        )
+        self.assertIn(
+            "discount_rate",
+            dict(observation.cost_of_capital_component_fallbacks),
+        )
         self.assertTrue(observation.is_point_in_time_valid)
         self.assertTrue(observation.is_cyclical)
         self.assertFalse(observation.cyclical_normalization_applied)

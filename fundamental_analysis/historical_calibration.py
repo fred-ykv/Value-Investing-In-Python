@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 import csv
+import json
 import math
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 from statistics import mean
-from typing import Iterable
+from typing import Callable, Iterable, TypeVar
 
 from .config import CALIBRATION, CalibrationAssumptions
+
+
+_MappingValue = TypeVar("_MappingValue")
 
 
 @dataclass(frozen=True)
@@ -79,6 +83,19 @@ class HistoricalCalibrationObservation:
     dimension_liquidity_confidence: float | None = None
     dimension_data_confidence_score: float | None = None
     dimension_data_confidence_confidence: float | None = None
+    calculated_wacc: float | None = None
+    beta: float | None = None
+    pre_tax_cost_of_debt: float | None = None
+    after_tax_cost_of_debt: float | None = None
+    tax_rate: float | None = None
+    market_value_equity: float | None = None
+    debt_value: float | None = None
+    equity_weight: float | None = None
+    debt_weight: float | None = None
+    cost_of_capital_sources: tuple[tuple[str, str], ...] = ()
+    cost_of_capital_component_confidences: tuple[tuple[str, float], ...] = ()
+    cost_of_capital_component_fallbacks: tuple[tuple[str, bool], ...] = ()
+    cost_of_capital_notes: tuple[str, ...] = ()
 
     @property
     def excess_return(self) -> float | None:
@@ -339,10 +356,23 @@ def write_historical_calibration_csv(
         "discount_rate",
         "discount_rate_label",
         "wacc",
+        "calculated_wacc",
         "cost_of_equity",
+        "beta",
+        "pre_tax_cost_of_debt",
+        "after_tax_cost_of_debt",
+        "tax_rate",
+        "market_value_equity",
+        "debt_value",
+        "equity_weight",
+        "debt_weight",
         "cost_of_capital_method",
         "cost_of_capital_confidence",
         "cost_of_capital_is_fallback",
+        "cost_of_capital_sources",
+        "cost_of_capital_component_confidences",
+        "cost_of_capital_component_fallbacks",
+        "cost_of_capital_notes",
         "is_cyclical",
         "cyclical_normalization_applied",
         "cyclical_normalization_years",
@@ -458,13 +488,44 @@ def write_historical_calibration_csv(
                     "discount_rate": _format_optional(observation.discount_rate),
                     "discount_rate_label": observation.discount_rate_label,
                     "wacc": _format_optional(observation.wacc),
+                    "calculated_wacc": _format_optional(
+                        observation.calculated_wacc
+                    ),
                     "cost_of_equity": _format_optional(observation.cost_of_equity),
+                    "beta": _format_optional(observation.beta),
+                    "pre_tax_cost_of_debt": _format_optional(
+                        observation.pre_tax_cost_of_debt
+                    ),
+                    "after_tax_cost_of_debt": _format_optional(
+                        observation.after_tax_cost_of_debt
+                    ),
+                    "tax_rate": _format_optional(observation.tax_rate),
+                    "market_value_equity": _format_optional(
+                        observation.market_value_equity
+                    ),
+                    "debt_value": _format_optional(observation.debt_value),
+                    "equity_weight": _format_optional(observation.equity_weight),
+                    "debt_weight": _format_optional(observation.debt_weight),
                     "cost_of_capital_method": observation.cost_of_capital_method,
                     "cost_of_capital_confidence": _format_optional(
                         observation.cost_of_capital_confidence
                     ),
                     "cost_of_capital_is_fallback": (
                         "1" if observation.cost_of_capital_is_fallback else "0"
+                    ),
+                    "cost_of_capital_sources": _format_mapping(
+                        observation.cost_of_capital_sources
+                    ),
+                    "cost_of_capital_component_confidences": _format_mapping(
+                        observation.cost_of_capital_component_confidences
+                    ),
+                    "cost_of_capital_component_fallbacks": _format_mapping(
+                        observation.cost_of_capital_component_fallbacks
+                    ),
+                    "cost_of_capital_notes": json.dumps(
+                        observation.cost_of_capital_notes,
+                        ensure_ascii=True,
+                        separators=(",", ":"),
                     ),
                     "is_cyclical": "1" if observation.is_cyclical else "0",
                     "cyclical_normalization_applied": (
@@ -575,7 +636,26 @@ def read_historical_calibration_csv(path: str | Path) -> list[HistoricalCalibrat
                     discount_rate=_parse_optional_float(row.get("discount_rate", "")),
                     discount_rate_label=row.get("discount_rate_label", "").strip(),
                     wacc=_parse_optional_float(row.get("wacc", "")),
+                    calculated_wacc=_parse_optional_float(
+                        row.get("calculated_wacc", "")
+                    ),
                     cost_of_equity=_parse_optional_float(row.get("cost_of_equity", "")),
+                    beta=_parse_optional_float(row.get("beta", "")),
+                    pre_tax_cost_of_debt=_parse_optional_float(
+                        row.get("pre_tax_cost_of_debt", "")
+                    ),
+                    after_tax_cost_of_debt=_parse_optional_float(
+                        row.get("after_tax_cost_of_debt", "")
+                    ),
+                    tax_rate=_parse_optional_float(row.get("tax_rate", "")),
+                    market_value_equity=_parse_optional_float(
+                        row.get("market_value_equity", "")
+                    ),
+                    debt_value=_parse_optional_float(row.get("debt_value", "")),
+                    equity_weight=_parse_optional_float(
+                        row.get("equity_weight", "")
+                    ),
+                    debt_weight=_parse_optional_float(row.get("debt_weight", "")),
                     cost_of_capital_method=row.get("cost_of_capital_method", "").strip(),
                     cost_of_capital_confidence=_parse_optional_float(
                         row.get("cost_of_capital_confidence", "")
@@ -583,6 +663,21 @@ def read_historical_calibration_csv(path: str | Path) -> list[HistoricalCalibrat
                     cost_of_capital_is_fallback=(
                         row.get("cost_of_capital_is_fallback", "").lower()
                         in {"1", "true", "sim", "yes"}
+                    ),
+                    cost_of_capital_sources=_parse_mapping(
+                        row.get("cost_of_capital_sources", ""),
+                        str,
+                    ),
+                    cost_of_capital_component_confidences=_parse_mapping(
+                        row.get("cost_of_capital_component_confidences", ""),
+                        float,
+                    ),
+                    cost_of_capital_component_fallbacks=_parse_mapping(
+                        row.get("cost_of_capital_component_fallbacks", ""),
+                        _parse_bool,
+                    ),
+                    cost_of_capital_notes=_parse_string_sequence(
+                        row.get("cost_of_capital_notes", "")
                     ),
                     is_cyclical=(
                         row.get("is_cyclical", "").lower()
@@ -741,4 +836,44 @@ def _format_optional(value: float | None) -> str:
 def _parse_optional_float(value: str | None) -> float | None:
     value = (value or "").strip()
     return float(value) if value else None
+
+
+def _format_mapping(values: Iterable[tuple[str, object]]) -> str:
+    return json.dumps(
+        dict(values),
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+
+
+def _parse_mapping(
+    value: str | None,
+    converter: Callable[[object], _MappingValue],
+) -> tuple[tuple[str, _MappingValue], ...]:
+    value = (value or "").strip()
+    if not value:
+        return ()
+    payload = json.loads(value)
+    if not isinstance(payload, dict):
+        raise ValueError("Mapeamento de custo de capital invalido no CSV")
+    return tuple(
+        sorted((str(key), converter(raw_value)) for key, raw_value in payload.items())
+    )
+
+
+def _parse_bool(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"1", "true", "sim", "yes"}
+
+
+def _parse_string_sequence(value: str | None) -> tuple[str, ...]:
+    value = (value or "").strip()
+    if not value:
+        return ()
+    payload = json.loads(value)
+    if not isinstance(payload, list):
+        raise ValueError("Notas de custo de capital invalidas no CSV")
+    return tuple(str(item) for item in payload)
 

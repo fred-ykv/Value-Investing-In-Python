@@ -5,6 +5,11 @@
 - Persisted score and confidence for valuation, growth, quality, debt,
   liquidity, and data-confidence dimensions in every point-in-time historical
   observation, CSV export, and collection manifest.
+- Persisted the complete cost-of-capital decomposition, including beta, Ke,
+  pre-tax and after-tax debt cost, tax rate, capital values and weights,
+  calculated WACC, component sources, confidence, fallback flags, and notes.
+- Added component-level fallback telemetry without changing any cost-of-capital
+  calculation or rate-selection rule.
 - Kept legacy historical CSVs readable without fabricating unavailable
   dimensions; the pre-existing data-confidence value remains recoverable.
 - Kept score formulas, weights, gates, and recommendation thresholds

@@ -177,10 +177,29 @@ def collect_point_in_time_observation(
             discount_rate=result.cost_of_capital.discount_rate,
             discount_rate_label=result.cost_of_capital.discount_rate_label,
             wacc=result.cost_of_capital.wacc,
+            calculated_wacc=result.cost_of_capital.calculated_wacc,
             cost_of_equity=result.cost_of_capital.cost_of_equity,
+            beta=result.cost_of_capital.beta,
+            pre_tax_cost_of_debt=result.cost_of_capital.pre_tax_cost_of_debt,
+            after_tax_cost_of_debt=result.cost_of_capital.after_tax_cost_of_debt,
+            tax_rate=result.cost_of_capital.tax_rate,
+            market_value_equity=result.cost_of_capital.market_value_equity,
+            debt_value=result.cost_of_capital.debt_value,
+            equity_weight=result.cost_of_capital.equity_weight,
+            debt_weight=result.cost_of_capital.debt_weight,
             cost_of_capital_method=result.cost_of_capital.method,
             cost_of_capital_confidence=result.cost_of_capital.confidence,
             cost_of_capital_is_fallback=result.cost_of_capital.is_fallback,
+            cost_of_capital_sources=tuple(
+                sorted(result.cost_of_capital.sources.items())
+            ),
+            cost_of_capital_component_confidences=tuple(
+                sorted(result.cost_of_capital.component_confidences.items())
+            ),
+            cost_of_capital_component_fallbacks=tuple(
+                sorted(result.cost_of_capital.component_fallbacks.items())
+            ),
+            cost_of_capital_notes=result.cost_of_capital.notes,
             is_cyclical=result.cyclical_normalization.is_cyclical,
             cyclical_normalization_applied=result.cyclical_normalization.applied,
             cyclical_normalization_years=result.cyclical_normalization.sample_years,

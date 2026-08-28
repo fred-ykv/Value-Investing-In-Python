@@ -154,6 +154,28 @@ class HistoricalCalibrationTests(unittest.TestCase):
             dimension_liquidity_confidence=0.75,
             dimension_data_confidence_score=0.80,
             dimension_data_confidence_confidence=0.80,
+            calculated_wacc=0.0845,
+            beta=0.95,
+            pre_tax_cost_of_debt=0.06,
+            after_tax_cost_of_debt=0.045,
+            tax_rate=0.25,
+            market_value_equity=800.0,
+            debt_value=200.0,
+            equity_weight=0.80,
+            debt_weight=0.20,
+            cost_of_capital_sources=(
+                ("beta", "Beta historico point-in-time"),
+                ("discount_rate", "WACC calculado pelo modelo"),
+            ),
+            cost_of_capital_component_confidences=(
+                ("beta", 0.82),
+                ("discount_rate", 0.81),
+            ),
+            cost_of_capital_component_fallbacks=(
+                ("beta", False),
+                ("discount_rate", False),
+            ),
+            cost_of_capital_notes=("WACC auditado.",),
         )
         with TemporaryDirectory() as tempdir:
             path = Path(tempdir) / "history.csv"
@@ -222,6 +244,27 @@ class HistoricalCalibrationTests(unittest.TestCase):
             restored.dimension_data_confidence_confidence,
             0.80,
         )
+        self.assertAlmostEqual(restored.calculated_wacc, 0.0845)
+        self.assertAlmostEqual(restored.beta, 0.95)
+        self.assertAlmostEqual(restored.pre_tax_cost_of_debt, 0.06)
+        self.assertAlmostEqual(restored.after_tax_cost_of_debt, 0.045)
+        self.assertAlmostEqual(restored.tax_rate, 0.25)
+        self.assertAlmostEqual(restored.market_value_equity, 800.0)
+        self.assertAlmostEqual(restored.debt_value, 200.0)
+        self.assertAlmostEqual(restored.equity_weight, 0.80)
+        self.assertAlmostEqual(restored.debt_weight, 0.20)
+        self.assertEqual(
+            dict(restored.cost_of_capital_sources)["discount_rate"],
+            "WACC calculado pelo modelo",
+        )
+        self.assertAlmostEqual(
+            dict(restored.cost_of_capital_component_confidences)["beta"],
+            0.82,
+        )
+        self.assertFalse(
+            dict(restored.cost_of_capital_component_fallbacks)["discount_rate"]
+        )
+        self.assertEqual(restored.cost_of_capital_notes, ("WACC auditado.",))
 
     def test_legacy_csv_infers_only_the_existing_data_confidence_dimension(self):
         legacy_csv = (
@@ -244,6 +287,13 @@ class HistoricalCalibrationTests(unittest.TestCase):
             restored.dimension_data_confidence_confidence,
             0.77,
         )
+        self.assertIsNone(restored.calculated_wacc)
+        self.assertIsNone(restored.beta)
+        self.assertIsNone(restored.pre_tax_cost_of_debt)
+        self.assertEqual(restored.cost_of_capital_sources, ())
+        self.assertEqual(restored.cost_of_capital_component_confidences, ())
+        self.assertEqual(restored.cost_of_capital_component_fallbacks, ())
+        self.assertEqual(restored.cost_of_capital_notes, ())
 
 
 if __name__ == "__main__":

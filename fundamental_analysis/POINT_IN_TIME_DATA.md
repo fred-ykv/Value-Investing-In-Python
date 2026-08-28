@@ -50,9 +50,12 @@ O custo de capital e reconstruido com duas observacoes datadas:
    apenas em 15 de janeiro do ano seguinte.
 
 O CSV registra taxa livre de risco, ERP, datas de referencia, Ke, WACC, taxa de
-desconto efetivamente aplicada, metodo, confianca e uso de fallback. A
-observacao deixa de ser point-in-time valida se uma das premissas macro ainda
-nao estava disponivel na data-base. Nao existe fallback para taxas atuais.
+desconto efetivamente aplicada, metodo, confianca e uso de fallback. Tambem
+preserva beta, custo da divida antes e depois de impostos, aliquota, valores e
+pesos de divida e patrimonio, WACC calculado, fontes, confiancas e fallbacks por
+componente. A observacao deixa de ser point-in-time valida se uma das premissas
+macro ainda nao estava disponivel na data-base. Nao existe fallback para taxas
+atuais.
 
 O mesmo CSV preserva, em colunas separadas, score e confianca das seis
 dimensoes calculadas na data-base: valuation, crescimento, qualidade, divida,
