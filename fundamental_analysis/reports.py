@@ -400,6 +400,22 @@ def decision_bridge(score: ScoreReport, valuations: Iterable[ValuationResult] | 
 
 
 def recommendation_gate_note(score: ScoreReport) -> str:
+    decision = score.recommendation_decision
+    if decision is not None:
+        if decision.gate_code == "buy_blocked_low_valuation":
+            return (
+                "A recomendacao nao subiu para Comprar porque o score de valuation "
+                f"({decision.valuation_score:.2f}) ficou abaixo do minimo exigido "
+                f"({decision.min_valuation_score_for_buy:.2f})."
+            )
+        if decision.gate_code == "avoid_low_valuation_and_quality":
+            return (
+                "A recomendacao foi mantida em Evitar porque valuation "
+                f"({decision.valuation_score:.2f}) e qualidade "
+                f"({decision.quality_score:.2f}) ficaram simultaneamente abaixo "
+                "dos limites de seguranca."
+            )
+        return ""
     valuation = score.dimensions.get("valuation")
     quality = score.dimensions.get("quality")
     valuation_score = valuation.score if valuation else 0.0
@@ -677,4 +693,3 @@ def _low_good_signal(value: float, good: float, bad: float) -> tuple[str, str]:
     if value >= bad:
         return "negative", "Atencao"
     return "neutral", "Neutro"
-

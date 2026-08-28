@@ -11,7 +11,10 @@ from typing import Callable, Iterable
 from .benchmark_universe import BenchmarkCase, DEFAULT_BENCHMARK_CASES
 from .config import CYCLICAL, POINT_IN_TIME, PointInTimeAssumptions
 from .data_sources import metric_value
-from .historical_calibration import HistoricalCalibrationObservation
+from .historical_calibration import (
+    HistoricalCalibrationObservation,
+    HistoricalValuationMethodAudit,
+)
 from .historical_macro import HistoricalMacroProvider, HistoricalMacroSnapshot
 from .historical_prices import (
     HistoricalPriceProvider,
@@ -20,6 +23,7 @@ from .historical_prices import (
     calculate_price_outcome,
 )
 from .main import AnalysisResult, analyze_ticker_from_inputs
+from .scoring import recommendation_decision_from_score
 from .sec_edgar import PointInTimeFundamentals, SecEdgarClient, SecFilingAnchor
 
 
@@ -121,6 +125,12 @@ def collect_point_in_time_observation(
             )
         }
         data_confidence = dimension_audit["data_confidence"][0] or 0.0
+        decision = result.score.recommendation_decision or (
+            recommendation_decision_from_score(
+                result.score.total_score,
+                result.score.dimensions,
+            )
+        )
         critical_coverage, missing_critical = _critical_metric_audit(
             case,
             snapshot,
@@ -156,6 +166,21 @@ def collect_point_in_time_observation(
             company_type=result.company_type,
             total_score=result.score.total_score,
             recommendation=result.score.recommendation,
+            recommendation_before_gates=decision.recommendation_before_gates,
+            recommendation_gate_code=decision.gate_code,
+            recommendation_gate_triggered=decision.gate_triggered,
+            recommendation_gate_explanation=decision.explanation,
+            recommendation_buy_threshold=decision.buy_threshold,
+            recommendation_watch_threshold=decision.watch_threshold,
+            recommendation_min_valuation_score_for_buy=(
+                decision.min_valuation_score_for_buy
+            ),
+            recommendation_avoid_if_valuation_below=(
+                decision.avoid_if_valuation_below
+            ),
+            recommendation_avoid_if_quality_below=(
+                decision.avoid_if_quality_below
+            ),
             data_confidence=data_confidence,
             forward_return=outcome.forward_return,
             benchmark_return=outcome.benchmark_return,
@@ -165,6 +190,7 @@ def collect_point_in_time_observation(
             benchmark_ticker=benchmark_ticker,
             price_start_date=outcome.price_start_date,
             price_end_date=outcome.price_end_date,
+            valuation_price=outcome.start_price,
             price_source=outcome.source,
             filing_accession=anchor.accession_number,
             fundamental_coverage=snapshot.audit.coverage_ratio,
@@ -200,6 +226,10 @@ def collect_point_in_time_observation(
                 sorted(result.cost_of_capital.component_fallbacks.items())
             ),
             cost_of_capital_notes=result.cost_of_capital.notes,
+            valuation_method_audit=tuple(
+                _valuation_method_audit(valuation)
+                for valuation in result.valuations
+            ),
             is_cyclical=result.cyclical_normalization.is_cyclical,
             cyclical_normalization_applied=result.cyclical_normalization.applied,
             cyclical_normalization_years=result.cyclical_normalization.sample_years,
@@ -509,6 +539,33 @@ def _valuation_diagnostic_number(
     return float(value) if value is not None else None
 
 
+def _valuation_method_audit(valuation: object) -> HistoricalValuationMethodAudit:
+    margin = getattr(valuation, "margin_of_safety", None)
+    confidence = float(getattr(valuation, "confidence", 0.0) or 0.0)
+    diagnostics = getattr(valuation, "diagnostics", {}) or {}
+    used_in_score = margin is not None and confidence > 0.0
+    exclusion_reason = ""
+    if not used_in_score:
+        if margin is None:
+            exclusion_reason = str(
+                diagnostics.get("error") or "Margem de seguranca indisponivel"
+            )
+        else:
+            exclusion_reason = "Confianca igual a zero"
+    fair_value = getattr(valuation, "fair_value_per_share", None)
+    return HistoricalValuationMethodAudit(
+        method=str(getattr(valuation, "method", "")),
+        used_in_score=used_in_score,
+        fair_value_per_share=(
+            float(fair_value) if fair_value is not None else None
+        ),
+        margin_of_safety=float(margin) if margin is not None else None,
+        confidence=confidence,
+        source=str(getattr(valuation, "source", "")),
+        exclusion_reason=exclusion_reason,
+    )
+
+
 def _metric_number(metric: object) -> float | None:
     value = getattr(metric, "value", None)
     return float(value) if value is not None else None
@@ -618,4 +675,3 @@ def _critical_metric_audit(
         < assumptions.minimum_critical_metric_confidence
     )
     return (len(required) - len(missing)) / len(required), missing
-

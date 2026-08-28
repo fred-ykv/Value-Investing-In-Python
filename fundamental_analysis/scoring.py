@@ -19,12 +19,30 @@ class DimensionScore:
     explanation: str
 
 
+@dataclass(frozen=True)
+class RecommendationDecision:
+    recommendation_before_gates: str
+    final_recommendation: str
+    gate_code: str
+    gate_triggered: bool
+    total_score: float
+    valuation_score: float | None
+    quality_score: float | None
+    buy_threshold: float
+    watch_threshold: float
+    min_valuation_score_for_buy: float
+    avoid_if_valuation_below: float
+    avoid_if_quality_below: float
+    explanation: str
+
+
 @dataclass
 class ScoreReport:
     total_score: float
     recommendation: str
     dimensions: dict[str, DimensionScore] = field(default_factory=dict)
     explanation: str = ""
+    recommendation_decision: RecommendationDecision | None = None
 
 
 def compute_score(company_type: CompanyType, valuations: Iterable[ValuationResult], metrics: MetricPack, current_price: MetricValue, comparables: ComparableReport | None = None) -> ScoreReport:
@@ -46,8 +64,15 @@ def compute_score(company_type: CompanyType, valuations: Iterable[ValuationResul
         dimensions["liquidity"].score * weights.liquidity,
         dimensions["data_confidence"].score * weights.data_confidence,
     ])
-    recommendation = recommendation_from_score(total, dimensions)
-    return ScoreReport(total, recommendation, dimensions, explain_score(recommendation, dimensions))
+    decision = recommendation_decision_from_score(total, dimensions)
+    recommendation = decision.final_recommendation
+    return ScoreReport(
+        total,
+        recommendation,
+        dimensions,
+        explain_score(recommendation, dimensions),
+        decision,
+    )
 
 
 def valuation_dimension(valuations: Iterable[ValuationResult], metrics: MetricPack | None = None, company_type: CompanyType = CompanyType.TRADITIONAL, comparables: ComparableReport | None = None) -> DimensionScore:
@@ -136,20 +161,86 @@ def data_confidence_dimension(valuations: Iterable[ValuationResult], metrics: Me
 
 
 def recommendation_from_score(score: float, dimensions: Mapping[str, DimensionScore] | None = None) -> str:
+    return recommendation_decision_from_score(score, dimensions).final_recommendation
+
+
+def recommendation_decision_from_score(
+    score: float,
+    dimensions: Mapping[str, DimensionScore] | None = None,
+) -> RecommendationDecision:
+    recommendation_before_gates = (
+        "Comprar"
+        if score >= SCORE.buy_threshold
+        else "Observar"
+        if score >= SCORE.watch_threshold
+        else "Evitar"
+    )
+    valuation_score: float | None = None
+    quality_score: float | None = None
     if dimensions:
         valuation = dimensions.get("valuation")
         quality = dimensions.get("quality")
         valuation_score = valuation.score if valuation else 0.0
         quality_score = quality.score if quality else 0.0
         if score >= SCORE.buy_threshold and valuation_score < SCORE.min_valuation_score_for_buy:
-            return "Observar"
+            return RecommendationDecision(
+                recommendation_before_gates,
+                "Observar",
+                "buy_blocked_low_valuation",
+                True,
+                score,
+                valuation_score,
+                quality_score,
+                SCORE.buy_threshold,
+                SCORE.watch_threshold,
+                SCORE.min_valuation_score_for_buy,
+                SCORE.avoid_if_valuation_below,
+                SCORE.avoid_if_quality_below,
+                (
+                    "Compra bloqueada: o score total atingiu o limiar, mas valuation "
+                    f"({valuation_score:.2f}) ficou abaixo do minimo "
+                    f"({SCORE.min_valuation_score_for_buy:.2f})."
+                ),
+            )
         if (
             score >= SCORE.watch_threshold
             and valuation_score < SCORE.avoid_if_valuation_below
             and quality_score < SCORE.avoid_if_quality_below
         ):
-            return "Evitar"
-    return "Comprar" if score >= SCORE.buy_threshold else "Observar" if score >= SCORE.watch_threshold else "Evitar"
+            return RecommendationDecision(
+                recommendation_before_gates,
+                "Evitar",
+                "avoid_low_valuation_and_quality",
+                True,
+                score,
+                valuation_score,
+                quality_score,
+                SCORE.buy_threshold,
+                SCORE.watch_threshold,
+                SCORE.min_valuation_score_for_buy,
+                SCORE.avoid_if_valuation_below,
+                SCORE.avoid_if_quality_below,
+                (
+                    "Trava de seguranca acionada: valuation "
+                    f"({valuation_score:.2f}) e qualidade ({quality_score:.2f}) "
+                    "ficaram simultaneamente abaixo dos limites."
+                ),
+            )
+    return RecommendationDecision(
+        recommendation_before_gates,
+        recommendation_before_gates,
+        "none",
+        False,
+        score,
+        valuation_score,
+        quality_score,
+        SCORE.buy_threshold,
+        SCORE.watch_threshold,
+        SCORE.min_valuation_score_for_buy,
+        SCORE.avoid_if_valuation_below,
+        SCORE.avoid_if_quality_below,
+        "Nenhuma trava adicional alterou a recomendacao definida pelo score total.",
+    )
 
 
 def explain_score(recommendation: str, dimensions: Mapping[str, DimensionScore]) -> str:

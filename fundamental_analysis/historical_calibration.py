@@ -5,7 +5,7 @@ from __future__ import annotations
 import csv
 import json
 import math
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import date
 from pathlib import Path
 from statistics import mean
@@ -15,6 +15,17 @@ from .config import CALIBRATION, CalibrationAssumptions
 
 
 _MappingValue = TypeVar("_MappingValue")
+
+
+@dataclass(frozen=True)
+class HistoricalValuationMethodAudit:
+    method: str
+    used_in_score: bool
+    fair_value_per_share: float | None
+    margin_of_safety: float | None
+    confidence: float
+    source: str
+    exclusion_reason: str = ""
 
 
 @dataclass(frozen=True)
@@ -96,6 +107,17 @@ class HistoricalCalibrationObservation:
     cost_of_capital_component_confidences: tuple[tuple[str, float], ...] = ()
     cost_of_capital_component_fallbacks: tuple[tuple[str, bool], ...] = ()
     cost_of_capital_notes: tuple[str, ...] = ()
+    valuation_price: float | None = None
+    recommendation_before_gates: str = ""
+    recommendation_gate_code: str = ""
+    recommendation_gate_triggered: bool = False
+    recommendation_gate_explanation: str = ""
+    recommendation_buy_threshold: float | None = None
+    recommendation_watch_threshold: float | None = None
+    recommendation_min_valuation_score_for_buy: float | None = None
+    recommendation_avoid_if_valuation_below: float | None = None
+    recommendation_avoid_if_quality_below: float | None = None
+    valuation_method_audit: tuple[HistoricalValuationMethodAudit, ...] = ()
 
     @property
     def excess_return(self) -> float | None:
@@ -323,6 +345,15 @@ def write_historical_calibration_csv(
         "company_type",
         "total_score",
         "recommendation",
+        "recommendation_before_gates",
+        "recommendation_gate_code",
+        "recommendation_gate_triggered",
+        "recommendation_gate_explanation",
+        "recommendation_buy_threshold",
+        "recommendation_watch_threshold",
+        "recommendation_min_valuation_score_for_buy",
+        "recommendation_avoid_if_valuation_below",
+        "recommendation_avoid_if_quality_below",
         "data_confidence",
         "dimension_valuation_score",
         "dimension_valuation_confidence",
@@ -344,6 +375,7 @@ def write_historical_calibration_csv(
         "benchmark_ticker",
         "price_start_date",
         "price_end_date",
+        "valuation_price",
         "price_source",
         "filing_accession",
         "fundamental_coverage",
@@ -373,6 +405,7 @@ def write_historical_calibration_csv(
         "cost_of_capital_component_confidences",
         "cost_of_capital_component_fallbacks",
         "cost_of_capital_notes",
+        "valuation_method_audit",
         "is_cyclical",
         "cyclical_normalization_applied",
         "cyclical_normalization_years",
@@ -407,6 +440,31 @@ def write_historical_calibration_csv(
                     "company_type": observation.company_type,
                     "total_score": f"{observation.total_score:.6f}",
                     "recommendation": observation.recommendation,
+                    "recommendation_before_gates": (
+                        observation.recommendation_before_gates
+                    ),
+                    "recommendation_gate_code": observation.recommendation_gate_code,
+                    "recommendation_gate_triggered": (
+                        "1" if observation.recommendation_gate_triggered else "0"
+                    ),
+                    "recommendation_gate_explanation": (
+                        observation.recommendation_gate_explanation
+                    ),
+                    "recommendation_buy_threshold": _format_optional(
+                        observation.recommendation_buy_threshold
+                    ),
+                    "recommendation_watch_threshold": _format_optional(
+                        observation.recommendation_watch_threshold
+                    ),
+                    "recommendation_min_valuation_score_for_buy": _format_optional(
+                        observation.recommendation_min_valuation_score_for_buy
+                    ),
+                    "recommendation_avoid_if_valuation_below": _format_optional(
+                        observation.recommendation_avoid_if_valuation_below
+                    ),
+                    "recommendation_avoid_if_quality_below": _format_optional(
+                        observation.recommendation_avoid_if_quality_below
+                    ),
                     "data_confidence": f"{observation.data_confidence:.6f}",
                     "dimension_valuation_score": _format_optional(
                         observation.dimension_valuation_score
@@ -464,6 +522,7 @@ def write_historical_calibration_csv(
                         if observation.price_end_date is not None
                         else ""
                     ),
+                    "valuation_price": _format_optional(observation.valuation_price),
                     "price_source": observation.price_source,
                     "filing_accession": observation.filing_accession,
                     "fundamental_coverage": f"{observation.fundamental_coverage:.6f}",
@@ -526,6 +585,9 @@ def write_historical_calibration_csv(
                         observation.cost_of_capital_notes,
                         ensure_ascii=True,
                         separators=(",", ":"),
+                    ),
+                    "valuation_method_audit": _format_valuation_method_audit(
+                        observation.valuation_method_audit
                     ),
                     "is_cyclical": "1" if observation.is_cyclical else "0",
                     "cyclical_normalization_applied": (
@@ -599,6 +661,33 @@ def read_historical_calibration_csv(path: str | Path) -> list[HistoricalCalibrat
                     company_type=row["company_type"],
                     total_score=float(row["total_score"]),
                     recommendation=row["recommendation"],
+                    recommendation_before_gates=row.get(
+                        "recommendation_before_gates", ""
+                    ).strip(),
+                    recommendation_gate_code=row.get(
+                        "recommendation_gate_code", ""
+                    ).strip(),
+                    recommendation_gate_triggered=_parse_bool(
+                        row.get("recommendation_gate_triggered", "")
+                    ),
+                    recommendation_gate_explanation=row.get(
+                        "recommendation_gate_explanation", ""
+                    ).strip(),
+                    recommendation_buy_threshold=_parse_optional_float(
+                        row.get("recommendation_buy_threshold", "")
+                    ),
+                    recommendation_watch_threshold=_parse_optional_float(
+                        row.get("recommendation_watch_threshold", "")
+                    ),
+                    recommendation_min_valuation_score_for_buy=_parse_optional_float(
+                        row.get("recommendation_min_valuation_score_for_buy", "")
+                    ),
+                    recommendation_avoid_if_valuation_below=_parse_optional_float(
+                        row.get("recommendation_avoid_if_valuation_below", "")
+                    ),
+                    recommendation_avoid_if_quality_below=_parse_optional_float(
+                        row.get("recommendation_avoid_if_quality_below", "")
+                    ),
                     data_confidence=legacy_data_confidence,
                     forward_return=_parse_optional_float(row.get("forward_return", "")),
                     benchmark_return=_parse_optional_float(row.get("benchmark_return", "")),
@@ -609,6 +698,9 @@ def read_historical_calibration_csv(path: str | Path) -> list[HistoricalCalibrat
                     benchmark_ticker=row.get("benchmark_ticker", "").upper().strip(),
                     price_start_date=date.fromisoformat(price_start_date) if price_start_date else None,
                     price_end_date=date.fromisoformat(price_end_date) if price_end_date else None,
+                    valuation_price=_parse_optional_float(
+                        row.get("valuation_price", "")
+                    ),
                     price_source=row.get("price_source", "").strip(),
                     filing_accession=row.get("filing_accession", "").strip(),
                     fundamental_coverage=float(row.get("fundamental_coverage", "0") or 0.0),
@@ -678,6 +770,9 @@ def read_historical_calibration_csv(path: str | Path) -> list[HistoricalCalibrat
                     ),
                     cost_of_capital_notes=_parse_string_sequence(
                         row.get("cost_of_capital_notes", "")
+                    ),
+                    valuation_method_audit=_parse_valuation_method_audit(
+                        row.get("valuation_method_audit", "")
                     ),
                     is_cyclical=(
                         row.get("is_cyclical", "").lower()
@@ -877,3 +972,48 @@ def _parse_string_sequence(value: str | None) -> tuple[str, ...]:
         raise ValueError("Notas de custo de capital invalidas no CSV")
     return tuple(str(item) for item in payload)
 
+
+def _format_valuation_method_audit(
+    methods: Iterable[HistoricalValuationMethodAudit],
+) -> str:
+    return json.dumps(
+        [asdict(method) for method in methods],
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+
+
+def _parse_valuation_method_audit(
+    value: str | None,
+) -> tuple[HistoricalValuationMethodAudit, ...]:
+    value = (value or "").strip()
+    if not value:
+        return ()
+    payload = json.loads(value)
+    if not isinstance(payload, list):
+        raise ValueError("Auditoria dos metodos de valuation invalida no CSV")
+    methods: list[HistoricalValuationMethodAudit] = []
+    for item in payload:
+        if not isinstance(item, dict):
+            raise ValueError("Metodo de valuation invalido no CSV")
+        methods.append(
+            HistoricalValuationMethodAudit(
+                method=str(item.get("method", "")).strip(),
+                used_in_score=_parse_bool(item.get("used_in_score", False)),
+                fair_value_per_share=_parse_optional_number(
+                    item.get("fair_value_per_share")
+                ),
+                margin_of_safety=_parse_optional_number(
+                    item.get("margin_of_safety")
+                ),
+                confidence=float(item.get("confidence", 0.0) or 0.0),
+                source=str(item.get("source", "")).strip(),
+                exclusion_reason=str(item.get("exclusion_reason", "")).strip(),
+            )
+        )
+    return tuple(methods)
+
+
+def _parse_optional_number(value: object) -> float | None:
+    return None if value is None or value == "" else float(value)

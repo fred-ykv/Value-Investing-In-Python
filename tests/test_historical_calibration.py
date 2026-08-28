@@ -7,6 +7,7 @@ from pathlib import Path
 from fundamental_analysis.config import CalibrationAssumptions
 from fundamental_analysis.historical_calibration import (
     HistoricalCalibrationObservation,
+    HistoricalValuationMethodAudit,
     evaluate_historical_outcomes,
     read_historical_calibration_csv,
     write_historical_calibration_csv,
@@ -176,6 +177,35 @@ class HistoricalCalibrationTests(unittest.TestCase):
                 ("discount_rate", False),
             ),
             cost_of_capital_notes=("WACC auditado.",),
+            valuation_price=100.0,
+            recommendation_before_gates="Comprar",
+            recommendation_gate_code="buy_blocked_low_valuation",
+            recommendation_gate_triggered=True,
+            recommendation_gate_explanation="Compra bloqueada por valuation.",
+            recommendation_buy_threshold=0.70,
+            recommendation_watch_threshold=0.45,
+            recommendation_min_valuation_score_for_buy=0.45,
+            recommendation_avoid_if_valuation_below=0.20,
+            recommendation_avoid_if_quality_below=0.30,
+            valuation_method_audit=(
+                HistoricalValuationMethodAudit(
+                    method="dcf_fcff",
+                    used_in_score=True,
+                    fair_value_per_share=120.0,
+                    margin_of_safety=0.20,
+                    confidence=0.82,
+                    source="derived",
+                ),
+                HistoricalValuationMethodAudit(
+                    method="graham",
+                    used_in_score=False,
+                    fair_value_per_share=None,
+                    margin_of_safety=None,
+                    confidence=0.0,
+                    source="derived",
+                    exclusion_reason="missing EPS",
+                ),
+            ),
         )
         with TemporaryDirectory() as tempdir:
             path = Path(tempdir) / "history.csv"
@@ -265,6 +295,41 @@ class HistoricalCalibrationTests(unittest.TestCase):
             dict(restored.cost_of_capital_component_fallbacks)["discount_rate"]
         )
         self.assertEqual(restored.cost_of_capital_notes, ("WACC auditado.",))
+        self.assertAlmostEqual(restored.valuation_price, 100.0)
+        self.assertEqual(restored.recommendation_before_gates, "Comprar")
+        self.assertEqual(
+            restored.recommendation_gate_code,
+            "buy_blocked_low_valuation",
+        )
+        self.assertTrue(restored.recommendation_gate_triggered)
+        self.assertEqual(
+            restored.recommendation_gate_explanation,
+            "Compra bloqueada por valuation.",
+        )
+        self.assertAlmostEqual(restored.recommendation_buy_threshold, 0.70)
+        self.assertAlmostEqual(restored.recommendation_watch_threshold, 0.45)
+        self.assertAlmostEqual(
+            restored.recommendation_min_valuation_score_for_buy,
+            0.45,
+        )
+        self.assertAlmostEqual(
+            restored.recommendation_avoid_if_valuation_below,
+            0.20,
+        )
+        self.assertAlmostEqual(
+            restored.recommendation_avoid_if_quality_below,
+            0.30,
+        )
+        self.assertEqual(len(restored.valuation_method_audit), 2)
+        self.assertTrue(restored.valuation_method_audit[0].used_in_score)
+        self.assertAlmostEqual(
+            restored.valuation_method_audit[0].margin_of_safety,
+            0.20,
+        )
+        self.assertEqual(
+            restored.valuation_method_audit[1].exclusion_reason,
+            "missing EPS",
+        )
 
     def test_legacy_csv_infers_only_the_existing_data_confidence_dimension(self):
         legacy_csv = (
@@ -294,8 +359,13 @@ class HistoricalCalibrationTests(unittest.TestCase):
         self.assertEqual(restored.cost_of_capital_component_confidences, ())
         self.assertEqual(restored.cost_of_capital_component_fallbacks, ())
         self.assertEqual(restored.cost_of_capital_notes, ())
+        self.assertIsNone(restored.valuation_price)
+        self.assertEqual(restored.recommendation_before_gates, "")
+        self.assertEqual(restored.recommendation_gate_code, "")
+        self.assertFalse(restored.recommendation_gate_triggered)
+        self.assertIsNone(restored.recommendation_buy_threshold)
+        self.assertEqual(restored.valuation_method_audit, ())
 
 
 if __name__ == "__main__":
     unittest.main()
-

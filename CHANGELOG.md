@@ -10,8 +10,16 @@
   calculated WACC, component sources, confidence, fallback flags, and notes.
 - Added component-level fallback telemetry without changing any cost-of-capital
   calculation or rate-selection rule.
+- Added a structured recommendation decision that records the threshold-only
+  result, final result, triggered gate, explanation, and every threshold used.
+- Persisted the historical valuation price and a per-method valuation audit
+  with fair value, margin of safety, confidence, source, score inclusion, and
+  exclusion reason.
+- Centralized recommendation-gate evaluation and covered its boundary cases
+  against the previous decision logic; recommendation behavior is unchanged.
 - Kept legacy historical CSVs readable without fabricating unavailable
-  dimensions; the pre-existing data-confidence value remains recoverable.
+  dimensions, gates, or valuation methods; the pre-existing data-confidence
+  value remains recoverable.
 - Kept score formulas, weights, gates, and recommendation thresholds
   unchanged.
 
@@ -174,4 +182,3 @@ Original notebooks remain unchanged.
 - Added strict availability dates, staleness controls, source lineage, caching, and rejection of unavailable macro observations without a current-data fallback.
 - Persisted risk-free rate, ERP, Ke, WACC or applied discount rate, cost-of-capital method, confidence, and fallback status in historical calibration CSVs.
 - Re-ran the MLI/NUE pilot with 6/6 valid macro observations and documented recommendation sensitivity without changing score weights or thresholds.
-

@@ -63,6 +63,19 @@ liquidez e confianca dos dados. Arquivos antigos continuam legiveis; dimensoes
 que nao existiam no esquema anterior permanecem ausentes em vez de serem
 inferidas.
 
+A decisao de recomendacao tambem fica reproduzivel. O historico registra a
+recomendacao que resultaria apenas dos limiares do score, a recomendacao final,
+a trava eventualmente acionada, sua justificativa e os cinco limites vigentes
+na data da analise. A ordem das travas e a mesma usada pelo programa ao emitir
+o relatorio; esta telemetria nao muda a decisao.
+
+Para cada metodo de valuation calculado, o CSV guarda valor justo por acao,
+margem de seguranca, confianca, fonte, indicacao de entrada no score e motivo de
+exclusao. O preco historico sem ajuste usado na avaliacao tambem e preservado,
+permitindo reconciliar a margem de seguranca. Um metodo entra no score somente
+quando possui margem de seguranca e confianca maior que zero, exatamente como
+na regra de scoring. Arquivos antigos nao recebem metodos ou travas inferidos.
+
 ## Normalizacao point-in-time de empresas ciclicas
 
 Os casos ciclicos definidos no universo de benchmark carregam ate dez filings
@@ -127,7 +140,7 @@ Detalhes: `fundamental_analysis/TIINGO_HISTORICAL_PRICES.md`.
 
 Os arquivos sao gravados em `historical_calibration_outputs/`:
 
-- `historical_observations.csv`: observacoes, scores e confiancas dimensionais, premissas macro, custo de capital e auditoria da normalizacao ciclica;
+- `historical_observations.csv`: observacoes, scores e confiancas dimensionais, decisao e travas de recomendacao, valuation por metodo, premissas macro, custo de capital e auditoria da normalizacao ciclica;
 - `collection_manifest.json`: trilha detalhada de sucessos, avisos e erros;
 - `collection_report.md`: cobertura por ticker e filing;
 - `historical_calibration.md`: Spearman, monotonicidade, retorno e drawdown.
@@ -184,4 +197,3 @@ data-base. O ERP anual tambem passa por uma data conservadora de disponibilidade
   ampliado depende da importacao de precos de um provedor com deslistadas.
 - O benchmark de 40 empresas e sua decisao de governanca estao resumidos em
   `fundamental_analysis/BENCHMARK_TEMPORAL_40.md`.
-

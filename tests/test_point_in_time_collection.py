@@ -193,6 +193,23 @@ class PointInTimeCollectionTests(unittest.TestCase):
             observation.dimension_data_confidence_score,
             observation.data_confidence,
         )
+        self.assertAlmostEqual(observation.valuation_price, 10.0)
+        self.assertTrue(observation.recommendation_before_gates)
+        self.assertIn(
+            observation.recommendation_gate_code,
+            {"none", "buy_blocked_low_valuation", "avoid_low_valuation_and_quality"},
+        )
+        self.assertIsNotNone(observation.recommendation_buy_threshold)
+        self.assertIsNotNone(observation.recommendation_watch_threshold)
+        self.assertTrue(observation.recommendation_gate_explanation)
+        self.assertTrue(observation.valuation_method_audit)
+        for method in observation.valuation_method_audit:
+            self.assertEqual(
+                method.used_in_score,
+                method.margin_of_safety is not None and method.confidence > 0.0,
+            )
+            if not method.used_in_score:
+                self.assertTrue(method.exclusion_reason)
 
     def test_bank_critical_coverage_ignores_industrial_only_metrics(self):
         def get_json(url):
@@ -279,4 +296,3 @@ class PointInTimeCollectionTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

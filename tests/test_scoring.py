@@ -1,10 +1,17 @@
 import unittest
 
-from fundamental_analysis.config import CompanyType
+from fundamental_analysis.config import CompanyType, SCORE
 from fundamental_analysis.comparables import ComparableReport
 from fundamental_analysis.data_sources import metric_value
 from fundamental_analysis.metrics import MetricPack
-from fundamental_analysis.scoring import compute_score, liquidity_dimension, valuation_dimension
+from fundamental_analysis.scoring import (
+    DimensionScore,
+    compute_score,
+    liquidity_dimension,
+    recommendation_decision_from_score,
+    recommendation_from_score,
+    valuation_dimension,
+)
 from fundamental_analysis.valuation import ValuationResult
 
 
@@ -13,6 +20,90 @@ def metric_pack(**values):
 
 
 class ScoringCalibrationTests(unittest.TestCase):
+    def test_structured_decision_records_buy_gate_without_changing_result(self):
+        dimensions = {
+            "valuation": DimensionScore("valuation", 0.44, 0.80, ""),
+            "quality": DimensionScore("quality", 0.90, 0.80, ""),
+        }
+
+        decision = recommendation_decision_from_score(0.75, dimensions)
+
+        self.assertEqual(decision.recommendation_before_gates, "Comprar")
+        self.assertEqual(decision.final_recommendation, "Observar")
+        self.assertEqual(decision.gate_code, "buy_blocked_low_valuation")
+        self.assertTrue(decision.gate_triggered)
+
+    def test_structured_decision_records_joint_valuation_quality_gate(self):
+        dimensions = {
+            "valuation": DimensionScore("valuation", 0.19, 0.80, ""),
+            "quality": DimensionScore("quality", 0.29, 0.80, ""),
+        }
+
+        decision = recommendation_decision_from_score(0.60, dimensions)
+
+        self.assertEqual(decision.recommendation_before_gates, "Observar")
+        self.assertEqual(decision.final_recommendation, "Evitar")
+        self.assertEqual(decision.gate_code, "avoid_low_valuation_and_quality")
+        self.assertTrue(decision.gate_triggered)
+
+    def test_structured_decision_is_equivalent_to_previous_gate_logic_at_boundaries(self):
+        epsilon = 1e-9
+
+        def previous_logic(total, valuation, quality):
+            if total >= SCORE.buy_threshold and valuation < SCORE.min_valuation_score_for_buy:
+                return "Observar"
+            if (
+                total >= SCORE.watch_threshold
+                and valuation < SCORE.avoid_if_valuation_below
+                and quality < SCORE.avoid_if_quality_below
+            ):
+                return "Evitar"
+            return (
+                "Comprar"
+                if total >= SCORE.buy_threshold
+                else "Observar"
+                if total >= SCORE.watch_threshold
+                else "Evitar"
+            )
+
+        totals = (
+            SCORE.watch_threshold - epsilon,
+            SCORE.watch_threshold,
+            SCORE.buy_threshold - epsilon,
+            SCORE.buy_threshold,
+        )
+        valuations = (
+            SCORE.avoid_if_valuation_below - epsilon,
+            SCORE.avoid_if_valuation_below,
+            SCORE.min_valuation_score_for_buy - epsilon,
+            SCORE.min_valuation_score_for_buy,
+        )
+        qualities = (
+            SCORE.avoid_if_quality_below - epsilon,
+            SCORE.avoid_if_quality_below,
+            0.90,
+        )
+        for total in totals:
+            for valuation in valuations:
+                for quality in qualities:
+                    dimensions = {
+                        "valuation": DimensionScore("valuation", valuation, 1.0, ""),
+                        "quality": DimensionScore("quality", quality, 1.0, ""),
+                    }
+                    expected = previous_logic(total, valuation, quality)
+                    with self.subTest(total=total, valuation=valuation, quality=quality):
+                        self.assertEqual(
+                            recommendation_from_score(total, dimensions),
+                            expected,
+                        )
+                        self.assertEqual(
+                            recommendation_decision_from_score(
+                                total,
+                                dimensions,
+                            ).final_recommendation,
+                            expected,
+                        )
+
     def test_moderate_negative_margin_is_not_scored_as_zero(self):
         metrics = metric_pack(
             revenue_growth=0.20,
@@ -30,6 +121,11 @@ class ScoringCalibrationTests(unittest.TestCase):
 
         self.assertGreater(score.dimensions["valuation"].score, 0.30)
         self.assertEqual(score.recommendation, "Observar")
+        self.assertIsNotNone(score.recommendation_decision)
+        self.assertEqual(
+            score.recommendation,
+            score.recommendation_decision.final_recommendation,
+        )
 
     def test_low_valuation_and_low_quality_remain_avoid(self):
         metrics = metric_pack(
