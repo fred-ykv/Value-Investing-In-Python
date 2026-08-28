@@ -63,6 +63,16 @@ liquidez e confianca dos dados. Arquivos antigos continuam legiveis; dimensoes
 que nao existiam no esquema anterior permanecem ausentes em vez de serem
 inferidas.
 
+Para reconciliar o score total, cada dimensao registra o peso configurado, o
+peso normalizado e sua contribuicao ponderada. A soma dessas contribuicoes deve
+ser identica ao score total; divergencia acima da tolerancia numerica interrompe
+a coleta em vez de produzir uma observacao silenciosamente inconsistente. O
+CSV tambem preserva a versao do modelo, os dois conjuntos de pesos e uma
+impressao digital SHA-256 deterministica da configuracao de score. O hash cobre
+perfil da empresa, pesos, limiares, travas e limite de peso por metodo de
+valuation, permitindo separar observacoes calculadas sob configuracoes
+diferentes sem alterar ou recalcular o historico.
+
 A decisao de recomendacao tambem fica reproduzivel. O historico registra a
 recomendacao que resultaria apenas dos limiares do score, a recomendacao final,
 a trava eventualmente acionada, sua justificativa e os cinco limites vigentes
@@ -150,7 +160,7 @@ Detalhes: `fundamental_analysis/TIINGO_HISTORICAL_PRICES.md`.
 
 Os arquivos sao gravados em `historical_calibration_outputs/`:
 
-- `historical_observations.csv`: observacoes, scores e confiancas dimensionais, decisao e travas de recomendacao, valuation por metodo, premissas macro, custo de capital e auditoria da normalizacao ciclica;
+- `historical_observations.csv`: observacoes, scores, pesos e contribuicoes dimensionais, versao da configuracao, decisao e travas de recomendacao, valuation por metodo, premissas macro, custo de capital e auditoria da normalizacao ciclica;
 - `collection_manifest.json`: trilha detalhada de sucessos, avisos e erros;
 - `collection_report.md`: cobertura por ticker e filing;
 - `historical_calibration.md`: Spearman, monotonicidade, retorno e drawdown.

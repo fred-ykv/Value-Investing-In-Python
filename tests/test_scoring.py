@@ -126,6 +126,81 @@ class ScoringCalibrationTests(unittest.TestCase):
             score.recommendation,
             score.recommendation_decision.final_recommendation,
         )
+        self.assertEqual(len(score.dimension_contributions), 6)
+        self.assertAlmostEqual(
+            sum(
+                contribution.normalized_weight
+                for contribution in score.dimension_contributions
+            ),
+            1.0,
+        )
+        self.assertAlmostEqual(
+            sum(
+                contribution.weighted_contribution
+                for contribution in score.dimension_contributions
+            ),
+            score.total_score,
+        )
+        for contribution in score.dimension_contributions:
+            self.assertAlmostEqual(
+                contribution.score * contribution.normalized_weight,
+                contribution.weighted_contribution,
+            )
+            self.assertAlmostEqual(
+                contribution.score,
+                score.dimensions[contribution.name].score,
+            )
+        self.assertIsNotNone(score.configuration_audit)
+        self.assertEqual(len(score.configuration_audit.fingerprint), 64)
+
+    def test_score_configuration_fingerprint_is_deterministic_and_profile_specific(self):
+        metrics = metric_pack(
+            revenue_growth=0.10,
+            fama_french_profitability=0.70,
+            earnings_quality=0.70,
+            piotroski_proxy=0.70,
+            current_ratio=1.50,
+        )
+        valuations = [
+            ValuationResult(
+                "dcf_fcff",
+                110.0,
+                0.80,
+                margin_of_safety=0.10,
+            )
+        ]
+
+        traditional_a = compute_score(
+            CompanyType.TRADITIONAL,
+            valuations,
+            metrics,
+            metric_value("price", 100.0, "manual"),
+        )
+        traditional_b = compute_score(
+            CompanyType.TRADITIONAL,
+            valuations,
+            metrics,
+            metric_value("price", 100.0, "manual"),
+        )
+        growth = compute_score(
+            CompanyType.GROWTH_TECH,
+            valuations,
+            metrics,
+            metric_value("price", 100.0, "manual"),
+        )
+
+        self.assertEqual(
+            traditional_a.configuration_audit.fingerprint,
+            traditional_b.configuration_audit.fingerprint,
+        )
+        self.assertNotEqual(
+            traditional_a.configuration_audit.fingerprint,
+            growth.configuration_audit.fingerprint,
+        )
+        self.assertEqual(
+            traditional_a.configuration_audit.model_version,
+            "multifactor_score_v1",
+        )
 
     def test_low_valuation_and_low_quality_remain_avoid(self):
         metrics = metric_pack(

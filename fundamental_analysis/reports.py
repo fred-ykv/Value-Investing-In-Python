@@ -115,7 +115,26 @@ def peer_selection_table(peer_selection: PeerSelectionReport) -> list[dict[str, 
 
 
 def score_table(score: ScoreReport) -> list[dict[str, object]]:
-    return [asdict(dimension) for dimension in score.dimensions.values()]
+    contributions = {
+        contribution.name: contribution
+        for contribution in score.dimension_contributions
+    }
+    rows: list[dict[str, object]] = []
+    for name, dimension in score.dimensions.items():
+        row = asdict(dimension)
+        contribution = contributions.get(name)
+        if contribution is not None:
+            row.update(
+                {
+                    "configured_weight": contribution.configured_weight,
+                    "normalized_weight": contribution.normalized_weight,
+                    "weighted_contribution": (
+                        contribution.weighted_contribution
+                    ),
+                }
+            )
+        rows.append(row)
+    return rows
 
 
 def metric_lineage_table(metrics: dict[str, MetricValue]) -> list[dict[str, object]]:
@@ -345,6 +364,7 @@ def save_report_artifacts(ticker: str, report: dict[str, object], output_dir: st
             "peer_selection_table",
             "comparable_table",
             "score_table",
+            "score_configuration",
             "metric_lineage_table",
             "risk_diagnostics",
             "key_indicator_table",

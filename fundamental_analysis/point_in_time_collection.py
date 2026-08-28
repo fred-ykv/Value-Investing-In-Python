@@ -13,6 +13,7 @@ from .config import CYCLICAL, POINT_IN_TIME, PointInTimeAssumptions
 from .data_sources import metric_value
 from .historical_calibration import (
     HistoricalCalibrationObservation,
+    HistoricalScoreDimensionContribution,
     HistoricalValuationAssumptionAudit,
     HistoricalValuationMethodAudit,
 )
@@ -132,6 +133,35 @@ def collect_point_in_time_observation(
                 result.score.dimensions,
             )
         )
+        score_contributions = tuple(
+            HistoricalScoreDimensionContribution(
+                name=contribution.name,
+                score=contribution.score,
+                confidence=contribution.confidence,
+                configured_weight=contribution.configured_weight,
+                normalized_weight=contribution.normalized_weight,
+                weighted_contribution=contribution.weighted_contribution,
+            )
+            for contribution in result.score.dimension_contributions
+        )
+        score_weighted_total = (
+            sum(item.weighted_contribution for item in score_contributions)
+            if score_contributions
+            else None
+        )
+        score_reconciliation_difference = (
+            result.score.total_score - score_weighted_total
+            if score_weighted_total is not None
+            else None
+        )
+        if (
+            score_reconciliation_difference is not None
+            and abs(score_reconciliation_difference) > 1e-12
+        ):
+            raise ValueError(
+                "Contribuicoes dimensionais nao reconciliam com o score total"
+            )
+        score_configuration = result.score.configuration_audit
         critical_coverage, missing_critical = _critical_metric_audit(
             case,
             snapshot,
@@ -166,6 +196,25 @@ def collect_point_in_time_observation(
             as_of=as_of,
             company_type=result.company_type,
             total_score=result.score.total_score,
+            score_model_version=(
+                score_configuration.model_version if score_configuration else ""
+            ),
+            score_config_fingerprint=(
+                score_configuration.fingerprint if score_configuration else ""
+            ),
+            score_configured_weights=(
+                score_configuration.configured_weights
+                if score_configuration
+                else ()
+            ),
+            score_normalized_weights=(
+                score_configuration.normalized_weights
+                if score_configuration
+                else ()
+            ),
+            score_weighted_total=score_weighted_total,
+            score_reconciliation_difference=score_reconciliation_difference,
+            score_dimension_contributions=score_contributions,
             recommendation=result.score.recommendation,
             recommendation_before_gates=decision.recommendation_before_gates,
             recommendation_gate_code=decision.gate_code,

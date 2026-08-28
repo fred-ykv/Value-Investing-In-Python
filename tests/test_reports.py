@@ -228,6 +228,17 @@ class ReportTests(unittest.TestCase):
             self.assertIn("cash_flow_reconciliation", payload)
             self.assertTrue(payload["valuation_table"])
             self.assertIn("assumptions", payload["valuation_table"][0])
+            self.assertEqual(
+                payload["score_configuration"]["model_version"],
+                "multifactor_score_v1",
+            )
+            self.assertEqual(
+                len(payload["score_configuration"]["fingerprint"]),
+                64,
+            )
+            self.assertTrue(payload["score_table"])
+            self.assertIn("normalized_weight", payload["score_table"][0])
+            self.assertIn("weighted_contribution", payload["score_table"][0])
 
 
 if __name__ == "__main__":

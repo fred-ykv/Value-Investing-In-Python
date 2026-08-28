@@ -18,6 +18,16 @@ _MappingValue = TypeVar("_MappingValue")
 
 
 @dataclass(frozen=True)
+class HistoricalScoreDimensionContribution:
+    name: str
+    score: float
+    confidence: float
+    configured_weight: float
+    normalized_weight: float
+    weighted_contribution: float
+
+
+@dataclass(frozen=True)
 class HistoricalValuationAssumptionAudit:
     name: str
     input_value: float | None
@@ -134,6 +144,15 @@ class HistoricalCalibrationObservation:
     recommendation_avoid_if_valuation_below: float | None = None
     recommendation_avoid_if_quality_below: float | None = None
     valuation_method_audit: tuple[HistoricalValuationMethodAudit, ...] = ()
+    score_model_version: str = ""
+    score_config_fingerprint: str = ""
+    score_configured_weights: tuple[tuple[str, float], ...] = ()
+    score_normalized_weights: tuple[tuple[str, float], ...] = ()
+    score_weighted_total: float | None = None
+    score_reconciliation_difference: float | None = None
+    score_dimension_contributions: tuple[
+        HistoricalScoreDimensionContribution, ...
+    ] = ()
 
     @property
     def excess_return(self) -> float | None:
@@ -360,6 +379,13 @@ def write_historical_calibration_csv(
         "as_of",
         "company_type",
         "total_score",
+        "score_model_version",
+        "score_config_fingerprint",
+        "score_configured_weights",
+        "score_normalized_weights",
+        "score_weighted_total",
+        "score_reconciliation_difference",
+        "score_dimension_contributions",
         "recommendation",
         "recommendation_before_gates",
         "recommendation_gate_code",
@@ -455,6 +481,27 @@ def write_historical_calibration_csv(
                     "as_of": observation.as_of.isoformat(),
                     "company_type": observation.company_type,
                     "total_score": f"{observation.total_score:.6f}",
+                    "score_model_version": observation.score_model_version,
+                    "score_config_fingerprint": (
+                        observation.score_config_fingerprint
+                    ),
+                    "score_configured_weights": _format_mapping(
+                        observation.score_configured_weights
+                    ),
+                    "score_normalized_weights": _format_mapping(
+                        observation.score_normalized_weights
+                    ),
+                    "score_weighted_total": _format_optional(
+                        observation.score_weighted_total
+                    ),
+                    "score_reconciliation_difference": _format_optional(
+                        observation.score_reconciliation_difference
+                    ),
+                    "score_dimension_contributions": (
+                        _format_score_dimension_contributions(
+                            observation.score_dimension_contributions
+                        )
+                    ),
                     "recommendation": observation.recommendation,
                     "recommendation_before_gates": (
                         observation.recommendation_before_gates
@@ -676,6 +723,31 @@ def read_historical_calibration_csv(path: str | Path) -> list[HistoricalCalibrat
                     as_of=date.fromisoformat(row["as_of"]),
                     company_type=row["company_type"],
                     total_score=float(row["total_score"]),
+                    score_model_version=row.get(
+                        "score_model_version", ""
+                    ).strip(),
+                    score_config_fingerprint=row.get(
+                        "score_config_fingerprint", ""
+                    ).strip(),
+                    score_configured_weights=_parse_mapping(
+                        row.get("score_configured_weights", ""),
+                        float,
+                    ),
+                    score_normalized_weights=_parse_mapping(
+                        row.get("score_normalized_weights", ""),
+                        float,
+                    ),
+                    score_weighted_total=_parse_optional_float(
+                        row.get("score_weighted_total", "")
+                    ),
+                    score_reconciliation_difference=_parse_optional_float(
+                        row.get("score_reconciliation_difference", "")
+                    ),
+                    score_dimension_contributions=(
+                        _parse_score_dimension_contributions(
+                            row.get("score_dimension_contributions", "")
+                        )
+                    ),
                     recommendation=row["recommendation"],
                     recommendation_before_gates=row.get(
                         "recommendation_before_gates", ""
@@ -987,6 +1059,49 @@ def _parse_string_sequence(value: str | None) -> tuple[str, ...]:
     if not isinstance(payload, list):
         raise ValueError("Notas de custo de capital invalidas no CSV")
     return tuple(str(item) for item in payload)
+
+
+def _format_score_dimension_contributions(
+    contributions: Iterable[HistoricalScoreDimensionContribution],
+) -> str:
+    return json.dumps(
+        [asdict(contribution) for contribution in contributions],
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+
+
+def _parse_score_dimension_contributions(
+    value: str | None,
+) -> tuple[HistoricalScoreDimensionContribution, ...]:
+    value = (value or "").strip()
+    if not value:
+        return ()
+    payload = json.loads(value)
+    if not isinstance(payload, list):
+        raise ValueError("Contribuicoes dimensionais do score invalidas no CSV")
+    contributions: list[HistoricalScoreDimensionContribution] = []
+    for item in payload:
+        if not isinstance(item, dict):
+            raise ValueError("Contribuicao dimensional do score invalida no CSV")
+        contributions.append(
+            HistoricalScoreDimensionContribution(
+                name=str(item.get("name", "")).strip(),
+                score=float(item.get("score", 0.0) or 0.0),
+                confidence=float(item.get("confidence", 0.0) or 0.0),
+                configured_weight=float(
+                    item.get("configured_weight", 0.0) or 0.0
+                ),
+                normalized_weight=float(
+                    item.get("normalized_weight", 0.0) or 0.0
+                ),
+                weighted_contribution=float(
+                    item.get("weighted_contribution", 0.0) or 0.0
+                ),
+            )
+        )
+    return tuple(contributions)
 
 
 def _format_valuation_method_audit(

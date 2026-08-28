@@ -2,13 +2,26 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import hashlib
+import json
 from typing import Iterable, Mapping
 
 from .comparables import ComparableReport
-from .config import CompanyType, GROWTH_TECH, SCORE, VALUATION_SCORE
+from .config import CompanyType, GROWTH_TECH, SCORE, VALUATION_SCORE, ScoreWeights
 from .data_sources import MetricValue
 from .metrics import MetricPack
 from .valuation import ValuationResult
+
+
+SCORE_MODEL_VERSION = "multifactor_score_v1"
+SCORE_DIMENSIONS = (
+    "valuation",
+    "growth",
+    "quality",
+    "debt",
+    "liquidity",
+    "data_confidence",
+)
 
 
 @dataclass
@@ -17,6 +30,31 @@ class DimensionScore:
     score: float
     confidence: float
     explanation: str
+
+
+@dataclass(frozen=True)
+class DimensionContribution:
+    name: str
+    score: float
+    confidence: float
+    configured_weight: float
+    normalized_weight: float
+    weighted_contribution: float
+
+
+@dataclass(frozen=True)
+class ScoreConfigurationAudit:
+    model_version: str
+    company_type: str
+    configured_weights: tuple[tuple[str, float], ...]
+    normalized_weights: tuple[tuple[str, float], ...]
+    buy_threshold: float
+    watch_threshold: float
+    min_valuation_score_for_buy: float
+    avoid_if_valuation_below: float
+    avoid_if_quality_below: float
+    max_single_valuation_method_weight: float
+    fingerprint: str
 
 
 @dataclass(frozen=True)
@@ -43,10 +81,13 @@ class ScoreReport:
     dimensions: dict[str, DimensionScore] = field(default_factory=dict)
     explanation: str = ""
     recommendation_decision: RecommendationDecision | None = None
+    dimension_contributions: tuple[DimensionContribution, ...] = ()
+    configuration_audit: ScoreConfigurationAudit | None = None
 
 
 def compute_score(company_type: CompanyType, valuations: Iterable[ValuationResult], metrics: MetricPack, current_price: MetricValue, comparables: ComparableReport | None = None) -> ScoreReport:
-    weights = SCORE.weights_by_type[company_type].normalized()
+    configured_weights = SCORE.weights_by_type[company_type]
+    weights = configured_weights.normalized()
     valuations = list(valuations)
     dimensions = {
         "valuation": valuation_dimension(valuations, metrics, company_type, comparables),
@@ -56,14 +97,25 @@ def compute_score(company_type: CompanyType, valuations: Iterable[ValuationResul
         "liquidity": liquidity_dimension(metrics, company_type),
         "data_confidence": data_confidence_dimension(valuations, metrics),
     }
-    total = sum([
-        dimensions["valuation"].score * weights.valuation,
-        dimensions["growth"].score * weights.growth,
-        dimensions["quality"].score * weights.quality,
-        dimensions["debt"].score * weights.debt,
-        dimensions["liquidity"].score * weights.liquidity,
-        dimensions["data_confidence"].score * weights.data_confidence,
-    ])
+    contributions = tuple(
+        DimensionContribution(
+            name=name,
+            score=dimensions[name].score,
+            confidence=dimensions[name].confidence,
+            configured_weight=float(getattr(configured_weights, name)),
+            normalized_weight=float(getattr(weights, name)),
+            weighted_contribution=(
+                dimensions[name].score * float(getattr(weights, name))
+            ),
+        )
+        for name in SCORE_DIMENSIONS
+    )
+    total = sum(item.weighted_contribution for item in contributions)
+    configuration_audit = score_configuration_audit(
+        company_type,
+        configured_weights,
+        weights,
+    )
     decision = recommendation_decision_from_score(total, dimensions)
     recommendation = decision.final_recommendation
     return ScoreReport(
@@ -72,6 +124,60 @@ def compute_score(company_type: CompanyType, valuations: Iterable[ValuationResul
         dimensions,
         explain_score(recommendation, dimensions),
         decision,
+        contributions,
+        configuration_audit,
+    )
+
+
+def score_configuration_audit(
+    company_type: CompanyType,
+    configured_weights: ScoreWeights,
+    normalized_weights: ScoreWeights,
+) -> ScoreConfigurationAudit:
+    configured = tuple(
+        (name, float(getattr(configured_weights, name)))
+        for name in SCORE_DIMENSIONS
+    )
+    normalized = tuple(
+        (name, float(getattr(normalized_weights, name)))
+        for name in SCORE_DIMENSIONS
+    )
+    payload = {
+        "model_version": SCORE_MODEL_VERSION,
+        "company_type": company_type.value,
+        "configured_weights": dict(configured),
+        "normalized_weights": dict(normalized),
+        "buy_threshold": SCORE.buy_threshold,
+        "watch_threshold": SCORE.watch_threshold,
+        "min_valuation_score_for_buy": SCORE.min_valuation_score_for_buy,
+        "avoid_if_valuation_below": SCORE.avoid_if_valuation_below,
+        "avoid_if_quality_below": SCORE.avoid_if_quality_below,
+        "max_single_valuation_method_weight": (
+            SCORE.max_single_valuation_method_weight
+        ),
+    }
+    fingerprint = hashlib.sha256(
+        json.dumps(
+            payload,
+            ensure_ascii=True,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    return ScoreConfigurationAudit(
+        model_version=SCORE_MODEL_VERSION,
+        company_type=company_type.value,
+        configured_weights=configured,
+        normalized_weights=normalized,
+        buy_threshold=SCORE.buy_threshold,
+        watch_threshold=SCORE.watch_threshold,
+        min_valuation_score_for_buy=SCORE.min_valuation_score_for_buy,
+        avoid_if_valuation_below=SCORE.avoid_if_valuation_below,
+        avoid_if_quality_below=SCORE.avoid_if_quality_below,
+        max_single_valuation_method_weight=(
+            SCORE.max_single_valuation_method_weight
+        ),
+        fingerprint=fingerprint,
     )
 
 

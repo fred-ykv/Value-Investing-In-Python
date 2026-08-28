@@ -7,6 +7,7 @@ from pathlib import Path
 from fundamental_analysis.config import CalibrationAssumptions
 from fundamental_analysis.historical_calibration import (
     HistoricalCalibrationObservation,
+    HistoricalScoreDimensionContribution,
     HistoricalValuationAssumptionAudit,
     HistoricalValuationMethodAudit,
     evaluate_historical_outcomes,
@@ -116,6 +117,7 @@ class HistoricalCalibrationTests(unittest.TestCase):
     def test_csv_preserves_point_in_time_audit_fields(self):
         original = replace(
             observations()[0],
+            total_score=0.585,
             benchmark_ticker="SPY",
             price_start_date=date(2020, 4, 1),
             price_end_date=date(2021, 4, 1),
@@ -188,6 +190,46 @@ class HistoricalCalibrationTests(unittest.TestCase):
             recommendation_min_valuation_score_for_buy=0.45,
             recommendation_avoid_if_valuation_below=0.20,
             recommendation_avoid_if_quality_below=0.30,
+            score_model_version="multifactor_score_v1",
+            score_config_fingerprint="a" * 64,
+            score_configured_weights=(
+                ("valuation", 0.25),
+                ("growth", 0.15),
+                ("quality", 0.25),
+                ("debt", 0.15),
+                ("liquidity", 0.10),
+                ("data_confidence", 0.10),
+            ),
+            score_normalized_weights=(
+                ("valuation", 0.25),
+                ("growth", 0.15),
+                ("quality", 0.25),
+                ("debt", 0.15),
+                ("liquidity", 0.10),
+                ("data_confidence", 0.10),
+            ),
+            score_weighted_total=0.585,
+            score_reconciliation_difference=0.0,
+            score_dimension_contributions=(
+                HistoricalScoreDimensionContribution(
+                    "valuation", 0.40, 0.80, 0.25, 0.25, 0.10
+                ),
+                HistoricalScoreDimensionContribution(
+                    "growth", 0.60, 0.80, 0.15, 0.15, 0.09
+                ),
+                HistoricalScoreDimensionContribution(
+                    "quality", 0.80, 0.80, 0.25, 0.25, 0.20
+                ),
+                HistoricalScoreDimensionContribution(
+                    "debt", 0.50, 0.80, 0.15, 0.15, 0.075
+                ),
+                HistoricalScoreDimensionContribution(
+                    "liquidity", 0.50, 0.80, 0.10, 0.10, 0.05
+                ),
+                HistoricalScoreDimensionContribution(
+                    "data_confidence", 0.70, 0.80, 0.10, 0.10, 0.07
+                ),
+            ),
             valuation_method_audit=(
                 HistoricalValuationMethodAudit(
                     method="dcf_fcff",
@@ -242,6 +284,22 @@ class HistoricalCalibrationTests(unittest.TestCase):
             restored = read_historical_calibration_csv(path)[0]
 
         self.assertEqual(restored.benchmark_ticker, "SPY")
+        self.assertEqual(restored.score_model_version, "multifactor_score_v1")
+        self.assertEqual(restored.score_config_fingerprint, "a" * 64)
+        self.assertAlmostEqual(
+            sum(dict(restored.score_normalized_weights).values()),
+            1.0,
+        )
+        self.assertAlmostEqual(restored.score_weighted_total, 0.585)
+        self.assertAlmostEqual(restored.score_reconciliation_difference, 0.0)
+        self.assertEqual(len(restored.score_dimension_contributions), 6)
+        self.assertAlmostEqual(
+            sum(
+                item.weighted_contribution
+                for item in restored.score_dimension_contributions
+            ),
+            restored.total_score,
+        )
         self.assertEqual(restored.price_start_date, date(2020, 4, 1))
         self.assertEqual(restored.price_end_date, date(2021, 4, 1))
         self.assertEqual(
@@ -407,6 +465,13 @@ class HistoricalCalibrationTests(unittest.TestCase):
         self.assertFalse(restored.recommendation_gate_triggered)
         self.assertIsNone(restored.recommendation_buy_threshold)
         self.assertEqual(restored.valuation_method_audit, ())
+        self.assertEqual(restored.score_model_version, "")
+        self.assertEqual(restored.score_config_fingerprint, "")
+        self.assertEqual(restored.score_configured_weights, ())
+        self.assertEqual(restored.score_normalized_weights, ())
+        self.assertIsNone(restored.score_weighted_total)
+        self.assertIsNone(restored.score_reconciliation_difference)
+        self.assertEqual(restored.score_dimension_contributions, ())
 
     def test_previous_method_audit_schema_remains_readable(self):
         legacy_csv = (

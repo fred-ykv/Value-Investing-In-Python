@@ -23,6 +23,14 @@
   terminal-value share, without changing valuation formulas or parameters.
 - Distinguished fixed model parameters from data fallbacks and retained
   compatibility with both legacy CSVs and the previous method-audit schema.
+- Persisted configured and normalized weights plus the exact weighted
+  contribution of every score dimension, with a fail-closed reconciliation to
+  the reported total.
+- Added an explicit score-model version and deterministic configuration
+  fingerprint covering profile, weights, thresholds, gates, and the cap per
+  valuation method.
+- Exposed score contributions and the configuration fingerprint in both the
+  historical artifacts and the normal report JSON.
 - Centralized recommendation-gate evaluation and covered its boundary cases
   against the previous decision logic; recommendation behavior is unchanged.
 - Kept legacy historical CSVs readable without fabricating unavailable

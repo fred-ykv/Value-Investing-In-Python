@@ -236,6 +236,23 @@ class PointInTimeCollectionTests(unittest.TestCase):
             observation.valuation_price,
         )
         self.assertIn("pv_terminal_value", dict(dcf_audit.model_outputs))
+        self.assertEqual(observation.score_model_version, "multifactor_score_v1")
+        self.assertEqual(len(observation.score_config_fingerprint), 64)
+        self.assertEqual(len(observation.score_dimension_contributions), 6)
+        self.assertAlmostEqual(
+            sum(dict(observation.score_normalized_weights).values()),
+            1.0,
+        )
+        self.assertAlmostEqual(
+            observation.score_weighted_total,
+            observation.total_score,
+        )
+        self.assertAlmostEqual(observation.score_reconciliation_difference, 0.0)
+        for contribution in observation.score_dimension_contributions:
+            self.assertAlmostEqual(
+                contribution.score * contribution.normalized_weight,
+                contribution.weighted_contribution,
+            )
 
     def test_bank_critical_coverage_ignores_industrial_only_metrics(self):
         def get_json(url):

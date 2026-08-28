@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, replace
 from datetime import date
 from typing import Mapping
 
@@ -155,6 +155,11 @@ def analyze_ticker_from_inputs(ticker: str, income_statement: Mapping[str, objec
         "comparable_diagnostics": comparable_diagnostics_table(comparables),
         "key_indicator_table": key_indicator_table(metric_lineage),
         "score_table": score_table(score),
+        "score_configuration": (
+            asdict(score.configuration_audit)
+            if score.configuration_audit is not None
+            else {}
+        ),
         "metric_lineage_table": metric_lineage_table(metric_lineage),
         "risk_diagnostics": risk_diagnostics(score, valuations, metric_lineage),
         "didactic_summary": didactic_summary_table(score, metric_lineage, valuations),
