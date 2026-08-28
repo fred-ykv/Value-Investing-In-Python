@@ -136,6 +136,45 @@ class PointInTimeCollectionTests(unittest.TestCase):
         self.assertEqual(observation.security_cik, "0000001234")
         self.assertEqual(observation.universe_status, "active")
         self.assertEqual(observation.outcome_method, "market_price_12m")
+        dimension_pairs = (
+            (
+                observation.dimension_valuation_score,
+                observation.dimension_valuation_confidence,
+            ),
+            (
+                observation.dimension_growth_score,
+                observation.dimension_growth_confidence,
+            ),
+            (
+                observation.dimension_quality_score,
+                observation.dimension_quality_confidence,
+            ),
+            (
+                observation.dimension_debt_score,
+                observation.dimension_debt_confidence,
+            ),
+            (
+                observation.dimension_liquidity_score,
+                observation.dimension_liquidity_confidence,
+            ),
+            (
+                observation.dimension_data_confidence_score,
+                observation.dimension_data_confidence_confidence,
+            ),
+        )
+        self.assertTrue(
+            all(
+                score is not None
+                and confidence is not None
+                and 0.0 <= score <= 1.0
+                and 0.0 <= confidence <= 1.0
+                for score, confidence in dimension_pairs
+            )
+        )
+        self.assertAlmostEqual(
+            observation.dimension_data_confidence_score,
+            observation.data_confidence,
+        )
 
     def test_bank_critical_coverage_ignores_industrial_only_metrics(self):
         def get_json(url):
@@ -222,3 +261,4 @@ class PointInTimeCollectionTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

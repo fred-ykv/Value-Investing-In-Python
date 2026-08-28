@@ -142,6 +142,18 @@ class HistoricalCalibrationTests(unittest.TestCase):
             stock_terminal_date=date(2020, 7, 31),
             terminal_value_per_share=34.0,
             lifecycle_source_url="https://www.sec.gov/Archives/edgar/data/1234/filing.htm",
+            dimension_valuation_score=0.31,
+            dimension_valuation_confidence=0.71,
+            dimension_growth_score=0.62,
+            dimension_growth_confidence=0.72,
+            dimension_quality_score=0.53,
+            dimension_quality_confidence=0.73,
+            dimension_debt_score=0.74,
+            dimension_debt_confidence=0.74,
+            dimension_liquidity_score=0.85,
+            dimension_liquidity_confidence=0.75,
+            dimension_data_confidence_score=0.80,
+            dimension_data_confidence_confidence=0.80,
         )
         with TemporaryDirectory() as tempdir:
             path = Path(tempdir) / "history.csv"
@@ -195,7 +207,45 @@ class HistoricalCalibrationTests(unittest.TestCase):
         self.assertEqual(restored.stock_terminal_date, date(2020, 7, 31))
         self.assertEqual(restored.terminal_value_per_share, 34.0)
         self.assertIn("sec.gov", restored.lifecycle_source_url)
+        self.assertAlmostEqual(restored.dimension_valuation_score, 0.31)
+        self.assertAlmostEqual(restored.dimension_valuation_confidence, 0.71)
+        self.assertAlmostEqual(restored.dimension_growth_score, 0.62)
+        self.assertAlmostEqual(restored.dimension_growth_confidence, 0.72)
+        self.assertAlmostEqual(restored.dimension_quality_score, 0.53)
+        self.assertAlmostEqual(restored.dimension_quality_confidence, 0.73)
+        self.assertAlmostEqual(restored.dimension_debt_score, 0.74)
+        self.assertAlmostEqual(restored.dimension_debt_confidence, 0.74)
+        self.assertAlmostEqual(restored.dimension_liquidity_score, 0.85)
+        self.assertAlmostEqual(restored.dimension_liquidity_confidence, 0.75)
+        self.assertAlmostEqual(restored.dimension_data_confidence_score, 0.80)
+        self.assertAlmostEqual(
+            restored.dimension_data_confidence_confidence,
+            0.80,
+        )
+
+    def test_legacy_csv_infers_only_the_existing_data_confidence_dimension(self):
+        legacy_csv = (
+            "ticker,as_of,company_type,total_score,recommendation,data_confidence,"
+            "forward_return,benchmark_return,max_drawdown,point_in_time_validated\n"
+            "OLD,2020-03-31,tradicional,0.61,Observar,0.77,0.10,0.04,-0.20,1\n"
+        )
+        with TemporaryDirectory() as tempdir:
+            path = Path(tempdir) / "legacy.csv"
+            path.write_text(legacy_csv, encoding="utf-8")
+            restored = read_historical_calibration_csv(path)[0]
+
+        self.assertIsNone(restored.dimension_valuation_score)
+        self.assertIsNone(restored.dimension_growth_score)
+        self.assertIsNone(restored.dimension_quality_score)
+        self.assertIsNone(restored.dimension_debt_score)
+        self.assertIsNone(restored.dimension_liquidity_score)
+        self.assertAlmostEqual(restored.dimension_data_confidence_score, 0.77)
+        self.assertAlmostEqual(
+            restored.dimension_data_confidence_confidence,
+            0.77,
+        )
 
 
 if __name__ == "__main__":
     unittest.main()
+

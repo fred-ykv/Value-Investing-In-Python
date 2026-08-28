@@ -67,6 +67,18 @@ class HistoricalCalibrationObservation:
     stock_terminal_date: date | None = None
     terminal_value_per_share: float | None = None
     lifecycle_source_url: str = ""
+    dimension_valuation_score: float | None = None
+    dimension_valuation_confidence: float | None = None
+    dimension_growth_score: float | None = None
+    dimension_growth_confidence: float | None = None
+    dimension_quality_score: float | None = None
+    dimension_quality_confidence: float | None = None
+    dimension_debt_score: float | None = None
+    dimension_debt_confidence: float | None = None
+    dimension_liquidity_score: float | None = None
+    dimension_liquidity_confidence: float | None = None
+    dimension_data_confidence_score: float | None = None
+    dimension_data_confidence_confidence: float | None = None
 
     @property
     def excess_return(self) -> float | None:
@@ -295,6 +307,18 @@ def write_historical_calibration_csv(
         "total_score",
         "recommendation",
         "data_confidence",
+        "dimension_valuation_score",
+        "dimension_valuation_confidence",
+        "dimension_growth_score",
+        "dimension_growth_confidence",
+        "dimension_quality_score",
+        "dimension_quality_confidence",
+        "dimension_debt_score",
+        "dimension_debt_confidence",
+        "dimension_liquidity_score",
+        "dimension_liquidity_confidence",
+        "dimension_data_confidence_score",
+        "dimension_data_confidence_confidence",
         "forward_return",
         "benchmark_return",
         "max_drawdown",
@@ -354,6 +378,42 @@ def write_historical_calibration_csv(
                     "total_score": f"{observation.total_score:.6f}",
                     "recommendation": observation.recommendation,
                     "data_confidence": f"{observation.data_confidence:.6f}",
+                    "dimension_valuation_score": _format_optional(
+                        observation.dimension_valuation_score
+                    ),
+                    "dimension_valuation_confidence": _format_optional(
+                        observation.dimension_valuation_confidence
+                    ),
+                    "dimension_growth_score": _format_optional(
+                        observation.dimension_growth_score
+                    ),
+                    "dimension_growth_confidence": _format_optional(
+                        observation.dimension_growth_confidence
+                    ),
+                    "dimension_quality_score": _format_optional(
+                        observation.dimension_quality_score
+                    ),
+                    "dimension_quality_confidence": _format_optional(
+                        observation.dimension_quality_confidence
+                    ),
+                    "dimension_debt_score": _format_optional(
+                        observation.dimension_debt_score
+                    ),
+                    "dimension_debt_confidence": _format_optional(
+                        observation.dimension_debt_confidence
+                    ),
+                    "dimension_liquidity_score": _format_optional(
+                        observation.dimension_liquidity_score
+                    ),
+                    "dimension_liquidity_confidence": _format_optional(
+                        observation.dimension_liquidity_confidence
+                    ),
+                    "dimension_data_confidence_score": _format_optional(
+                        observation.dimension_data_confidence_score
+                    ),
+                    "dimension_data_confidence_confidence": _format_optional(
+                        observation.dimension_data_confidence_confidence
+                    ),
                     "forward_return": _format_optional(observation.forward_return),
                     "benchmark_return": _format_optional(observation.benchmark_return),
                     "max_drawdown": _format_optional(observation.max_drawdown),
@@ -464,6 +524,13 @@ def read_historical_calibration_csv(path: str | Path) -> list[HistoricalCalibrat
             erp_available_date = row.get("erp_available_date", "").strip()
             lifecycle_event_date = row.get("lifecycle_event_date", "").strip()
             stock_terminal_date = row.get("stock_terminal_date", "").strip()
+            legacy_data_confidence = float(row["data_confidence"])
+            dimension_data_confidence_score = _parse_optional_float(
+                row.get("dimension_data_confidence_score", "")
+            )
+            dimension_data_confidence_confidence = _parse_optional_float(
+                row.get("dimension_data_confidence_confidence", "")
+            )
             observations.append(
                 HistoricalCalibrationObservation(
                     ticker=row["ticker"].upper().strip(),
@@ -471,7 +538,7 @@ def read_historical_calibration_csv(path: str | Path) -> list[HistoricalCalibrat
                     company_type=row["company_type"],
                     total_score=float(row["total_score"]),
                     recommendation=row["recommendation"],
-                    data_confidence=float(row["data_confidence"]),
+                    data_confidence=legacy_data_confidence,
                     forward_return=_parse_optional_float(row.get("forward_return", "")),
                     benchmark_return=_parse_optional_float(row.get("benchmark_return", "")),
                     max_drawdown=_parse_optional_float(row.get("max_drawdown", "")),
@@ -581,6 +648,46 @@ def read_historical_calibration_csv(path: str | Path) -> list[HistoricalCalibrat
                     lifecycle_source_url=row.get(
                         "lifecycle_source_url", ""
                     ).strip(),
+                    dimension_valuation_score=_parse_optional_float(
+                        row.get("dimension_valuation_score", "")
+                    ),
+                    dimension_valuation_confidence=_parse_optional_float(
+                        row.get("dimension_valuation_confidence", "")
+                    ),
+                    dimension_growth_score=_parse_optional_float(
+                        row.get("dimension_growth_score", "")
+                    ),
+                    dimension_growth_confidence=_parse_optional_float(
+                        row.get("dimension_growth_confidence", "")
+                    ),
+                    dimension_quality_score=_parse_optional_float(
+                        row.get("dimension_quality_score", "")
+                    ),
+                    dimension_quality_confidence=_parse_optional_float(
+                        row.get("dimension_quality_confidence", "")
+                    ),
+                    dimension_debt_score=_parse_optional_float(
+                        row.get("dimension_debt_score", "")
+                    ),
+                    dimension_debt_confidence=_parse_optional_float(
+                        row.get("dimension_debt_confidence", "")
+                    ),
+                    dimension_liquidity_score=_parse_optional_float(
+                        row.get("dimension_liquidity_score", "")
+                    ),
+                    dimension_liquidity_confidence=_parse_optional_float(
+                        row.get("dimension_liquidity_confidence", "")
+                    ),
+                    dimension_data_confidence_score=(
+                        dimension_data_confidence_score
+                        if dimension_data_confidence_score is not None
+                        else legacy_data_confidence
+                    ),
+                    dimension_data_confidence_confidence=(
+                        dimension_data_confidence_confidence
+                        if dimension_data_confidence_confidence is not None
+                        else legacy_data_confidence
+                    ),
                 )
             )
     return observations
@@ -634,3 +741,4 @@ def _format_optional(value: float | None) -> str:
 def _parse_optional_float(value: str | None) -> float | None:
     value = (value or "").strip()
     return float(value) if value else None
+

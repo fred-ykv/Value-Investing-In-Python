@@ -1,5 +1,15 @@
 # Changelog
 
+## Auditable historical score dimensions
+
+- Persisted score and confidence for valuation, growth, quality, debt,
+  liquidity, and data-confidence dimensions in every point-in-time historical
+  observation, CSV export, and collection manifest.
+- Kept legacy historical CSVs readable without fabricating unavailable
+  dimensions; the pre-existing data-confidence value remains recoverable.
+- Kept score formulas, weights, gates, and recommendation thresholds
+  unchanged.
+
 ## Delisted-price provider and preflight
 
 - Added a Tiingo EOD client for the ten historical lifecycle cases, including
@@ -159,3 +169,4 @@ Original notebooks remain unchanged.
 - Added strict availability dates, staleness controls, source lineage, caching, and rejection of unavailable macro observations without a current-data fallback.
 - Persisted risk-free rate, ERP, Ke, WACC or applied discount rate, cost-of-capital method, confidence, and fallback status in historical calibration CSVs.
 - Re-ran the MLI/NUE pilot with 6/6 valid macro observations and documented recommendation sensitivity without changing score weights or thresholds.
+

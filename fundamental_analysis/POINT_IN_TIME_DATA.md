@@ -54,6 +54,12 @@ desconto efetivamente aplicada, metodo, confianca e uso de fallback. A
 observacao deixa de ser point-in-time valida se uma das premissas macro ainda
 nao estava disponivel na data-base. Nao existe fallback para taxas atuais.
 
+O mesmo CSV preserva, em colunas separadas, score e confianca das seis
+dimensoes calculadas na data-base: valuation, crescimento, qualidade, divida,
+liquidez e confianca dos dados. Arquivos antigos continuam legiveis; dimensoes
+que nao existiam no esquema anterior permanecem ausentes em vez de serem
+inferidas.
+
 ## Normalizacao point-in-time de empresas ciclicas
 
 Os casos ciclicos definidos no universo de benchmark carregam ate dez filings
@@ -118,7 +124,7 @@ Detalhes: `fundamental_analysis/TIINGO_HISTORICAL_PRICES.md`.
 
 Os arquivos sao gravados em `historical_calibration_outputs/`:
 
-- `historical_observations.csv`: observacoes, premissas macro, custo de capital e auditoria da normalizacao ciclica;
+- `historical_observations.csv`: observacoes, scores e confiancas dimensionais, premissas macro, custo de capital e auditoria da normalizacao ciclica;
 - `collection_manifest.json`: trilha detalhada de sucessos, avisos e erros;
 - `collection_report.md`: cobertura por ticker e filing;
 - `historical_calibration.md`: Spearman, monotonicidade, retorno e drawdown.
@@ -175,3 +181,4 @@ data-base. O ERP anual tambem passa por uma data conservadora de disponibilidade
   ampliado depende da importacao de precos de um provedor com deslistadas.
 - O benchmark de 40 empresas e sua decisao de governanca estao resumidos em
   `fundamental_analysis/BENCHMARK_TEMPORAL_40.md`.
+

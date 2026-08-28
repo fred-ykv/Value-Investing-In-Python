@@ -109,8 +109,18 @@ def collect_point_in_time_observation(
             analyzer,
             cyclical_history,
         )
-        data_dimension = result.score.dimensions.get("data_confidence")
-        data_confidence = data_dimension.score if data_dimension is not None else 0.0
+        dimension_audit = {
+            name: _score_dimension_audit(result, name)
+            for name in (
+                "valuation",
+                "growth",
+                "quality",
+                "debt",
+                "liquidity",
+                "data_confidence",
+            )
+        }
+        data_confidence = dimension_audit["data_confidence"][0] or 0.0
         critical_coverage, missing_critical = _critical_metric_audit(
             case,
             snapshot,
@@ -209,6 +219,20 @@ def collect_point_in_time_observation(
             lifecycle_source_url=(
                 case.lifecycle_event.source_url if case.lifecycle_event else ""
             ),
+            dimension_valuation_score=dimension_audit["valuation"][0],
+            dimension_valuation_confidence=dimension_audit["valuation"][1],
+            dimension_growth_score=dimension_audit["growth"][0],
+            dimension_growth_confidence=dimension_audit["growth"][1],
+            dimension_quality_score=dimension_audit["quality"][0],
+            dimension_quality_confidence=dimension_audit["quality"][1],
+            dimension_debt_score=dimension_audit["debt"][0],
+            dimension_debt_confidence=dimension_audit["debt"][1],
+            dimension_liquidity_score=dimension_audit["liquidity"][0],
+            dimension_liquidity_confidence=dimension_audit["liquidity"][1],
+            dimension_data_confidence_score=dimension_audit["data_confidence"][0],
+            dimension_data_confidence_confidence=dimension_audit[
+                "data_confidence"
+            ][1],
         )
         return PointInTimeCollectionResult(
             ticker=case.ticker.upper(),
@@ -471,6 +495,16 @@ def _metric_number(metric: object) -> float | None:
     return float(value) if value is not None else None
 
 
+def _score_dimension_audit(
+    result: AnalysisResult,
+    name: str,
+) -> tuple[float | None, float | None]:
+    dimension = result.score.dimensions.get(name)
+    if dimension is None:
+        return None, None
+    return float(dimension.score), float(dimension.confidence)
+
+
 def _cycle_audit_label(
     observation: HistoricalCalibrationObservation | None,
 ) -> str:
@@ -565,3 +599,4 @@ def _critical_metric_audit(
         < assumptions.minimum_critical_metric_confidence
     )
     return (len(required) - len(missing)) / len(required), missing
+
