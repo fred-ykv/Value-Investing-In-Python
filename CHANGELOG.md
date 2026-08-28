@@ -15,6 +15,14 @@
 - Persisted the historical valuation price and a per-method valuation audit
   with fair value, margin of safety, confidence, source, score inclusion, and
   exclusion reason.
+- Added a common assumption ledger to DCF/FCFF, Graham, EVA, Residual Income,
+  DDM, and Growth/Tech, preserving input value, effective value, source,
+  confidence, fallback, note, and formula for every model input.
+- Persisted enterprise/equity values and selected intermediate outputs,
+  including explicit-stage present value, terminal-value present value and
+  terminal-value share, without changing valuation formulas or parameters.
+- Distinguished fixed model parameters from data fallbacks and retained
+  compatibility with both legacy CSVs and the previous method-audit schema.
 - Centralized recommendation-gate evaluation and covered its boundary cases
   against the previous decision logic; recommendation behavior is unchanged.
 - Kept legacy historical CSVs readable without fabricating unavailable

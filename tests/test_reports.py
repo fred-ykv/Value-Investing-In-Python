@@ -227,8 +227,8 @@ class ReportTests(unittest.TestCase):
             self.assertAlmostEqual(payload["cost_of_capital"]["discount_rate"], 0.10)
             self.assertIn("cash_flow_reconciliation", payload)
             self.assertTrue(payload["valuation_table"])
+            self.assertIn("assumptions", payload["valuation_table"][0])
 
 
 if __name__ == "__main__":
     unittest.main()
-

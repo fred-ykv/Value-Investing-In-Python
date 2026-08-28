@@ -76,6 +76,16 @@ permitindo reconciliar a margem de seguranca. Um metodo entra no score somente
 quando possui margem de seguranca e confianca maior que zero, exatamente como
 na regra de scoring. Arquivos antigos nao recebem metodos ou travas inferidos.
 
+Cada metodo tambem carrega um livro de premissas com nome, valor recebido,
+valor efetivamente usado, fonte, confianca, fallback, nota e formula. Essa
+distincao evidencia limites e ajustes sem confundir um parametro fixo do modelo
+com a substituicao de um dado ausente. DCF/FCFF e Growth/Tech preservam ainda o
+valor presente do periodo explicito, o valor presente terminal e a participacao
+do terminal no enterprise value; EVA preserva o lucro economico e seu valor
+presente. Valores de empresa e patrimonio ficam registrados quando existirem.
+Nenhuma dessas informacoes altera o calculo: elas apenas tornam a execucao
+historica reproduzivel.
+
 ## Normalizacao point-in-time de empresas ciclicas
 
 Os casos ciclicos definidos no universo de benchmark carregam ate dez filings

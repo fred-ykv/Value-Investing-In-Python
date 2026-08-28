@@ -58,6 +58,9 @@ def valuation_table(valuations: Iterable[ValuationResult]) -> list[dict[str, obj
                 "confidence": valuation.confidence,
                 "source": valuation.source,
                 "diagnostics": valuation.diagnostics,
+                "assumptions": [
+                    asdict(assumption) for assumption in valuation.assumptions
+                ],
             }
         )
     return rows

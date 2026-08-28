@@ -18,6 +18,18 @@ _MappingValue = TypeVar("_MappingValue")
 
 
 @dataclass(frozen=True)
+class HistoricalValuationAssumptionAudit:
+    name: str
+    input_value: float | None
+    effective_value: float | None
+    source: str
+    confidence: float
+    is_fallback: bool = False
+    note: str = ""
+    formula: str = ""
+
+
+@dataclass(frozen=True)
 class HistoricalValuationMethodAudit:
     method: str
     used_in_score: bool
@@ -26,6 +38,10 @@ class HistoricalValuationMethodAudit:
     confidence: float
     source: str
     exclusion_reason: str = ""
+    enterprise_value: float | None = None
+    equity_value: float | None = None
+    model_outputs: tuple[tuple[str, float], ...] = ()
+    assumptions: tuple[HistoricalValuationAssumptionAudit, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -1010,6 +1026,14 @@ def _parse_valuation_method_audit(
                 confidence=float(item.get("confidence", 0.0) or 0.0),
                 source=str(item.get("source", "")).strip(),
                 exclusion_reason=str(item.get("exclusion_reason", "")).strip(),
+                enterprise_value=_parse_optional_number(
+                    item.get("enterprise_value")
+                ),
+                equity_value=_parse_optional_number(item.get("equity_value")),
+                model_outputs=_parse_numeric_pairs(item.get("model_outputs", [])),
+                assumptions=_parse_valuation_assumptions(
+                    item.get("assumptions", [])
+                ),
             )
         )
     return tuple(methods)
@@ -1017,3 +1041,44 @@ def _parse_valuation_method_audit(
 
 def _parse_optional_number(value: object) -> float | None:
     return None if value is None or value == "" else float(value)
+
+
+def _parse_numeric_pairs(value: object) -> tuple[tuple[str, float], ...]:
+    if value in (None, ""):
+        return ()
+    if not isinstance(value, list):
+        raise ValueError("Saidas intermediarias de valuation invalidas no CSV")
+    pairs: list[tuple[str, float]] = []
+    for item in value:
+        if not isinstance(item, (list, tuple)) or len(item) != 2:
+            raise ValueError("Saida intermediaria de valuation invalida no CSV")
+        pairs.append((str(item[0]), float(item[1])))
+    return tuple(pairs)
+
+
+def _parse_valuation_assumptions(
+    value: object,
+) -> tuple[HistoricalValuationAssumptionAudit, ...]:
+    if value in (None, ""):
+        return ()
+    if not isinstance(value, list):
+        raise ValueError("Premissas de valuation invalidas no CSV")
+    assumptions: list[HistoricalValuationAssumptionAudit] = []
+    for item in value:
+        if not isinstance(item, dict):
+            raise ValueError("Premissa de valuation invalida no CSV")
+        assumptions.append(
+            HistoricalValuationAssumptionAudit(
+                name=str(item.get("name", "")).strip(),
+                input_value=_parse_optional_number(item.get("input_value")),
+                effective_value=_parse_optional_number(
+                    item.get("effective_value")
+                ),
+                source=str(item.get("source", "")).strip(),
+                confidence=float(item.get("confidence", 0.0) or 0.0),
+                is_fallback=_parse_bool(item.get("is_fallback", False)),
+                note=str(item.get("note", "")).strip(),
+                formula=str(item.get("formula", "")).strip(),
+            )
+        )
+    return tuple(assumptions)

@@ -210,6 +210,32 @@ class PointInTimeCollectionTests(unittest.TestCase):
             )
             if not method.used_in_score:
                 self.assertTrue(method.exclusion_reason)
+            self.assertTrue(method.assumptions)
+            self.assertTrue(
+                all(
+                    assumption.name
+                    and assumption.source
+                    and 0.0 <= assumption.confidence <= 1.0
+                    for assumption in method.assumptions
+                )
+            )
+        dcf_audit = next(
+            method
+            for method in observation.valuation_method_audit
+            if method.method == "dcf_fcff"
+        )
+        dcf_assumptions = {
+            assumption.name: assumption for assumption in dcf_audit.assumptions
+        }
+        self.assertAlmostEqual(
+            dcf_assumptions["discount_rate"].effective_value,
+            observation.discount_rate,
+        )
+        self.assertEqual(
+            dcf_assumptions["current_price"].effective_value,
+            observation.valuation_price,
+        )
+        self.assertIn("pv_terminal_value", dict(dcf_audit.model_outputs))
 
     def test_bank_critical_coverage_ignores_industrial_only_metrics(self):
         def get_json(url):

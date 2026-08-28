@@ -13,6 +13,7 @@ from .config import CYCLICAL, POINT_IN_TIME, PointInTimeAssumptions
 from .data_sources import metric_value
 from .historical_calibration import (
     HistoricalCalibrationObservation,
+    HistoricalValuationAssumptionAudit,
     HistoricalValuationMethodAudit,
 )
 from .historical_macro import HistoricalMacroProvider, HistoricalMacroSnapshot
@@ -553,6 +554,39 @@ def _valuation_method_audit(valuation: object) -> HistoricalValuationMethodAudit
         else:
             exclusion_reason = "Confianca igual a zero"
     fair_value = getattr(valuation, "fair_value_per_share", None)
+    enterprise_value = getattr(valuation, "enterprise_value", None)
+    equity_value = getattr(valuation, "equity_value", None)
+    output_keys = (
+        "pv_explicit_stage",
+        "pv_terminal_value",
+        "terminal_value_share",
+        "explicit_stage_share",
+        "economic_profit",
+        "pv_economic_profit",
+        "net_debt_adjustment",
+    )
+    model_outputs = tuple(
+        (key, float(diagnostics[key]))
+        for key in output_keys
+        if diagnostics.get(key) is not None
+    )
+    assumptions = tuple(
+        HistoricalValuationAssumptionAudit(
+            name=str(getattr(assumption, "name", "")),
+            input_value=_optional_float(
+                getattr(assumption, "input_value", None)
+            ),
+            effective_value=_optional_float(
+                getattr(assumption, "effective_value", None)
+            ),
+            source=str(getattr(assumption, "source", "")),
+            confidence=float(getattr(assumption, "confidence", 0.0) or 0.0),
+            is_fallback=bool(getattr(assumption, "is_fallback", False)),
+            note=str(getattr(assumption, "note", "")),
+            formula=str(getattr(assumption, "formula", "")),
+        )
+        for assumption in (getattr(valuation, "assumptions", ()) or ())
+    )
     return HistoricalValuationMethodAudit(
         method=str(getattr(valuation, "method", "")),
         used_in_score=used_in_score,
@@ -563,11 +597,19 @@ def _valuation_method_audit(valuation: object) -> HistoricalValuationMethodAudit
         confidence=confidence,
         source=str(getattr(valuation, "source", "")),
         exclusion_reason=exclusion_reason,
+        enterprise_value=_optional_float(enterprise_value),
+        equity_value=_optional_float(equity_value),
+        model_outputs=model_outputs,
+        assumptions=assumptions,
     )
 
 
 def _metric_number(metric: object) -> float | None:
     value = getattr(metric, "value", None)
+    return float(value) if value is not None else None
+
+
+def _optional_float(value: object) -> float | None:
     return float(value) if value is not None else None
 
 

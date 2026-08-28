@@ -7,6 +7,7 @@ from pathlib import Path
 from fundamental_analysis.config import CalibrationAssumptions
 from fundamental_analysis.historical_calibration import (
     HistoricalCalibrationObservation,
+    HistoricalValuationAssumptionAudit,
     HistoricalValuationMethodAudit,
     evaluate_historical_outcomes,
     read_historical_calibration_csv,
@@ -195,6 +196,34 @@ class HistoricalCalibrationTests(unittest.TestCase):
                     margin_of_safety=0.20,
                     confidence=0.82,
                     source="derived",
+                    enterprise_value=12_500.0,
+                    equity_value=12_000.0,
+                    model_outputs=(
+                        ("pv_explicit_stage", 4_000.0),
+                        ("pv_terminal_value", 8_500.0),
+                        ("terminal_value_share", 0.68),
+                    ),
+                    assumptions=(
+                        HistoricalValuationAssumptionAudit(
+                            name="discount_rate",
+                            input_value=0.085,
+                            effective_value=0.085,
+                            source="historical_wacc",
+                            confidence=0.81,
+                            is_fallback=False,
+                            note="WACC point-in-time",
+                            formula="market_value_wacc",
+                        ),
+                        HistoricalValuationAssumptionAudit(
+                            name="terminal_growth_rate",
+                            input_value=None,
+                            effective_value=0.025,
+                            source="fallback",
+                            confidence=0.45,
+                            is_fallback=True,
+                            note="Premissa padrao de config.py",
+                        ),
+                    ),
                 ),
                 HistoricalValuationMethodAudit(
                     method="graham",
@@ -326,6 +355,19 @@ class HistoricalCalibrationTests(unittest.TestCase):
             restored.valuation_method_audit[0].margin_of_safety,
             0.20,
         )
+        dcf_audit = restored.valuation_method_audit[0]
+        self.assertAlmostEqual(dcf_audit.enterprise_value, 12_500.0)
+        self.assertAlmostEqual(dcf_audit.equity_value, 12_000.0)
+        self.assertAlmostEqual(
+            dict(dcf_audit.model_outputs)["terminal_value_share"],
+            0.68,
+        )
+        self.assertEqual(len(dcf_audit.assumptions), 2)
+        self.assertEqual(dcf_audit.assumptions[0].source, "historical_wacc")
+        self.assertFalse(dcf_audit.assumptions[0].is_fallback)
+        self.assertIsNone(dcf_audit.assumptions[1].input_value)
+        self.assertAlmostEqual(dcf_audit.assumptions[1].effective_value, 0.025)
+        self.assertTrue(dcf_audit.assumptions[1].is_fallback)
         self.assertEqual(
             restored.valuation_method_audit[1].exclusion_reason,
             "missing EPS",
@@ -365,6 +407,30 @@ class HistoricalCalibrationTests(unittest.TestCase):
         self.assertFalse(restored.recommendation_gate_triggered)
         self.assertIsNone(restored.recommendation_buy_threshold)
         self.assertEqual(restored.valuation_method_audit, ())
+
+    def test_previous_method_audit_schema_remains_readable(self):
+        legacy_csv = (
+            "ticker,as_of,company_type,total_score,recommendation,data_confidence,"
+            "forward_return,benchmark_return,max_drawdown,point_in_time_validated,"
+            "valuation_method_audit\n"
+            'OLD,2020-03-31,tradicional,0.61,Observar,0.77,0.10,0.04,-0.20,1,'
+            '"[{""method"":""dcf_fcff"",""used_in_score"":true,'
+            '""fair_value_per_share"":120.0,""margin_of_safety"":0.20,'
+            '""confidence"":0.82,""source"":""derived""}]"\n'
+        )
+        with TemporaryDirectory() as tempdir:
+            path = Path(tempdir) / "legacy_method_audit.csv"
+            path.write_text(legacy_csv, encoding="utf-8")
+            restored = read_historical_calibration_csv(path)[0]
+
+        self.assertEqual(len(restored.valuation_method_audit), 1)
+        method = restored.valuation_method_audit[0]
+        self.assertEqual(method.method, "dcf_fcff")
+        self.assertTrue(method.used_in_score)
+        self.assertIsNone(method.enterprise_value)
+        self.assertIsNone(method.equity_value)
+        self.assertEqual(method.model_outputs, ())
+        self.assertEqual(method.assumptions, ())
 
 
 if __name__ == "__main__":
