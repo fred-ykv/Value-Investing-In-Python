@@ -242,6 +242,9 @@ class PointInTimeAssumptions:
     minimum_filing_lag_days: int = 1
     minimum_fundamental_coverage: float = 0.70
     minimum_critical_metric_confidence: float = 0.30
+    minimum_annual_comparative_gap_days: int = 300
+    maximum_annual_comparative_gap_days: int = 430
+    fcff_growth_derivation_confidence_penalty: float = 0.05
     zero_debt_fallback_confidence: float = 0.35
     weighted_average_shares_fallback_confidence: float = 0.75
     price_start_max_lag_days: int = 7

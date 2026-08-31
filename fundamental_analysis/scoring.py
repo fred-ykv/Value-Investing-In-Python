@@ -56,6 +56,14 @@ class ScoreComponentAudit:
     source: str
     used: bool
     reason: str = ""
+    source_document: str = ""
+    period_start: str = ""
+    period_end: str = ""
+    filing_date: str = ""
+    formula: str = ""
+    note: str = ""
+    is_fallback: bool = False
+    input_observations: tuple[tuple[str, float], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -504,7 +512,7 @@ def _metric_average_component_audit(
         and metrics.values[name].value is not None
     ]
     if not available:
-        return [
+        components = [
             ScoreComponentAudit(
                 dimension,
                 "dimension",
@@ -520,6 +528,51 @@ def _metric_average_component_audit(
                 "Nenhum componente da dimensao ficou disponivel.",
             )
         ]
+        for name, _, _ in specifications:
+            metric = metrics.values.get(name)
+            components.append(
+                ScoreComponentAudit(
+                    dimension,
+                    "dimension",
+                    name,
+                    None,
+                    None,
+                    1.0,
+                    0.0,
+                    0.0,
+                    metric.confidence if metric else 0.0,
+                    metric.source if metric else "missing",
+                    False,
+                    (
+                        metric.note
+                        if metric and metric.note
+                        else "Metrica indisponivel; fallback neutro da dimensao aplicado."
+                    ),
+                    source_document=(metric.source_document or "") if metric else "",
+                    period_start=(
+                        metric.period_start.isoformat()
+                        if metric and metric.period_start
+                        else ""
+                    ),
+                    period_end=(
+                        metric.period_end.isoformat()
+                        if metric and metric.period_end
+                        else ""
+                    ),
+                    filing_date=(
+                        metric.filing_date.isoformat()
+                        if metric and metric.filing_date
+                        else ""
+                    ),
+                    formula=(metric.formula or "") if metric else "",
+                    note=metric.note if metric else "",
+                    is_fallback=metric.is_fallback if metric else False,
+                    input_observations=(
+                        metric.input_observations if metric else ()
+                    ),
+                )
+            )
+        return components
     effective_weight = 1.0 / len(available)
     components = [
         ScoreComponentAudit(
@@ -534,6 +587,18 @@ def _metric_average_component_audit(
             metric.confidence,
             metric.source,
             True,
+            source_document=metric.source_document or "",
+            period_start=(
+                metric.period_start.isoformat() if metric.period_start else ""
+            ),
+            period_end=(metric.period_end.isoformat() if metric.period_end else ""),
+            filing_date=(
+                metric.filing_date.isoformat() if metric.filing_date else ""
+            ),
+            formula=metric.formula or "",
+            note=metric.note,
+            is_fallback=metric.is_fallback,
+            input_observations=metric.input_observations,
         )
         for name, low, high, metric in available
     ]
@@ -554,7 +619,33 @@ def _metric_average_component_audit(
                     metric.confidence if metric else 0.0,
                     metric.source if metric else "missing",
                     False,
-                    "Metrica indisponivel; removida da media dinamica.",
+                    (
+                        metric.note
+                        if metric and metric.note
+                        else "Metrica indisponivel; removida da media dinamica."
+                    ),
+                    source_document=(metric.source_document or "") if metric else "",
+                    period_start=(
+                        metric.period_start.isoformat()
+                        if metric and metric.period_start
+                        else ""
+                    ),
+                    period_end=(
+                        metric.period_end.isoformat()
+                        if metric and metric.period_end
+                        else ""
+                    ),
+                    filing_date=(
+                        metric.filing_date.isoformat()
+                        if metric and metric.filing_date
+                        else ""
+                    ),
+                    formula=(metric.formula or "") if metric else "",
+                    note=metric.note if metric else "",
+                    is_fallback=metric.is_fallback if metric else False,
+                    input_observations=(
+                        metric.input_observations if metric else ()
+                    ),
                 )
             )
     return components
@@ -633,6 +724,14 @@ def _debt_component_audit(
             item.source,
             item.used,
             item.reason,
+            source_document=item.source_document,
+            period_start=item.period_start,
+            period_end=item.period_end,
+            filing_date=item.filing_date,
+            formula=item.formula,
+            note=item.note,
+            is_fallback=item.is_fallback,
+            input_observations=item.input_observations,
         )
         for item in components
     ]

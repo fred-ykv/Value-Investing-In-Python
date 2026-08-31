@@ -79,12 +79,29 @@ def compute_free_cash_flow_after_capex(values: Mapping[str, MetricValue]) -> Met
 
 
 def compute_fcff(values: Mapping[str, MetricValue]) -> MetricValue:
-    ebit = values["ebit"].value
-    tax_rate = values["tax_rate"].value
-    depreciation = values["depreciation_amortization"].value
-    capex = values["capex"].value
-    if ebit is None or tax_rate is None or depreciation is None or capex is None:
-        return MetricValue("fcff", None, "missing", 0.0, "requires EBIT, tax rate, D&A, and capex", basis="derived")
+    required_inputs = {
+        "ebit": values["ebit"],
+        "tax_rate": values["tax_rate"],
+        "depreciation_amortization": values["depreciation_amortization"],
+        "capex": values["capex"],
+    }
+    missing_inputs = tuple(
+        name for name, metric in required_inputs.items() if not metric.is_available
+    )
+    if missing_inputs:
+        return MetricValue(
+            "fcff",
+            None,
+            "missing",
+            0.0,
+            "requires EBIT, tax rate, D&A, and capex; missing: "
+            + ", ".join(missing_inputs),
+            basis="derived",
+        )
+    ebit = float(required_inputs["ebit"].value)
+    tax_rate = float(required_inputs["tax_rate"].value)
+    depreciation = float(required_inputs["depreciation_amortization"].value)
+    capex = float(required_inputs["capex"].value)
 
     economic_delta = values.get("change_in_nwc", MetricValue("change_in_nwc", None, "missing", 0.0))
     cash_effect = values.get("change_in_nwc_cash_effect", MetricValue("change_in_nwc_cash_effect", None, "missing", 0.0))
@@ -110,19 +127,22 @@ def compute_fcff(values: Mapping[str, MetricValue]) -> MetricValue:
     inputs = [values["ebit"], values["tax_rate"], values["depreciation_amortization"], values["capex"]]
     if working_capital_metric is not None:
         inputs.append(working_capital_metric)
+    fallback_inputs = tuple(item.name for item in inputs if item.is_fallback)
     confidence = sum(item.confidence for item in inputs if item.is_available) / len(inputs)
     if used_nwc_fallback:
         confidence = max(0.0, confidence - 0.15)
     if values["tax_rate"].is_fallback:
         confidence = max(0.0, confidence - 0.10)
     note = f"FCFF = EBIT * (1 - tax_rate) + D&A - abs(CAPEX) + working_capital_adjustment; {working_capital_note}"
+    if fallback_inputs:
+        note += "; fallback inputs: " + ", ".join(fallback_inputs)
     return _derived_metric(
         "fcff",
         fcff,
         tuple(inputs),
         confidence,
         note,
-        is_fallback=used_nwc_fallback or values["tax_rate"].is_fallback,
+        is_fallback=used_nwc_fallback or bool(fallback_inputs),
         formula=formula,
     )
 
@@ -243,4 +263,3 @@ def update_market_from_info(statements: FinancialStatements) -> FinancialStateme
                     market[target] = value
                     break
     return FinancialStatements(statements.ticker, statements.income_statement, statements.balance_sheet, statements.cash_flow, market, statements.info, statements.source)
-

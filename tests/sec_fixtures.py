@@ -35,11 +35,14 @@ def company_facts_fixture():
     filed2 = "2025-02-15"
     prior_revenue = annual_fact(900, "2022-01-01", "2022-12-31", filed1, a1)
     current_revenue = annual_fact(1_000, "2023-01-01", "2023-12-31", filed1, a1)
+    comparative_revenue = annual_fact(1_000, "2023-01-01", "2023-12-31", filed2, a2)
     future_revenue = annual_fact(2_000, "2024-01-01", "2024-12-31", filed2, a2)
 
-    def annual_pair(current, future):
+    def annual_pair(prior, current, future):
         return [
+            annual_fact(prior, "2022-01-01", "2022-12-31", filed1, a1),
             annual_fact(current, "2023-01-01", "2023-12-31", filed1, a1),
+            annual_fact(current, "2023-01-01", "2023-12-31", filed2, a2),
             annual_fact(future, "2024-01-01", "2024-12-31", filed2, a2),
         ]
 
@@ -55,12 +58,17 @@ def company_facts_fixture():
         "facts": {
             "us-gaap": {
                 "RevenueFromContractWithCustomerExcludingAssessedTax": concept(
-                    [prior_revenue, current_revenue, future_revenue]
+                    [
+                        prior_revenue,
+                        current_revenue,
+                        comparative_revenue,
+                        future_revenue,
+                    ]
                 ),
-                "OperatingIncomeLoss": concept(annual_pair(140, 280)),
-                "NetIncomeLoss": concept(annual_pair(100, 200)),
-                "IncomeTaxExpenseBenefit": concept(annual_pair(25, 50)),
-                "InterestExpenseNonOperating": concept(annual_pair(10, 20)),
+                "OperatingIncomeLoss": concept(annual_pair(120, 140, 280)),
+                "NetIncomeLoss": concept(annual_pair(80, 100, 200)),
+                "IncomeTaxExpenseBenefit": concept(annual_pair(20, 25, 50)),
+                "InterestExpenseNonOperating": concept(annual_pair(8, 10, 20)),
                 "Assets": concept(instant_pair(1_500, 2_500)),
                 "StockholdersEquity": concept(instant_pair(900, 1_400)),
                 "CashAndCashEquivalentsAtCarryingValue": concept(instant_pair(200, 300)),
@@ -68,9 +76,15 @@ def company_facts_fixture():
                 "ShortTermBorrowings": concept(instant_pair(50, 80)),
                 "AssetsCurrent": concept(instant_pair(600, 900)),
                 "LiabilitiesCurrent": concept(instant_pair(300, 450)),
-                "NetCashProvidedByUsedInOperatingActivities": concept(annual_pair(170, 300)),
-                "PaymentsToAcquirePropertyPlantAndEquipment": concept(annual_pair(50, 80)),
-                "DepreciationDepletionAndAmortization": concept(annual_pair(40, 60)),
+                "NetCashProvidedByUsedInOperatingActivities": concept(
+                    annual_pair(145, 170, 300)
+                ),
+                "PaymentsToAcquirePropertyPlantAndEquipment": concept(
+                    annual_pair(45, 50, 80)
+                ),
+                "DepreciationDepletionAndAmortization": concept(
+                    annual_pair(35, 40, 60)
+                ),
                 "CommonStockDividendsPerShareDeclared": concept(
                     [
                         annual_fact(1.0, "2023-01-01", "2023-12-31", filed1, a1),
@@ -94,4 +108,3 @@ def company_facts_fixture():
 
 def ticker_map_fixture():
     return {"0": {"cik_str": 1234, "ticker": "TEST", "title": "Test Corporation"}}
-

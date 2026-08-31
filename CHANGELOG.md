@@ -1,5 +1,38 @@
 # Changelog
 
+## Point-in-time FCFF growth reconstruction
+
+- Reconstructed annual `fcff_growth` from current and comparative FCFF values
+  disclosed in the same SEC filing accession, with an explicit 300-to-430-day
+  comparative-period window configured in `config.py`.
+- Reused the existing FCFF formula for both periods and rejected percentage
+  growth whenever either FCFF is non-positive, avoiding economically invalid
+  rates across sign changes.
+- Added SEC concept coverage for additional capex and depreciation/amortization
+  tags, including a lower-confidence fallback for D&A concepts that can include
+  accretion or other components.
+- Preserved SEC-derived `MetricValue` lineage when market inputs enter the
+  metrics pipeline instead of replacing source, confidence, period, formula,
+  and fallback metadata with generic values.
+- Propagated fallback status from CAPEX, depreciation/amortization, tax, and
+  other approximated inputs into derived FCFF, including the affected input
+  names in the audit note without changing the FCFF value or formula.
+- Persisted source document, comparison dates, filing date, formula, note,
+  fallback status, and current/prior observations in component-level score
+  telemetry and historical CSV round trips.
+- Kept unavailable growth components visible even when the dimension uses its
+  neutral missing-data fallback, and made missing FCFF inputs explicit by name.
+- Validated the implementation against 590 cached annual SEC snapshots: 290
+  valid signals, 127 sign-based rejections, 172 missing current FCFF values,
+  and one missing comparative FCFF value.
+- Re-ran the 345-observation active benchmark with no collection errors: 185
+  FCFF-growth signals were used and all 185 passed complete temporal-lineage
+  checks. Point-in-time flags and score configuration fingerprints were
+  unchanged from the PR #51 baseline.
+- The benchmark did not support recalibration: full-sample Spearman changed
+  from 0.017 to 0.015 and holdout Spearman from -0.071 to -0.076. Score weights,
+  gates, recommendation thresholds, and valuation formulas remain unchanged.
+
 ## Auditable historical score dimensions
 
 - Persisted score and confidence for valuation, growth, quality, debt,

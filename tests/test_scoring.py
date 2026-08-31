@@ -338,6 +338,28 @@ class ScoringCalibrationTests(unittest.TestCase):
         self.assertAlmostEqual(growth["fcff_growth"].effective_weight, 0.0)
         self.assertTrue(growth["fcff_growth"].reason)
 
+    def test_component_audit_keeps_missing_growth_signals_with_neutral_default(self):
+        report = compute_score(
+            CompanyType.TRADITIONAL,
+            [],
+            metric_pack(),
+            metric_value("price", 100.0, "manual"),
+        )
+
+        growth = {
+            component.component: component
+            for component in report.component_audit
+            if component.dimension == "growth"
+        }
+        self.assertTrue(growth["default_missing_data"].used)
+        self.assertAlmostEqual(
+            growth["default_missing_data"].weighted_contribution,
+            report.dimensions["growth"].score,
+        )
+        self.assertFalse(growth["revenue_growth"].used)
+        self.assertFalse(growth["fcff_growth"].used)
+        self.assertEqual(growth["fcff_growth"].effective_weight, 0.0)
+
 
 if __name__ == "__main__":
     unittest.main()

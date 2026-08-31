@@ -69,8 +69,133 @@ class SecEdgarClientTests(unittest.TestCase):
         self.assertEqual(snapshot.market_data["shares"].value, 100)
         self.assertEqual(snapshot.balance_sheet["total_liabilities"].value, 600)
         self.assertEqual(snapshot.balance_sheet["total_debt"].value, 350)
+        current_fcff = 140 * (1 - 25 / (140 - 10)) + 40 - 50
+        prior_fcff = 120 * (1 - 20 / (120 - 8)) + 35 - 45
+        fcff_growth = snapshot.market_data["fcff_growth"]
+        self.assertAlmostEqual(fcff_growth.value, current_fcff / prior_fcff - 1)
+        self.assertEqual(fcff_growth.period_start, date(2022, 12, 31))
+        self.assertEqual(fcff_growth.period_end, date(2023, 12, 31))
+        self.assertEqual(fcff_growth.filing_date, date(2024, 2, 15))
+        self.assertEqual(
+            fcff_growth.formula,
+            "current_positive_fcff_divided_by_prior_positive_fcff_minus_one",
+        )
+        self.assertEqual(
+            dict(fcff_growth.input_observations),
+            {"current_fcff": current_fcff, "prior_fcff": prior_fcff},
+        )
+        self.assertTrue(fcff_growth.is_fallback)
+        self.assertGreater(fcff_growth.confidence, 0.0)
         self.assertTrue(snapshot.audit.point_in_time_valid)
         self.assertEqual(snapshot.audit.coverage_ratio, 1.0)
+
+    def test_fcff_growth_rejects_sign_changes_instead_of_inventing_growth(self):
+        payload = deepcopy(company_facts_fixture())
+        entries = payload["facts"]["us-gaap"]["OperatingIncomeLoss"]["units"]["USD"]
+        for fact in entries:
+            if (
+                fact["accn"] == "0000001234-24-000001"
+                and fact["end"] == "2022-12-31"
+            ):
+                fact["val"] = -100
+
+        def get_json(url):
+            return ticker_map_fixture() if "company_tickers" in url else payload
+
+        with tempfile.TemporaryDirectory() as tempdir:
+            client = SecEdgarClient(
+                "Test Research test@example.com",
+                cache_dir=tempdir,
+                json_getter=get_json,
+            )
+            snapshot = client.build_snapshot("TEST", date(2024, 2, 16))
+
+        growth = snapshot.market_data["fcff_growth"]
+        self.assertFalse(growth.is_available)
+        self.assertEqual(growth.source, "sec_edgar_derived")
+        self.assertIn("precisam ser positivos", growth.note)
+        self.assertLess(dict(growth.input_observations)["prior_fcff"], 0.0)
+
+    def test_fcff_growth_records_missing_comparative_sec_inputs(self):
+        payload = deepcopy(company_facts_fixture())
+        entries = payload["facts"]["us-gaap"][
+            "DepreciationDepletionAndAmortization"
+        ]["units"]["USD"]
+        payload["facts"]["us-gaap"]["DepreciationDepletionAndAmortization"][
+            "units"
+        ]["USD"] = [
+            fact
+            for fact in entries
+            if not (
+                fact["accn"] == "0000001234-24-000001"
+                and fact["end"] == "2022-12-31"
+            )
+        ]
+
+        def get_json(url):
+            return ticker_map_fixture() if "company_tickers" in url else payload
+
+        with tempfile.TemporaryDirectory() as tempdir:
+            client = SecEdgarClient(
+                "Test Research test@example.com",
+                cache_dir=tempdir,
+                json_getter=get_json,
+            )
+            snapshot = client.build_snapshot("TEST", date(2024, 2, 16))
+
+        growth = snapshot.market_data["fcff_growth"]
+        self.assertFalse(growth.is_available)
+        self.assertIn("comparativo indisponivel", growth.note)
+        self.assertIn("requires EBIT, tax rate, D&A, and capex", growth.note)
+
+    def test_uses_lower_confidence_sec_da_fallback_for_fcff_growth(self):
+        payload = deepcopy(company_facts_fixture())
+        gaap = payload["facts"]["us-gaap"]
+        gaap["DepreciationAmortizationAndAccretionNet"] = gaap.pop(
+            "DepreciationDepletionAndAmortization"
+        )
+
+        def get_json(url):
+            return ticker_map_fixture() if "company_tickers" in url else payload
+
+        with tempfile.TemporaryDirectory() as tempdir:
+            client = SecEdgarClient(
+                "Test Research test@example.com",
+                cache_dir=tempdir,
+                json_getter=get_json,
+            )
+            snapshot = client.build_snapshot("TEST", date(2024, 2, 16))
+
+        depreciation = snapshot.cash_flow["depreciation_amortization"]
+        self.assertTrue(depreciation.is_fallback)
+        self.assertIn("AccretionNet", depreciation.formula)
+        self.assertTrue(snapshot.market_data["fcff_growth"].is_available)
+        self.assertTrue(snapshot.market_data["fcff_growth"].is_fallback)
+
+    def test_marks_partial_other_ppe_capex_concept_as_fallback(self):
+        payload = deepcopy(company_facts_fixture())
+        gaap = payload["facts"]["us-gaap"]
+        gaap["PaymentsToAcquireOtherPropertyPlantAndEquipment"] = gaap.pop(
+            "PaymentsToAcquirePropertyPlantAndEquipment"
+        )
+
+        def get_json(url):
+            return ticker_map_fixture() if "company_tickers" in url else payload
+
+        with tempfile.TemporaryDirectory() as tempdir:
+            client = SecEdgarClient(
+                "Test Research test@example.com",
+                cache_dir=tempdir,
+                json_getter=get_json,
+            )
+            snapshot = client.build_snapshot("TEST", date(2024, 2, 16))
+
+        capex = snapshot.cash_flow["capex"]
+        self.assertTrue(capex.is_fallback)
+        self.assertIn("pode nao representar", capex.note)
+        self.assertIn("OtherPropertyPlantAndEquipment", capex.formula)
+        self.assertTrue(snapshot.market_data["fcff_growth"].is_available)
+        self.assertTrue(snapshot.market_data["fcff_growth"].is_fallback)
 
     def test_annual_history_preserves_point_in_time_cutoff(self):
         with tempfile.TemporaryDirectory() as tempdir:
@@ -169,7 +294,10 @@ class SecEdgarClientTests(unittest.TestCase):
         self.assertTrue(ebit.is_fallback)
         self.assertEqual(ebit.formula, "pretax_income_plus_abs_interest_expense")
         self.assertLess(ebit.confidence, snapshot.income_statement["net_income"].confidence)
-        self.assertIn("Metricas derivadas por fallback: ebit.", snapshot.audit.warnings)
+        self.assertIn(
+            "Metricas derivadas por fallback: ebit, fcff_growth.",
+            snapshot.audit.warnings,
+        )
 
     def test_uses_us_gaap_fallback_for_shares_when_dei_concept_is_missing(self):
         payload = deepcopy(company_facts_fixture())

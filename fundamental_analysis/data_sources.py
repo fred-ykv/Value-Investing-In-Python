@@ -28,6 +28,7 @@ class MetricValue:
     basis: str = "reported"
     is_fallback: bool = False
     formula: str | None = None
+    input_observations: tuple[tuple[str, float], ...] = ()
 
     @property
     def is_available(self) -> bool:
@@ -90,6 +91,7 @@ def metric_value(
     is_fallback: bool | None = None,
     formula: str | None = None,
     confidence: float | None = None,
+    input_observations: tuple[tuple[str, float], ...] = (),
 ) -> MetricValue:
     numeric = safe_float(value)
     resolved_source = source if numeric is not None else "missing"
@@ -111,6 +113,7 @@ def metric_value(
         basis=basis or ("fallback" if fallback else "reported"),
         is_fallback=fallback,
         formula=formula,
+        input_observations=input_observations,
     )
 
 
