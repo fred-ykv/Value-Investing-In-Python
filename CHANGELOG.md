@@ -1,5 +1,52 @@
 # Changelog
 
+## Auditable historical score dimensions
+
+- Persisted score and confidence for valuation, growth, quality, debt,
+  liquidity, and data-confidence dimensions in every point-in-time historical
+  observation, CSV export, and collection manifest.
+- Persisted the complete cost-of-capital decomposition, including beta, Ke,
+  pre-tax and after-tax debt cost, tax rate, capital values and weights,
+  calculated WACC, component sources, confidence, fallback flags, and notes.
+- Added component-level fallback telemetry without changing any cost-of-capital
+  calculation or rate-selection rule.
+- Added a structured recommendation decision that records the threshold-only
+  result, final result, triggered gate, explanation, and every threshold used.
+- Persisted the historical valuation price and a per-method valuation audit
+  with fair value, margin of safety, confidence, source, score inclusion, and
+  exclusion reason.
+- Added a common assumption ledger to DCF/FCFF, Graham, EVA, Residual Income,
+  DDM, and Growth/Tech, preserving input value, effective value, source,
+  confidence, fallback, note, and formula for every model input.
+- Persisted enterprise/equity values and selected intermediate outputs,
+  including explicit-stage present value, terminal-value present value and
+  terminal-value share, without changing valuation formulas or parameters.
+- Distinguished fixed model parameters from data fallbacks and retained
+  compatibility with both legacy CSVs and the previous method-audit schema.
+- Persisted configured and normalized weights plus the exact weighted
+  contribution of every score dimension, with a fail-closed reconciliation to
+  the reported total.
+- Added an explicit score-model version and deterministic configuration
+  fingerprint covering profile, weights, thresholds, gates, and the cap per
+  valuation method.
+- Exposed score contributions and the configuration fingerprint in both the
+  historical artifacts and the normal report JSON.
+- Added component-level score telemetry with raw value, transformed score,
+  configured and effective weights, weighted contribution, confidence, source,
+  inclusion status, and exclusion reason.
+- Separated intrinsic-model, bank-valuation, and final comparable-blend stages
+  so each final dimension can be reconciled without double counting internal
+  calculation layers.
+- Added fail-closed reconciliation between the recorded components and all six
+  dimension scores, while retaining empty component telemetry for legacy CSVs.
+- Centralized recommendation-gate evaluation and covered its boundary cases
+  against the previous decision logic; recommendation behavior is unchanged.
+- Kept legacy historical CSVs readable without fabricating unavailable
+  dimensions, gates, or valuation methods; the pre-existing data-confidence
+  value remains recoverable.
+- Kept score formulas, weights, gates, and recommendation thresholds
+  unchanged.
+
 ## Delisted-price provider and preflight
 
 - Added a Tiingo EOD client for the ten historical lifecycle cases, including

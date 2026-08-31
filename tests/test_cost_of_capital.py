@@ -25,7 +25,20 @@ class CostOfCapitalTests(unittest.TestCase):
         result = calculate_cost_of_capital(
             CompanyType.TRADITIONAL,
             capital_values(),
-            {"beta": 1.0, "cost_of_debt": 0.06},
+            {
+                "risk_free_rate": metric_value(
+                    "risk_free_rate",
+                    0.045,
+                    "us_treasury_historical",
+                ),
+                "equity_risk_premium": metric_value(
+                    "equity_risk_premium",
+                    0.055,
+                    "damodaran_historical_erp",
+                ),
+                "beta": 1.0,
+                "cost_of_debt": 0.06,
+            },
         )
 
         self.assertAlmostEqual(result.cost_of_equity, 0.10)
@@ -35,6 +48,13 @@ class CostOfCapitalTests(unittest.TestCase):
         self.assertAlmostEqual(result.wacc, 0.089)
         self.assertEqual(result.discount_rate_label, "WACC")
         self.assertNotEqual(result.component_confidences["beta"], result.component_confidences["risk_free_rate"])
+        self.assertFalse(result.is_fallback)
+        self.assertFalse(result.component_fallbacks["risk_free_rate"])
+        self.assertFalse(result.component_fallbacks["equity_risk_premium"])
+        self.assertFalse(result.component_fallbacks["beta"])
+        self.assertFalse(result.component_fallbacks["pre_tax_cost_of_debt"])
+        self.assertFalse(result.component_fallbacks["capital_weights"])
+        self.assertFalse(result.component_fallbacks["discount_rate"])
 
     def test_explicit_wacc_is_used_but_calculated_wacc_is_kept_for_comparison(self):
         result = calculate_cost_of_capital(
@@ -47,6 +67,35 @@ class CostOfCapitalTests(unittest.TestCase):
         self.assertAlmostEqual(result.calculated_wacc, 0.089)
         self.assertEqual(result.method, "explicit_wacc_override")
         self.assertTrue(any("prevaleceu" in note for note in result.notes))
+        self.assertFalse(result.component_fallbacks["discount_rate"])
+        self.assertTrue(result.component_fallbacks["calculated_wacc"])
+
+    def test_unused_debt_cost_fallback_does_not_taint_zero_debt_wacc(self):
+        result = calculate_cost_of_capital(
+            CompanyType.TRADITIONAL,
+            capital_values(
+                total_debt=metric_value("total_debt", 0.0, "manual"),
+            ),
+            {
+                "risk_free_rate": metric_value(
+                    "risk_free_rate",
+                    0.045,
+                    "us_treasury_historical",
+                ),
+                "equity_risk_premium": metric_value(
+                    "equity_risk_premium",
+                    0.055,
+                    "damodaran_historical_erp",
+                ),
+                "beta": 1.0,
+            },
+        )
+
+        self.assertAlmostEqual(result.wacc, result.cost_of_equity)
+        self.assertTrue(result.component_fallbacks["pre_tax_cost_of_debt"])
+        self.assertFalse(result.component_fallbacks["calculated_wacc"])
+        self.assertFalse(result.component_fallbacks["discount_rate"])
+        self.assertFalse(result.is_fallback)
 
     def test_financial_company_uses_ke_instead_of_wacc(self):
         result = calculate_cost_of_capital(
@@ -59,6 +108,8 @@ class CostOfCapitalTests(unittest.TestCase):
         self.assertIsNone(result.wacc)
         self.assertEqual(result.discount_rate_label, "Custo do patrimonio (Ke)")
         self.assertTrue(any("WACC nao e aplicado" in note for note in result.notes))
+        self.assertFalse(result.component_fallbacks["cost_of_equity"])
+        self.assertFalse(result.component_fallbacks["discount_rate"])
 
     def test_missing_debt_does_not_create_false_wacc(self):
         result = calculate_cost_of_capital(
@@ -70,8 +121,12 @@ class CostOfCapitalTests(unittest.TestCase):
         self.assertIsNone(result.wacc)
         self.assertEqual(result.method, "ke_proxy_missing_capital_structure")
         self.assertTrue(result.is_fallback)
+        self.assertFalse(result.component_fallbacks["debt_value"])
+        self.assertEqual(result.sources["debt_value"], "Indisponivel")
+        self.assertTrue(result.component_fallbacks["discount_rate"])
         self.assertTrue(any("WACC nao pode ser calculado" in note for note in result.notes))
 
 
 if __name__ == "__main__":
     unittest.main()
+

@@ -58,6 +58,9 @@ def valuation_table(valuations: Iterable[ValuationResult]) -> list[dict[str, obj
                 "confidence": valuation.confidence,
                 "source": valuation.source,
                 "diagnostics": valuation.diagnostics,
+                "assumptions": [
+                    asdict(assumption) for assumption in valuation.assumptions
+                ],
             }
         )
     return rows
@@ -112,7 +115,26 @@ def peer_selection_table(peer_selection: PeerSelectionReport) -> list[dict[str, 
 
 
 def score_table(score: ScoreReport) -> list[dict[str, object]]:
-    return [asdict(dimension) for dimension in score.dimensions.values()]
+    contributions = {
+        contribution.name: contribution
+        for contribution in score.dimension_contributions
+    }
+    rows: list[dict[str, object]] = []
+    for name, dimension in score.dimensions.items():
+        row = asdict(dimension)
+        contribution = contributions.get(name)
+        if contribution is not None:
+            row.update(
+                {
+                    "configured_weight": contribution.configured_weight,
+                    "normalized_weight": contribution.normalized_weight,
+                    "weighted_contribution": (
+                        contribution.weighted_contribution
+                    ),
+                }
+            )
+        rows.append(row)
+    return rows
 
 
 def metric_lineage_table(metrics: dict[str, MetricValue]) -> list[dict[str, object]]:
@@ -342,6 +364,8 @@ def save_report_artifacts(ticker: str, report: dict[str, object], output_dir: st
             "peer_selection_table",
             "comparable_table",
             "score_table",
+            "score_configuration",
+            "score_component_audit",
             "metric_lineage_table",
             "risk_diagnostics",
             "key_indicator_table",
@@ -400,6 +424,22 @@ def decision_bridge(score: ScoreReport, valuations: Iterable[ValuationResult] | 
 
 
 def recommendation_gate_note(score: ScoreReport) -> str:
+    decision = score.recommendation_decision
+    if decision is not None:
+        if decision.gate_code == "buy_blocked_low_valuation":
+            return (
+                "A recomendacao nao subiu para Comprar porque o score de valuation "
+                f"({decision.valuation_score:.2f}) ficou abaixo do minimo exigido "
+                f"({decision.min_valuation_score_for_buy:.2f})."
+            )
+        if decision.gate_code == "avoid_low_valuation_and_quality":
+            return (
+                "A recomendacao foi mantida em Evitar porque valuation "
+                f"({decision.valuation_score:.2f}) e qualidade "
+                f"({decision.quality_score:.2f}) ficaram simultaneamente abaixo "
+                "dos limites de seguranca."
+            )
+        return ""
     valuation = score.dimensions.get("valuation")
     quality = score.dimensions.get("quality")
     valuation_score = valuation.score if valuation else 0.0
@@ -677,4 +717,3 @@ def _low_good_signal(value: float, good: float, bad: float) -> tuple[str, str]:
     if value >= bad:
         return "negative", "Atencao"
     return "neutral", "Neutro"
-

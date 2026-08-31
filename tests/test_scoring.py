@@ -1,10 +1,17 @@
 import unittest
 
-from fundamental_analysis.config import CompanyType
+from fundamental_analysis.config import CompanyType, SCORE
 from fundamental_analysis.comparables import ComparableReport
 from fundamental_analysis.data_sources import metric_value
 from fundamental_analysis.metrics import MetricPack
-from fundamental_analysis.scoring import compute_score, liquidity_dimension, valuation_dimension
+from fundamental_analysis.scoring import (
+    DimensionScore,
+    compute_score,
+    liquidity_dimension,
+    recommendation_decision_from_score,
+    recommendation_from_score,
+    valuation_dimension,
+)
 from fundamental_analysis.valuation import ValuationResult
 
 
@@ -13,6 +20,90 @@ def metric_pack(**values):
 
 
 class ScoringCalibrationTests(unittest.TestCase):
+    def test_structured_decision_records_buy_gate_without_changing_result(self):
+        dimensions = {
+            "valuation": DimensionScore("valuation", 0.44, 0.80, ""),
+            "quality": DimensionScore("quality", 0.90, 0.80, ""),
+        }
+
+        decision = recommendation_decision_from_score(0.75, dimensions)
+
+        self.assertEqual(decision.recommendation_before_gates, "Comprar")
+        self.assertEqual(decision.final_recommendation, "Observar")
+        self.assertEqual(decision.gate_code, "buy_blocked_low_valuation")
+        self.assertTrue(decision.gate_triggered)
+
+    def test_structured_decision_records_joint_valuation_quality_gate(self):
+        dimensions = {
+            "valuation": DimensionScore("valuation", 0.19, 0.80, ""),
+            "quality": DimensionScore("quality", 0.29, 0.80, ""),
+        }
+
+        decision = recommendation_decision_from_score(0.60, dimensions)
+
+        self.assertEqual(decision.recommendation_before_gates, "Observar")
+        self.assertEqual(decision.final_recommendation, "Evitar")
+        self.assertEqual(decision.gate_code, "avoid_low_valuation_and_quality")
+        self.assertTrue(decision.gate_triggered)
+
+    def test_structured_decision_is_equivalent_to_previous_gate_logic_at_boundaries(self):
+        epsilon = 1e-9
+
+        def previous_logic(total, valuation, quality):
+            if total >= SCORE.buy_threshold and valuation < SCORE.min_valuation_score_for_buy:
+                return "Observar"
+            if (
+                total >= SCORE.watch_threshold
+                and valuation < SCORE.avoid_if_valuation_below
+                and quality < SCORE.avoid_if_quality_below
+            ):
+                return "Evitar"
+            return (
+                "Comprar"
+                if total >= SCORE.buy_threshold
+                else "Observar"
+                if total >= SCORE.watch_threshold
+                else "Evitar"
+            )
+
+        totals = (
+            SCORE.watch_threshold - epsilon,
+            SCORE.watch_threshold,
+            SCORE.buy_threshold - epsilon,
+            SCORE.buy_threshold,
+        )
+        valuations = (
+            SCORE.avoid_if_valuation_below - epsilon,
+            SCORE.avoid_if_valuation_below,
+            SCORE.min_valuation_score_for_buy - epsilon,
+            SCORE.min_valuation_score_for_buy,
+        )
+        qualities = (
+            SCORE.avoid_if_quality_below - epsilon,
+            SCORE.avoid_if_quality_below,
+            0.90,
+        )
+        for total in totals:
+            for valuation in valuations:
+                for quality in qualities:
+                    dimensions = {
+                        "valuation": DimensionScore("valuation", valuation, 1.0, ""),
+                        "quality": DimensionScore("quality", quality, 1.0, ""),
+                    }
+                    expected = previous_logic(total, valuation, quality)
+                    with self.subTest(total=total, valuation=valuation, quality=quality):
+                        self.assertEqual(
+                            recommendation_from_score(total, dimensions),
+                            expected,
+                        )
+                        self.assertEqual(
+                            recommendation_decision_from_score(
+                                total,
+                                dimensions,
+                            ).final_recommendation,
+                            expected,
+                        )
+
     def test_moderate_negative_margin_is_not_scored_as_zero(self):
         metrics = metric_pack(
             revenue_growth=0.20,
@@ -30,6 +121,108 @@ class ScoringCalibrationTests(unittest.TestCase):
 
         self.assertGreater(score.dimensions["valuation"].score, 0.30)
         self.assertEqual(score.recommendation, "Observar")
+        self.assertIsNotNone(score.recommendation_decision)
+        self.assertEqual(
+            score.recommendation,
+            score.recommendation_decision.final_recommendation,
+        )
+        self.assertEqual(len(score.dimension_contributions), 6)
+        self.assertAlmostEqual(
+            sum(
+                contribution.normalized_weight
+                for contribution in score.dimension_contributions
+            ),
+            1.0,
+        )
+        self.assertAlmostEqual(
+            sum(
+                contribution.weighted_contribution
+                for contribution in score.dimension_contributions
+            ),
+            score.total_score,
+        )
+        for contribution in score.dimension_contributions:
+            self.assertAlmostEqual(
+                contribution.score * contribution.normalized_weight,
+                contribution.weighted_contribution,
+            )
+            self.assertAlmostEqual(
+                contribution.score,
+                score.dimensions[contribution.name].score,
+            )
+        self.assertIsNotNone(score.configuration_audit)
+        self.assertEqual(len(score.configuration_audit.fingerprint), 64)
+        for name, dimension in score.dimensions.items():
+            components = [
+                component
+                for component in score.component_audit
+                if component.dimension == name
+                and component.stage == "dimension"
+                and component.used
+            ]
+            self.assertTrue(components)
+            self.assertAlmostEqual(
+                sum(component.weighted_contribution for component in components),
+                dimension.score,
+            )
+        revenue = next(
+            component
+            for component in score.component_audit
+            if component.dimension == "growth"
+            and component.component == "revenue_growth"
+        )
+        self.assertEqual(revenue.source, "manual")
+        self.assertAlmostEqual(revenue.raw_value, 0.20)
+        self.assertTrue(revenue.used)
+
+    def test_score_configuration_fingerprint_is_deterministic_and_profile_specific(self):
+        metrics = metric_pack(
+            revenue_growth=0.10,
+            fama_french_profitability=0.70,
+            earnings_quality=0.70,
+            piotroski_proxy=0.70,
+            current_ratio=1.50,
+        )
+        valuations = [
+            ValuationResult(
+                "dcf_fcff",
+                110.0,
+                0.80,
+                margin_of_safety=0.10,
+            )
+        ]
+
+        traditional_a = compute_score(
+            CompanyType.TRADITIONAL,
+            valuations,
+            metrics,
+            metric_value("price", 100.0, "manual"),
+        )
+        traditional_b = compute_score(
+            CompanyType.TRADITIONAL,
+            valuations,
+            metrics,
+            metric_value("price", 100.0, "manual"),
+        )
+        growth = compute_score(
+            CompanyType.GROWTH_TECH,
+            valuations,
+            metrics,
+            metric_value("price", 100.0, "manual"),
+        )
+
+        self.assertEqual(
+            traditional_a.configuration_audit.fingerprint,
+            traditional_b.configuration_audit.fingerprint,
+        )
+        self.assertNotEqual(
+            traditional_a.configuration_audit.fingerprint,
+            growth.configuration_audit.fingerprint,
+        )
+        self.assertEqual(
+            traditional_a.configuration_audit.model_version,
+            "multifactor_score_v1",
+        )
 
     def test_low_valuation_and_low_quality_remain_avoid(self):
         metrics = metric_pack(
@@ -78,6 +271,72 @@ class ScoringCalibrationTests(unittest.TestCase):
         self.assertGreater(dimension.score, valuation_dimension(valuations, metrics, CompanyType.TRADITIONAL).score)
         self.assertLess(dimension.score, 0.90)
         self.assertIn("multiplos relativos de pares", dimension.explanation)
+
+    def test_component_audit_records_relative_comparables_when_used(self):
+        metrics = metric_pack(current_ratio=1.5)
+        valuations = [
+            ValuationResult(
+                "dcf_fcff",
+                80.0,
+                0.80,
+                source="derived",
+                margin_of_safety=-0.20,
+            )
+        ]
+        comparables = ComparableReport(
+            [],
+            overall_score=0.90,
+            confidence=1.0,
+            summary="discount to peers",
+            basis="approved_peer_medians",
+        )
+
+        report = compute_score(
+            CompanyType.TRADITIONAL,
+            valuations,
+            metrics,
+            metric_value("price", 100.0, "manual"),
+            comparables,
+        )
+
+        final_components = [
+            component
+            for component in report.component_audit
+            if component.dimension == "valuation"
+            and component.stage == "dimension"
+            and component.used
+        ]
+        self.assertEqual(
+            {component.component for component in final_components},
+            {"intrinsic_or_bank_valuation", "relative_comparables"},
+        )
+        self.assertAlmostEqual(
+            sum(component.effective_weight for component in final_components),
+            1.0,
+        )
+        self.assertAlmostEqual(
+            sum(component.weighted_contribution for component in final_components),
+            report.dimensions["valuation"].score,
+        )
+
+    def test_component_audit_marks_missing_metric_outside_dynamic_average(self):
+        report = compute_score(
+            CompanyType.TRADITIONAL,
+            [],
+            metric_pack(revenue_growth=0.10),
+            metric_value("price", 100.0, "manual"),
+        )
+
+        growth = {
+            component.component: component
+            for component in report.component_audit
+            if component.dimension == "growth"
+        }
+        self.assertTrue(growth["revenue_growth"].used)
+        self.assertAlmostEqual(growth["revenue_growth"].effective_weight, 1.0)
+        self.assertFalse(growth["fcff_growth"].used)
+        self.assertAlmostEqual(growth["fcff_growth"].effective_weight, 0.0)
+        self.assertTrue(growth["fcff_growth"].reason)
 
 
 if __name__ == "__main__":

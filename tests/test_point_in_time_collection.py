@@ -121,8 +121,26 @@ class PointInTimeCollectionTests(unittest.TestCase):
         self.assertIsNotNone(observation.discount_rate)
         self.assertIn(observation.discount_rate_label, {"WACC", "Custo do patrimonio (Ke)"})
         self.assertIsNotNone(observation.cost_of_equity)
+        self.assertIsNotNone(observation.beta)
+        self.assertIsNotNone(observation.calculated_wacc)
+        self.assertIsNotNone(observation.pre_tax_cost_of_debt)
+        self.assertIsNotNone(observation.after_tax_cost_of_debt)
+        self.assertIsNotNone(observation.tax_rate)
+        self.assertIsNotNone(observation.market_value_equity)
+        self.assertIsNotNone(observation.debt_value)
+        self.assertIsNotNone(observation.equity_weight)
+        self.assertIsNotNone(observation.debt_weight)
         self.assertTrue(observation.cost_of_capital_method)
         self.assertIsNotNone(observation.cost_of_capital_confidence)
+        self.assertIn("discount_rate", dict(observation.cost_of_capital_sources))
+        self.assertIn(
+            "discount_rate",
+            dict(observation.cost_of_capital_component_confidences),
+        )
+        self.assertIn(
+            "discount_rate",
+            dict(observation.cost_of_capital_component_fallbacks),
+        )
         self.assertTrue(observation.is_point_in_time_valid)
         self.assertTrue(observation.is_cyclical)
         self.assertFalse(observation.cyclical_normalization_applied)
@@ -136,6 +154,125 @@ class PointInTimeCollectionTests(unittest.TestCase):
         self.assertEqual(observation.security_cik, "0000001234")
         self.assertEqual(observation.universe_status, "active")
         self.assertEqual(observation.outcome_method, "market_price_12m")
+        dimension_pairs = (
+            (
+                observation.dimension_valuation_score,
+                observation.dimension_valuation_confidence,
+            ),
+            (
+                observation.dimension_growth_score,
+                observation.dimension_growth_confidence,
+            ),
+            (
+                observation.dimension_quality_score,
+                observation.dimension_quality_confidence,
+            ),
+            (
+                observation.dimension_debt_score,
+                observation.dimension_debt_confidence,
+            ),
+            (
+                observation.dimension_liquidity_score,
+                observation.dimension_liquidity_confidence,
+            ),
+            (
+                observation.dimension_data_confidence_score,
+                observation.dimension_data_confidence_confidence,
+            ),
+        )
+        self.assertTrue(
+            all(
+                score is not None
+                and confidence is not None
+                and 0.0 <= score <= 1.0
+                and 0.0 <= confidence <= 1.0
+                for score, confidence in dimension_pairs
+            )
+        )
+        self.assertAlmostEqual(
+            observation.dimension_data_confidence_score,
+            observation.data_confidence,
+        )
+        self.assertAlmostEqual(observation.valuation_price, 10.0)
+        self.assertTrue(observation.recommendation_before_gates)
+        self.assertIn(
+            observation.recommendation_gate_code,
+            {"none", "buy_blocked_low_valuation", "avoid_low_valuation_and_quality"},
+        )
+        self.assertIsNotNone(observation.recommendation_buy_threshold)
+        self.assertIsNotNone(observation.recommendation_watch_threshold)
+        self.assertTrue(observation.recommendation_gate_explanation)
+        self.assertTrue(observation.valuation_method_audit)
+        for method in observation.valuation_method_audit:
+            self.assertEqual(
+                method.used_in_score,
+                method.margin_of_safety is not None and method.confidence > 0.0,
+            )
+            if not method.used_in_score:
+                self.assertTrue(method.exclusion_reason)
+            self.assertTrue(method.assumptions)
+            self.assertTrue(
+                all(
+                    assumption.name
+                    and assumption.source
+                    and 0.0 <= assumption.confidence <= 1.0
+                    for assumption in method.assumptions
+                )
+            )
+        dcf_audit = next(
+            method
+            for method in observation.valuation_method_audit
+            if method.method == "dcf_fcff"
+        )
+        dcf_assumptions = {
+            assumption.name: assumption for assumption in dcf_audit.assumptions
+        }
+        self.assertAlmostEqual(
+            dcf_assumptions["discount_rate"].effective_value,
+            observation.discount_rate,
+        )
+        self.assertEqual(
+            dcf_assumptions["current_price"].effective_value,
+            observation.valuation_price,
+        )
+        self.assertIn("pv_terminal_value", dict(dcf_audit.model_outputs))
+        self.assertEqual(observation.score_model_version, "multifactor_score_v1")
+        self.assertEqual(len(observation.score_config_fingerprint), 64)
+        self.assertEqual(len(observation.score_dimension_contributions), 6)
+        self.assertAlmostEqual(
+            sum(dict(observation.score_normalized_weights).values()),
+            1.0,
+        )
+        self.assertAlmostEqual(
+            observation.score_weighted_total,
+            observation.total_score,
+        )
+        self.assertAlmostEqual(observation.score_reconciliation_difference, 0.0)
+        for contribution in observation.score_dimension_contributions:
+            self.assertAlmostEqual(
+                contribution.score * contribution.normalized_weight,
+                contribution.weighted_contribution,
+            )
+        self.assertTrue(observation.score_component_audit)
+        for dimension_score, dimension_name in (
+            (observation.dimension_valuation_score, "valuation"),
+            (observation.dimension_growth_score, "growth"),
+            (observation.dimension_quality_score, "quality"),
+            (observation.dimension_debt_score, "debt"),
+            (observation.dimension_liquidity_score, "liquidity"),
+            (observation.dimension_data_confidence_score, "data_confidence"),
+        ):
+            reconciled = sum(
+                component.weighted_contribution
+                for component in observation.score_component_audit
+                if component.dimension == dimension_name
+                and component.stage == "dimension"
+                and component.used
+            )
+            self.assertAlmostEqual(reconciled, dimension_score)
+        self.assertTrue(
+            all(component.source for component in observation.score_component_audit)
+        )
 
     def test_bank_critical_coverage_ignores_industrial_only_metrics(self):
         def get_json(url):

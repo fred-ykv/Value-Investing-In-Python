@@ -3,14 +3,71 @@
 from __future__ import annotations
 
 import csv
+import json
 import math
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import date
 from pathlib import Path
 from statistics import mean
-from typing import Iterable
+from typing import Callable, Iterable, TypeVar
 
 from .config import CALIBRATION, CalibrationAssumptions
+
+
+_MappingValue = TypeVar("_MappingValue")
+
+
+@dataclass(frozen=True)
+class HistoricalScoreDimensionContribution:
+    name: str
+    score: float
+    confidence: float
+    configured_weight: float
+    normalized_weight: float
+    weighted_contribution: float
+
+
+@dataclass(frozen=True)
+class HistoricalScoreComponentAudit:
+    dimension: str
+    stage: str
+    component: str
+    raw_value: float | None
+    transformed_score: float | None
+    configured_weight: float
+    effective_weight: float
+    weighted_contribution: float
+    confidence: float
+    source: str
+    used: bool
+    reason: str = ""
+
+
+@dataclass(frozen=True)
+class HistoricalValuationAssumptionAudit:
+    name: str
+    input_value: float | None
+    effective_value: float | None
+    source: str
+    confidence: float
+    is_fallback: bool = False
+    note: str = ""
+    formula: str = ""
+
+
+@dataclass(frozen=True)
+class HistoricalValuationMethodAudit:
+    method: str
+    used_in_score: bool
+    fair_value_per_share: float | None
+    margin_of_safety: float | None
+    confidence: float
+    source: str
+    exclusion_reason: str = ""
+    enterprise_value: float | None = None
+    equity_value: float | None = None
+    model_outputs: tuple[tuple[str, float], ...] = ()
+    assumptions: tuple[HistoricalValuationAssumptionAudit, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -67,6 +124,52 @@ class HistoricalCalibrationObservation:
     stock_terminal_date: date | None = None
     terminal_value_per_share: float | None = None
     lifecycle_source_url: str = ""
+    dimension_valuation_score: float | None = None
+    dimension_valuation_confidence: float | None = None
+    dimension_growth_score: float | None = None
+    dimension_growth_confidence: float | None = None
+    dimension_quality_score: float | None = None
+    dimension_quality_confidence: float | None = None
+    dimension_debt_score: float | None = None
+    dimension_debt_confidence: float | None = None
+    dimension_liquidity_score: float | None = None
+    dimension_liquidity_confidence: float | None = None
+    dimension_data_confidence_score: float | None = None
+    dimension_data_confidence_confidence: float | None = None
+    calculated_wacc: float | None = None
+    beta: float | None = None
+    pre_tax_cost_of_debt: float | None = None
+    after_tax_cost_of_debt: float | None = None
+    tax_rate: float | None = None
+    market_value_equity: float | None = None
+    debt_value: float | None = None
+    equity_weight: float | None = None
+    debt_weight: float | None = None
+    cost_of_capital_sources: tuple[tuple[str, str], ...] = ()
+    cost_of_capital_component_confidences: tuple[tuple[str, float], ...] = ()
+    cost_of_capital_component_fallbacks: tuple[tuple[str, bool], ...] = ()
+    cost_of_capital_notes: tuple[str, ...] = ()
+    valuation_price: float | None = None
+    recommendation_before_gates: str = ""
+    recommendation_gate_code: str = ""
+    recommendation_gate_triggered: bool = False
+    recommendation_gate_explanation: str = ""
+    recommendation_buy_threshold: float | None = None
+    recommendation_watch_threshold: float | None = None
+    recommendation_min_valuation_score_for_buy: float | None = None
+    recommendation_avoid_if_valuation_below: float | None = None
+    recommendation_avoid_if_quality_below: float | None = None
+    valuation_method_audit: tuple[HistoricalValuationMethodAudit, ...] = ()
+    score_model_version: str = ""
+    score_config_fingerprint: str = ""
+    score_configured_weights: tuple[tuple[str, float], ...] = ()
+    score_normalized_weights: tuple[tuple[str, float], ...] = ()
+    score_weighted_total: float | None = None
+    score_reconciliation_difference: float | None = None
+    score_dimension_contributions: tuple[
+        HistoricalScoreDimensionContribution, ...
+    ] = ()
+    score_component_audit: tuple[HistoricalScoreComponentAudit, ...] = ()
 
     @property
     def excess_return(self) -> float | None:
@@ -293,8 +396,37 @@ def write_historical_calibration_csv(
         "as_of",
         "company_type",
         "total_score",
+        "score_model_version",
+        "score_config_fingerprint",
+        "score_configured_weights",
+        "score_normalized_weights",
+        "score_weighted_total",
+        "score_reconciliation_difference",
+        "score_dimension_contributions",
+        "score_component_audit",
         "recommendation",
+        "recommendation_before_gates",
+        "recommendation_gate_code",
+        "recommendation_gate_triggered",
+        "recommendation_gate_explanation",
+        "recommendation_buy_threshold",
+        "recommendation_watch_threshold",
+        "recommendation_min_valuation_score_for_buy",
+        "recommendation_avoid_if_valuation_below",
+        "recommendation_avoid_if_quality_below",
         "data_confidence",
+        "dimension_valuation_score",
+        "dimension_valuation_confidence",
+        "dimension_growth_score",
+        "dimension_growth_confidence",
+        "dimension_quality_score",
+        "dimension_quality_confidence",
+        "dimension_debt_score",
+        "dimension_debt_confidence",
+        "dimension_liquidity_score",
+        "dimension_liquidity_confidence",
+        "dimension_data_confidence_score",
+        "dimension_data_confidence_confidence",
         "forward_return",
         "benchmark_return",
         "max_drawdown",
@@ -303,6 +435,7 @@ def write_historical_calibration_csv(
         "benchmark_ticker",
         "price_start_date",
         "price_end_date",
+        "valuation_price",
         "price_source",
         "filing_accession",
         "fundamental_coverage",
@@ -315,10 +448,24 @@ def write_historical_calibration_csv(
         "discount_rate",
         "discount_rate_label",
         "wacc",
+        "calculated_wacc",
         "cost_of_equity",
+        "beta",
+        "pre_tax_cost_of_debt",
+        "after_tax_cost_of_debt",
+        "tax_rate",
+        "market_value_equity",
+        "debt_value",
+        "equity_weight",
+        "debt_weight",
         "cost_of_capital_method",
         "cost_of_capital_confidence",
         "cost_of_capital_is_fallback",
+        "cost_of_capital_sources",
+        "cost_of_capital_component_confidences",
+        "cost_of_capital_component_fallbacks",
+        "cost_of_capital_notes",
+        "valuation_method_audit",
         "is_cyclical",
         "cyclical_normalization_applied",
         "cyclical_normalization_years",
@@ -352,8 +499,93 @@ def write_historical_calibration_csv(
                     "as_of": observation.as_of.isoformat(),
                     "company_type": observation.company_type,
                     "total_score": f"{observation.total_score:.6f}",
+                    "score_model_version": observation.score_model_version,
+                    "score_config_fingerprint": (
+                        observation.score_config_fingerprint
+                    ),
+                    "score_configured_weights": _format_mapping(
+                        observation.score_configured_weights
+                    ),
+                    "score_normalized_weights": _format_mapping(
+                        observation.score_normalized_weights
+                    ),
+                    "score_weighted_total": _format_optional(
+                        observation.score_weighted_total
+                    ),
+                    "score_reconciliation_difference": _format_optional(
+                        observation.score_reconciliation_difference
+                    ),
+                    "score_dimension_contributions": (
+                        _format_score_dimension_contributions(
+                            observation.score_dimension_contributions
+                        )
+                    ),
+                    "score_component_audit": _format_score_component_audit(
+                        observation.score_component_audit
+                    ),
                     "recommendation": observation.recommendation,
+                    "recommendation_before_gates": (
+                        observation.recommendation_before_gates
+                    ),
+                    "recommendation_gate_code": observation.recommendation_gate_code,
+                    "recommendation_gate_triggered": (
+                        "1" if observation.recommendation_gate_triggered else "0"
+                    ),
+                    "recommendation_gate_explanation": (
+                        observation.recommendation_gate_explanation
+                    ),
+                    "recommendation_buy_threshold": _format_optional(
+                        observation.recommendation_buy_threshold
+                    ),
+                    "recommendation_watch_threshold": _format_optional(
+                        observation.recommendation_watch_threshold
+                    ),
+                    "recommendation_min_valuation_score_for_buy": _format_optional(
+                        observation.recommendation_min_valuation_score_for_buy
+                    ),
+                    "recommendation_avoid_if_valuation_below": _format_optional(
+                        observation.recommendation_avoid_if_valuation_below
+                    ),
+                    "recommendation_avoid_if_quality_below": _format_optional(
+                        observation.recommendation_avoid_if_quality_below
+                    ),
                     "data_confidence": f"{observation.data_confidence:.6f}",
+                    "dimension_valuation_score": _format_optional(
+                        observation.dimension_valuation_score
+                    ),
+                    "dimension_valuation_confidence": _format_optional(
+                        observation.dimension_valuation_confidence
+                    ),
+                    "dimension_growth_score": _format_optional(
+                        observation.dimension_growth_score
+                    ),
+                    "dimension_growth_confidence": _format_optional(
+                        observation.dimension_growth_confidence
+                    ),
+                    "dimension_quality_score": _format_optional(
+                        observation.dimension_quality_score
+                    ),
+                    "dimension_quality_confidence": _format_optional(
+                        observation.dimension_quality_confidence
+                    ),
+                    "dimension_debt_score": _format_optional(
+                        observation.dimension_debt_score
+                    ),
+                    "dimension_debt_confidence": _format_optional(
+                        observation.dimension_debt_confidence
+                    ),
+                    "dimension_liquidity_score": _format_optional(
+                        observation.dimension_liquidity_score
+                    ),
+                    "dimension_liquidity_confidence": _format_optional(
+                        observation.dimension_liquidity_confidence
+                    ),
+                    "dimension_data_confidence_score": _format_optional(
+                        observation.dimension_data_confidence_score
+                    ),
+                    "dimension_data_confidence_confidence": _format_optional(
+                        observation.dimension_data_confidence_confidence
+                    ),
                     "forward_return": _format_optional(observation.forward_return),
                     "benchmark_return": _format_optional(observation.benchmark_return),
                     "max_drawdown": _format_optional(observation.max_drawdown),
@@ -374,6 +606,7 @@ def write_historical_calibration_csv(
                         if observation.price_end_date is not None
                         else ""
                     ),
+                    "valuation_price": _format_optional(observation.valuation_price),
                     "price_source": observation.price_source,
                     "filing_accession": observation.filing_accession,
                     "fundamental_coverage": f"{observation.fundamental_coverage:.6f}",
@@ -398,13 +631,47 @@ def write_historical_calibration_csv(
                     "discount_rate": _format_optional(observation.discount_rate),
                     "discount_rate_label": observation.discount_rate_label,
                     "wacc": _format_optional(observation.wacc),
+                    "calculated_wacc": _format_optional(
+                        observation.calculated_wacc
+                    ),
                     "cost_of_equity": _format_optional(observation.cost_of_equity),
+                    "beta": _format_optional(observation.beta),
+                    "pre_tax_cost_of_debt": _format_optional(
+                        observation.pre_tax_cost_of_debt
+                    ),
+                    "after_tax_cost_of_debt": _format_optional(
+                        observation.after_tax_cost_of_debt
+                    ),
+                    "tax_rate": _format_optional(observation.tax_rate),
+                    "market_value_equity": _format_optional(
+                        observation.market_value_equity
+                    ),
+                    "debt_value": _format_optional(observation.debt_value),
+                    "equity_weight": _format_optional(observation.equity_weight),
+                    "debt_weight": _format_optional(observation.debt_weight),
                     "cost_of_capital_method": observation.cost_of_capital_method,
                     "cost_of_capital_confidence": _format_optional(
                         observation.cost_of_capital_confidence
                     ),
                     "cost_of_capital_is_fallback": (
                         "1" if observation.cost_of_capital_is_fallback else "0"
+                    ),
+                    "cost_of_capital_sources": _format_mapping(
+                        observation.cost_of_capital_sources
+                    ),
+                    "cost_of_capital_component_confidences": _format_mapping(
+                        observation.cost_of_capital_component_confidences
+                    ),
+                    "cost_of_capital_component_fallbacks": _format_mapping(
+                        observation.cost_of_capital_component_fallbacks
+                    ),
+                    "cost_of_capital_notes": json.dumps(
+                        observation.cost_of_capital_notes,
+                        ensure_ascii=True,
+                        separators=(",", ":"),
+                    ),
+                    "valuation_method_audit": _format_valuation_method_audit(
+                        observation.valuation_method_audit
                     ),
                     "is_cyclical": "1" if observation.is_cyclical else "0",
                     "cyclical_normalization_applied": (
@@ -464,14 +731,76 @@ def read_historical_calibration_csv(path: str | Path) -> list[HistoricalCalibrat
             erp_available_date = row.get("erp_available_date", "").strip()
             lifecycle_event_date = row.get("lifecycle_event_date", "").strip()
             stock_terminal_date = row.get("stock_terminal_date", "").strip()
+            legacy_data_confidence = float(row["data_confidence"])
+            dimension_data_confidence_score = _parse_optional_float(
+                row.get("dimension_data_confidence_score", "")
+            )
+            dimension_data_confidence_confidence = _parse_optional_float(
+                row.get("dimension_data_confidence_confidence", "")
+            )
             observations.append(
                 HistoricalCalibrationObservation(
                     ticker=row["ticker"].upper().strip(),
                     as_of=date.fromisoformat(row["as_of"]),
                     company_type=row["company_type"],
                     total_score=float(row["total_score"]),
+                    score_model_version=row.get(
+                        "score_model_version", ""
+                    ).strip(),
+                    score_config_fingerprint=row.get(
+                        "score_config_fingerprint", ""
+                    ).strip(),
+                    score_configured_weights=_parse_mapping(
+                        row.get("score_configured_weights", ""),
+                        float,
+                    ),
+                    score_normalized_weights=_parse_mapping(
+                        row.get("score_normalized_weights", ""),
+                        float,
+                    ),
+                    score_weighted_total=_parse_optional_float(
+                        row.get("score_weighted_total", "")
+                    ),
+                    score_reconciliation_difference=_parse_optional_float(
+                        row.get("score_reconciliation_difference", "")
+                    ),
+                    score_dimension_contributions=(
+                        _parse_score_dimension_contributions(
+                            row.get("score_dimension_contributions", "")
+                        )
+                    ),
+                    score_component_audit=_parse_score_component_audit(
+                        row.get("score_component_audit", "")
+                    ),
                     recommendation=row["recommendation"],
-                    data_confidence=float(row["data_confidence"]),
+                    recommendation_before_gates=row.get(
+                        "recommendation_before_gates", ""
+                    ).strip(),
+                    recommendation_gate_code=row.get(
+                        "recommendation_gate_code", ""
+                    ).strip(),
+                    recommendation_gate_triggered=_parse_bool(
+                        row.get("recommendation_gate_triggered", "")
+                    ),
+                    recommendation_gate_explanation=row.get(
+                        "recommendation_gate_explanation", ""
+                    ).strip(),
+                    recommendation_buy_threshold=_parse_optional_float(
+                        row.get("recommendation_buy_threshold", "")
+                    ),
+                    recommendation_watch_threshold=_parse_optional_float(
+                        row.get("recommendation_watch_threshold", "")
+                    ),
+                    recommendation_min_valuation_score_for_buy=_parse_optional_float(
+                        row.get("recommendation_min_valuation_score_for_buy", "")
+                    ),
+                    recommendation_avoid_if_valuation_below=_parse_optional_float(
+                        row.get("recommendation_avoid_if_valuation_below", "")
+                    ),
+                    recommendation_avoid_if_quality_below=_parse_optional_float(
+                        row.get("recommendation_avoid_if_quality_below", "")
+                    ),
+                    data_confidence=legacy_data_confidence,
                     forward_return=_parse_optional_float(row.get("forward_return", "")),
                     benchmark_return=_parse_optional_float(row.get("benchmark_return", "")),
                     max_drawdown=_parse_optional_float(row.get("max_drawdown", "")),
@@ -481,6 +810,9 @@ def read_historical_calibration_csv(path: str | Path) -> list[HistoricalCalibrat
                     benchmark_ticker=row.get("benchmark_ticker", "").upper().strip(),
                     price_start_date=date.fromisoformat(price_start_date) if price_start_date else None,
                     price_end_date=date.fromisoformat(price_end_date) if price_end_date else None,
+                    valuation_price=_parse_optional_float(
+                        row.get("valuation_price", "")
+                    ),
                     price_source=row.get("price_source", "").strip(),
                     filing_accession=row.get("filing_accession", "").strip(),
                     fundamental_coverage=float(row.get("fundamental_coverage", "0") or 0.0),
@@ -508,7 +840,26 @@ def read_historical_calibration_csv(path: str | Path) -> list[HistoricalCalibrat
                     discount_rate=_parse_optional_float(row.get("discount_rate", "")),
                     discount_rate_label=row.get("discount_rate_label", "").strip(),
                     wacc=_parse_optional_float(row.get("wacc", "")),
+                    calculated_wacc=_parse_optional_float(
+                        row.get("calculated_wacc", "")
+                    ),
                     cost_of_equity=_parse_optional_float(row.get("cost_of_equity", "")),
+                    beta=_parse_optional_float(row.get("beta", "")),
+                    pre_tax_cost_of_debt=_parse_optional_float(
+                        row.get("pre_tax_cost_of_debt", "")
+                    ),
+                    after_tax_cost_of_debt=_parse_optional_float(
+                        row.get("after_tax_cost_of_debt", "")
+                    ),
+                    tax_rate=_parse_optional_float(row.get("tax_rate", "")),
+                    market_value_equity=_parse_optional_float(
+                        row.get("market_value_equity", "")
+                    ),
+                    debt_value=_parse_optional_float(row.get("debt_value", "")),
+                    equity_weight=_parse_optional_float(
+                        row.get("equity_weight", "")
+                    ),
+                    debt_weight=_parse_optional_float(row.get("debt_weight", "")),
                     cost_of_capital_method=row.get("cost_of_capital_method", "").strip(),
                     cost_of_capital_confidence=_parse_optional_float(
                         row.get("cost_of_capital_confidence", "")
@@ -516,6 +867,24 @@ def read_historical_calibration_csv(path: str | Path) -> list[HistoricalCalibrat
                     cost_of_capital_is_fallback=(
                         row.get("cost_of_capital_is_fallback", "").lower()
                         in {"1", "true", "sim", "yes"}
+                    ),
+                    cost_of_capital_sources=_parse_mapping(
+                        row.get("cost_of_capital_sources", ""),
+                        str,
+                    ),
+                    cost_of_capital_component_confidences=_parse_mapping(
+                        row.get("cost_of_capital_component_confidences", ""),
+                        float,
+                    ),
+                    cost_of_capital_component_fallbacks=_parse_mapping(
+                        row.get("cost_of_capital_component_fallbacks", ""),
+                        _parse_bool,
+                    ),
+                    cost_of_capital_notes=_parse_string_sequence(
+                        row.get("cost_of_capital_notes", "")
+                    ),
+                    valuation_method_audit=_parse_valuation_method_audit(
+                        row.get("valuation_method_audit", "")
                     ),
                     is_cyclical=(
                         row.get("is_cyclical", "").lower()
@@ -581,6 +950,46 @@ def read_historical_calibration_csv(path: str | Path) -> list[HistoricalCalibrat
                     lifecycle_source_url=row.get(
                         "lifecycle_source_url", ""
                     ).strip(),
+                    dimension_valuation_score=_parse_optional_float(
+                        row.get("dimension_valuation_score", "")
+                    ),
+                    dimension_valuation_confidence=_parse_optional_float(
+                        row.get("dimension_valuation_confidence", "")
+                    ),
+                    dimension_growth_score=_parse_optional_float(
+                        row.get("dimension_growth_score", "")
+                    ),
+                    dimension_growth_confidence=_parse_optional_float(
+                        row.get("dimension_growth_confidence", "")
+                    ),
+                    dimension_quality_score=_parse_optional_float(
+                        row.get("dimension_quality_score", "")
+                    ),
+                    dimension_quality_confidence=_parse_optional_float(
+                        row.get("dimension_quality_confidence", "")
+                    ),
+                    dimension_debt_score=_parse_optional_float(
+                        row.get("dimension_debt_score", "")
+                    ),
+                    dimension_debt_confidence=_parse_optional_float(
+                        row.get("dimension_debt_confidence", "")
+                    ),
+                    dimension_liquidity_score=_parse_optional_float(
+                        row.get("dimension_liquidity_score", "")
+                    ),
+                    dimension_liquidity_confidence=_parse_optional_float(
+                        row.get("dimension_liquidity_confidence", "")
+                    ),
+                    dimension_data_confidence_score=(
+                        dimension_data_confidence_score
+                        if dimension_data_confidence_score is not None
+                        else legacy_data_confidence
+                    ),
+                    dimension_data_confidence_confidence=(
+                        dimension_data_confidence_confidence
+                        if dimension_data_confidence_confidence is not None
+                        else legacy_data_confidence
+                    ),
                 )
             )
     return observations
@@ -634,3 +1043,232 @@ def _format_optional(value: float | None) -> str:
 def _parse_optional_float(value: str | None) -> float | None:
     value = (value or "").strip()
     return float(value) if value else None
+
+
+def _format_mapping(values: Iterable[tuple[str, object]]) -> str:
+    return json.dumps(
+        dict(values),
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+
+
+def _parse_mapping(
+    value: str | None,
+    converter: Callable[[object], _MappingValue],
+) -> tuple[tuple[str, _MappingValue], ...]:
+    value = (value or "").strip()
+    if not value:
+        return ()
+    payload = json.loads(value)
+    if not isinstance(payload, dict):
+        raise ValueError("Mapeamento de custo de capital invalido no CSV")
+    return tuple(
+        sorted((str(key), converter(raw_value)) for key, raw_value in payload.items())
+    )
+
+
+def _parse_bool(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"1", "true", "sim", "yes"}
+
+
+def _parse_string_sequence(value: str | None) -> tuple[str, ...]:
+    value = (value or "").strip()
+    if not value:
+        return ()
+    payload = json.loads(value)
+    if not isinstance(payload, list):
+        raise ValueError("Notas de custo de capital invalidas no CSV")
+    return tuple(str(item) for item in payload)
+
+
+def _format_score_dimension_contributions(
+    contributions: Iterable[HistoricalScoreDimensionContribution],
+) -> str:
+    return json.dumps(
+        [asdict(contribution) for contribution in contributions],
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+
+
+def _parse_score_dimension_contributions(
+    value: str | None,
+) -> tuple[HistoricalScoreDimensionContribution, ...]:
+    value = (value or "").strip()
+    if not value:
+        return ()
+    payload = json.loads(value)
+    if not isinstance(payload, list):
+        raise ValueError("Contribuicoes dimensionais do score invalidas no CSV")
+    contributions: list[HistoricalScoreDimensionContribution] = []
+    for item in payload:
+        if not isinstance(item, dict):
+            raise ValueError("Contribuicao dimensional do score invalida no CSV")
+        contributions.append(
+            HistoricalScoreDimensionContribution(
+                name=str(item.get("name", "")).strip(),
+                score=float(item.get("score", 0.0) or 0.0),
+                confidence=float(item.get("confidence", 0.0) or 0.0),
+                configured_weight=float(
+                    item.get("configured_weight", 0.0) or 0.0
+                ),
+                normalized_weight=float(
+                    item.get("normalized_weight", 0.0) or 0.0
+                ),
+                weighted_contribution=float(
+                    item.get("weighted_contribution", 0.0) or 0.0
+                ),
+            )
+        )
+    return tuple(contributions)
+
+
+def _format_score_component_audit(
+    components: Iterable[HistoricalScoreComponentAudit],
+) -> str:
+    return json.dumps(
+        [asdict(component) for component in components],
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+
+
+def _parse_score_component_audit(
+    value: str | None,
+) -> tuple[HistoricalScoreComponentAudit, ...]:
+    value = (value or "").strip()
+    if not value:
+        return ()
+    payload = json.loads(value)
+    if not isinstance(payload, list):
+        raise ValueError("Auditoria dos componentes do score invalida no CSV")
+    components: list[HistoricalScoreComponentAudit] = []
+    for item in payload:
+        if not isinstance(item, dict):
+            raise ValueError("Componente do score invalido no CSV")
+        components.append(
+            HistoricalScoreComponentAudit(
+                dimension=str(item.get("dimension", "")).strip(),
+                stage=str(item.get("stage", "")).strip(),
+                component=str(item.get("component", "")).strip(),
+                raw_value=_parse_optional_number(item.get("raw_value")),
+                transformed_score=_parse_optional_number(
+                    item.get("transformed_score")
+                ),
+                configured_weight=float(
+                    item.get("configured_weight", 0.0) or 0.0
+                ),
+                effective_weight=float(
+                    item.get("effective_weight", 0.0) or 0.0
+                ),
+                weighted_contribution=float(
+                    item.get("weighted_contribution", 0.0) or 0.0
+                ),
+                confidence=float(item.get("confidence", 0.0) or 0.0),
+                source=str(item.get("source", "")).strip(),
+                used=_parse_bool(item.get("used", False)),
+                reason=str(item.get("reason", "")).strip(),
+            )
+        )
+    return tuple(components)
+
+
+def _format_valuation_method_audit(
+    methods: Iterable[HistoricalValuationMethodAudit],
+) -> str:
+    return json.dumps(
+        [asdict(method) for method in methods],
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+
+
+def _parse_valuation_method_audit(
+    value: str | None,
+) -> tuple[HistoricalValuationMethodAudit, ...]:
+    value = (value or "").strip()
+    if not value:
+        return ()
+    payload = json.loads(value)
+    if not isinstance(payload, list):
+        raise ValueError("Auditoria dos metodos de valuation invalida no CSV")
+    methods: list[HistoricalValuationMethodAudit] = []
+    for item in payload:
+        if not isinstance(item, dict):
+            raise ValueError("Metodo de valuation invalido no CSV")
+        methods.append(
+            HistoricalValuationMethodAudit(
+                method=str(item.get("method", "")).strip(),
+                used_in_score=_parse_bool(item.get("used_in_score", False)),
+                fair_value_per_share=_parse_optional_number(
+                    item.get("fair_value_per_share")
+                ),
+                margin_of_safety=_parse_optional_number(
+                    item.get("margin_of_safety")
+                ),
+                confidence=float(item.get("confidence", 0.0) or 0.0),
+                source=str(item.get("source", "")).strip(),
+                exclusion_reason=str(item.get("exclusion_reason", "")).strip(),
+                enterprise_value=_parse_optional_number(
+                    item.get("enterprise_value")
+                ),
+                equity_value=_parse_optional_number(item.get("equity_value")),
+                model_outputs=_parse_numeric_pairs(item.get("model_outputs", [])),
+                assumptions=_parse_valuation_assumptions(
+                    item.get("assumptions", [])
+                ),
+            )
+        )
+    return tuple(methods)
+
+
+def _parse_optional_number(value: object) -> float | None:
+    return None if value is None or value == "" else float(value)
+
+
+def _parse_numeric_pairs(value: object) -> tuple[tuple[str, float], ...]:
+    if value in (None, ""):
+        return ()
+    if not isinstance(value, list):
+        raise ValueError("Saidas intermediarias de valuation invalidas no CSV")
+    pairs: list[tuple[str, float]] = []
+    for item in value:
+        if not isinstance(item, (list, tuple)) or len(item) != 2:
+            raise ValueError("Saida intermediaria de valuation invalida no CSV")
+        pairs.append((str(item[0]), float(item[1])))
+    return tuple(pairs)
+
+
+def _parse_valuation_assumptions(
+    value: object,
+) -> tuple[HistoricalValuationAssumptionAudit, ...]:
+    if value in (None, ""):
+        return ()
+    if not isinstance(value, list):
+        raise ValueError("Premissas de valuation invalidas no CSV")
+    assumptions: list[HistoricalValuationAssumptionAudit] = []
+    for item in value:
+        if not isinstance(item, dict):
+            raise ValueError("Premissa de valuation invalida no CSV")
+        assumptions.append(
+            HistoricalValuationAssumptionAudit(
+                name=str(item.get("name", "")).strip(),
+                input_value=_parse_optional_number(item.get("input_value")),
+                effective_value=_parse_optional_number(
+                    item.get("effective_value")
+                ),
+                source=str(item.get("source", "")).strip(),
+                confidence=float(item.get("confidence", 0.0) or 0.0),
+                is_fallback=_parse_bool(item.get("is_fallback", False)),
+                note=str(item.get("note", "")).strip(),
+                formula=str(item.get("formula", "")).strip(),
+            )
+        )
+    return tuple(assumptions)

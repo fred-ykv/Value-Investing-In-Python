@@ -50,9 +50,59 @@ O custo de capital e reconstruido com duas observacoes datadas:
    apenas em 15 de janeiro do ano seguinte.
 
 O CSV registra taxa livre de risco, ERP, datas de referencia, Ke, WACC, taxa de
-desconto efetivamente aplicada, metodo, confianca e uso de fallback. A
-observacao deixa de ser point-in-time valida se uma das premissas macro ainda
-nao estava disponivel na data-base. Nao existe fallback para taxas atuais.
+desconto efetivamente aplicada, metodo, confianca e uso de fallback. Tambem
+preserva beta, custo da divida antes e depois de impostos, aliquota, valores e
+pesos de divida e patrimonio, WACC calculado, fontes, confiancas e fallbacks por
+componente. A observacao deixa de ser point-in-time valida se uma das premissas
+macro ainda nao estava disponivel na data-base. Nao existe fallback para taxas
+atuais.
+
+O mesmo CSV preserva, em colunas separadas, score e confianca das seis
+dimensoes calculadas na data-base: valuation, crescimento, qualidade, divida,
+liquidez e confianca dos dados. Arquivos antigos continuam legiveis; dimensoes
+que nao existiam no esquema anterior permanecem ausentes em vez de serem
+inferidas.
+
+Para reconciliar o score total, cada dimensao registra o peso configurado, o
+peso normalizado e sua contribuicao ponderada. A soma dessas contribuicoes deve
+ser identica ao score total; divergencia acima da tolerancia numerica interrompe
+a coleta em vez de produzir uma observacao silenciosamente inconsistente. O
+CSV tambem preserva a versao do modelo, os dois conjuntos de pesos e uma
+impressao digital SHA-256 deterministica da configuracao de score. O hash cobre
+perfil da empresa, pesos, limiares, travas e limite de peso por metodo de
+valuation, permitindo separar observacoes calculadas sob configuracoes
+diferentes sem alterar ou recalcular o historico.
+
+Cada dimensao tambem preserva seus componentes internos: valor bruto, score
+transformado, peso previsto, peso efetivo apos ausencias, contribuicao,
+confianca, fonte, uso ou descarte e respectivo motivo. Em valuation, a trilha
+separa os modelos intrinsecos, as regras especificas de bancos e a combinacao
+final com comparaveis. Somente o estagio `dimension` entra na reconciliacao do
+subtotal, evitando dupla contagem das camadas intermediarias. A coleta falha se
+a soma dos componentes finais nao reproduzir qualquer uma das seis dimensoes.
+
+A decisao de recomendacao tambem fica reproduzivel. O historico registra a
+recomendacao que resultaria apenas dos limiares do score, a recomendacao final,
+a trava eventualmente acionada, sua justificativa e os cinco limites vigentes
+na data da analise. A ordem das travas e a mesma usada pelo programa ao emitir
+o relatorio; esta telemetria nao muda a decisao.
+
+Para cada metodo de valuation calculado, o CSV guarda valor justo por acao,
+margem de seguranca, confianca, fonte, indicacao de entrada no score e motivo de
+exclusao. O preco historico sem ajuste usado na avaliacao tambem e preservado,
+permitindo reconciliar a margem de seguranca. Um metodo entra no score somente
+quando possui margem de seguranca e confianca maior que zero, exatamente como
+na regra de scoring. Arquivos antigos nao recebem metodos ou travas inferidos.
+
+Cada metodo tambem carrega um livro de premissas com nome, valor recebido,
+valor efetivamente usado, fonte, confianca, fallback, nota e formula. Essa
+distincao evidencia limites e ajustes sem confundir um parametro fixo do modelo
+com a substituicao de um dado ausente. DCF/FCFF e Growth/Tech preservam ainda o
+valor presente do periodo explicito, o valor presente terminal e a participacao
+do terminal no enterprise value; EVA preserva o lucro economico e seu valor
+presente. Valores de empresa e patrimonio ficam registrados quando existirem.
+Nenhuma dessas informacoes altera o calculo: elas apenas tornam a execucao
+historica reproduzivel.
 
 ## Normalizacao point-in-time de empresas ciclicas
 
@@ -118,7 +168,7 @@ Detalhes: `fundamental_analysis/TIINGO_HISTORICAL_PRICES.md`.
 
 Os arquivos sao gravados em `historical_calibration_outputs/`:
 
-- `historical_observations.csv`: observacoes, premissas macro, custo de capital e auditoria da normalizacao ciclica;
+- `historical_observations.csv`: observacoes, scores, pesos, contribuicoes dimensionais e componentes internos, versao da configuracao, decisao e travas de recomendacao, valuation por metodo, premissas macro, custo de capital e auditoria da normalizacao ciclica;
 - `collection_manifest.json`: trilha detalhada de sucessos, avisos e erros;
 - `collection_report.md`: cobertura por ticker e filing;
 - `historical_calibration.md`: Spearman, monotonicidade, retorno e drawdown.

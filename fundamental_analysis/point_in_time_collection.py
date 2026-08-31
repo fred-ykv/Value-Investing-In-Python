@@ -11,7 +11,13 @@ from typing import Callable, Iterable
 from .benchmark_universe import BenchmarkCase, DEFAULT_BENCHMARK_CASES
 from .config import CYCLICAL, POINT_IN_TIME, PointInTimeAssumptions
 from .data_sources import metric_value
-from .historical_calibration import HistoricalCalibrationObservation
+from .historical_calibration import (
+    HistoricalCalibrationObservation,
+    HistoricalScoreComponentAudit,
+    HistoricalScoreDimensionContribution,
+    HistoricalValuationAssumptionAudit,
+    HistoricalValuationMethodAudit,
+)
 from .historical_macro import HistoricalMacroProvider, HistoricalMacroSnapshot
 from .historical_prices import (
     HistoricalPriceProvider,
@@ -20,6 +26,7 @@ from .historical_prices import (
     calculate_price_outcome,
 )
 from .main import AnalysisResult, analyze_ticker_from_inputs
+from .scoring import recommendation_decision_from_score
 from .sec_edgar import PointInTimeFundamentals, SecEdgarClient, SecFilingAnchor
 
 
@@ -109,8 +116,82 @@ def collect_point_in_time_observation(
             analyzer,
             cyclical_history,
         )
-        data_dimension = result.score.dimensions.get("data_confidence")
-        data_confidence = data_dimension.score if data_dimension is not None else 0.0
+        dimension_audit = {
+            name: _score_dimension_audit(result, name)
+            for name in (
+                "valuation",
+                "growth",
+                "quality",
+                "debt",
+                "liquidity",
+                "data_confidence",
+            )
+        }
+        data_confidence = dimension_audit["data_confidence"][0] or 0.0
+        decision = result.score.recommendation_decision or (
+            recommendation_decision_from_score(
+                result.score.total_score,
+                result.score.dimensions,
+            )
+        )
+        score_contributions = tuple(
+            HistoricalScoreDimensionContribution(
+                name=contribution.name,
+                score=contribution.score,
+                confidence=contribution.confidence,
+                configured_weight=contribution.configured_weight,
+                normalized_weight=contribution.normalized_weight,
+                weighted_contribution=contribution.weighted_contribution,
+            )
+            for contribution in result.score.dimension_contributions
+        )
+        score_weighted_total = (
+            sum(item.weighted_contribution for item in score_contributions)
+            if score_contributions
+            else None
+        )
+        score_reconciliation_difference = (
+            result.score.total_score - score_weighted_total
+            if score_weighted_total is not None
+            else None
+        )
+        if (
+            score_reconciliation_difference is not None
+            and abs(score_reconciliation_difference) > 1e-12
+        ):
+            raise ValueError(
+                "Contribuicoes dimensionais nao reconciliam com o score total"
+            )
+        score_configuration = result.score.configuration_audit
+        score_component_audit = tuple(
+            HistoricalScoreComponentAudit(
+                dimension=component.dimension,
+                stage=component.stage,
+                component=component.component,
+                raw_value=component.raw_value,
+                transformed_score=component.transformed_score,
+                configured_weight=component.configured_weight,
+                effective_weight=component.effective_weight,
+                weighted_contribution=component.weighted_contribution,
+                confidence=component.confidence,
+                source=component.source,
+                used=component.used,
+                reason=component.reason,
+            )
+            for component in result.score.component_audit
+        )
+        for dimension_name, (dimension_score, _) in dimension_audit.items():
+            reconciled = sum(
+                component.weighted_contribution
+                for component in score_component_audit
+                if component.dimension == dimension_name
+                and component.stage == "dimension"
+                and component.used
+            )
+            if dimension_score is not None and abs(reconciled - dimension_score) > 1e-12:
+                raise ValueError(
+                    f"Componentes historicos de {dimension_name} nao reconciliam com a dimensao"
+                )
         critical_coverage, missing_critical = _critical_metric_audit(
             case,
             snapshot,
@@ -145,7 +226,42 @@ def collect_point_in_time_observation(
             as_of=as_of,
             company_type=result.company_type,
             total_score=result.score.total_score,
+            score_model_version=(
+                score_configuration.model_version if score_configuration else ""
+            ),
+            score_config_fingerprint=(
+                score_configuration.fingerprint if score_configuration else ""
+            ),
+            score_configured_weights=(
+                score_configuration.configured_weights
+                if score_configuration
+                else ()
+            ),
+            score_normalized_weights=(
+                score_configuration.normalized_weights
+                if score_configuration
+                else ()
+            ),
+            score_weighted_total=score_weighted_total,
+            score_reconciliation_difference=score_reconciliation_difference,
+            score_dimension_contributions=score_contributions,
+            score_component_audit=score_component_audit,
             recommendation=result.score.recommendation,
+            recommendation_before_gates=decision.recommendation_before_gates,
+            recommendation_gate_code=decision.gate_code,
+            recommendation_gate_triggered=decision.gate_triggered,
+            recommendation_gate_explanation=decision.explanation,
+            recommendation_buy_threshold=decision.buy_threshold,
+            recommendation_watch_threshold=decision.watch_threshold,
+            recommendation_min_valuation_score_for_buy=(
+                decision.min_valuation_score_for_buy
+            ),
+            recommendation_avoid_if_valuation_below=(
+                decision.avoid_if_valuation_below
+            ),
+            recommendation_avoid_if_quality_below=(
+                decision.avoid_if_quality_below
+            ),
             data_confidence=data_confidence,
             forward_return=outcome.forward_return,
             benchmark_return=outcome.benchmark_return,
@@ -155,6 +271,7 @@ def collect_point_in_time_observation(
             benchmark_ticker=benchmark_ticker,
             price_start_date=outcome.price_start_date,
             price_end_date=outcome.price_end_date,
+            valuation_price=outcome.start_price,
             price_source=outcome.source,
             filing_accession=anchor.accession_number,
             fundamental_coverage=snapshot.audit.coverage_ratio,
@@ -167,10 +284,33 @@ def collect_point_in_time_observation(
             discount_rate=result.cost_of_capital.discount_rate,
             discount_rate_label=result.cost_of_capital.discount_rate_label,
             wacc=result.cost_of_capital.wacc,
+            calculated_wacc=result.cost_of_capital.calculated_wacc,
             cost_of_equity=result.cost_of_capital.cost_of_equity,
+            beta=result.cost_of_capital.beta,
+            pre_tax_cost_of_debt=result.cost_of_capital.pre_tax_cost_of_debt,
+            after_tax_cost_of_debt=result.cost_of_capital.after_tax_cost_of_debt,
+            tax_rate=result.cost_of_capital.tax_rate,
+            market_value_equity=result.cost_of_capital.market_value_equity,
+            debt_value=result.cost_of_capital.debt_value,
+            equity_weight=result.cost_of_capital.equity_weight,
+            debt_weight=result.cost_of_capital.debt_weight,
             cost_of_capital_method=result.cost_of_capital.method,
             cost_of_capital_confidence=result.cost_of_capital.confidence,
             cost_of_capital_is_fallback=result.cost_of_capital.is_fallback,
+            cost_of_capital_sources=tuple(
+                sorted(result.cost_of_capital.sources.items())
+            ),
+            cost_of_capital_component_confidences=tuple(
+                sorted(result.cost_of_capital.component_confidences.items())
+            ),
+            cost_of_capital_component_fallbacks=tuple(
+                sorted(result.cost_of_capital.component_fallbacks.items())
+            ),
+            cost_of_capital_notes=result.cost_of_capital.notes,
+            valuation_method_audit=tuple(
+                _valuation_method_audit(valuation)
+                for valuation in result.valuations
+            ),
             is_cyclical=result.cyclical_normalization.is_cyclical,
             cyclical_normalization_applied=result.cyclical_normalization.applied,
             cyclical_normalization_years=result.cyclical_normalization.sample_years,
@@ -209,6 +349,20 @@ def collect_point_in_time_observation(
             lifecycle_source_url=(
                 case.lifecycle_event.source_url if case.lifecycle_event else ""
             ),
+            dimension_valuation_score=dimension_audit["valuation"][0],
+            dimension_valuation_confidence=dimension_audit["valuation"][1],
+            dimension_growth_score=dimension_audit["growth"][0],
+            dimension_growth_confidence=dimension_audit["growth"][1],
+            dimension_quality_score=dimension_audit["quality"][0],
+            dimension_quality_confidence=dimension_audit["quality"][1],
+            dimension_debt_score=dimension_audit["debt"][0],
+            dimension_debt_confidence=dimension_audit["debt"][1],
+            dimension_liquidity_score=dimension_audit["liquidity"][0],
+            dimension_liquidity_confidence=dimension_audit["liquidity"][1],
+            dimension_data_confidence_score=dimension_audit["data_confidence"][0],
+            dimension_data_confidence_confidence=dimension_audit[
+                "data_confidence"
+            ][1],
         )
         return PointInTimeCollectionResult(
             ticker=case.ticker.upper(),
@@ -466,9 +620,87 @@ def _valuation_diagnostic_number(
     return float(value) if value is not None else None
 
 
+def _valuation_method_audit(valuation: object) -> HistoricalValuationMethodAudit:
+    margin = getattr(valuation, "margin_of_safety", None)
+    confidence = float(getattr(valuation, "confidence", 0.0) or 0.0)
+    diagnostics = getattr(valuation, "diagnostics", {}) or {}
+    used_in_score = margin is not None and confidence > 0.0
+    exclusion_reason = ""
+    if not used_in_score:
+        if margin is None:
+            exclusion_reason = str(
+                diagnostics.get("error") or "Margem de seguranca indisponivel"
+            )
+        else:
+            exclusion_reason = "Confianca igual a zero"
+    fair_value = getattr(valuation, "fair_value_per_share", None)
+    enterprise_value = getattr(valuation, "enterprise_value", None)
+    equity_value = getattr(valuation, "equity_value", None)
+    output_keys = (
+        "pv_explicit_stage",
+        "pv_terminal_value",
+        "terminal_value_share",
+        "explicit_stage_share",
+        "economic_profit",
+        "pv_economic_profit",
+        "net_debt_adjustment",
+    )
+    model_outputs = tuple(
+        (key, float(diagnostics[key]))
+        for key in output_keys
+        if diagnostics.get(key) is not None
+    )
+    assumptions = tuple(
+        HistoricalValuationAssumptionAudit(
+            name=str(getattr(assumption, "name", "")),
+            input_value=_optional_float(
+                getattr(assumption, "input_value", None)
+            ),
+            effective_value=_optional_float(
+                getattr(assumption, "effective_value", None)
+            ),
+            source=str(getattr(assumption, "source", "")),
+            confidence=float(getattr(assumption, "confidence", 0.0) or 0.0),
+            is_fallback=bool(getattr(assumption, "is_fallback", False)),
+            note=str(getattr(assumption, "note", "")),
+            formula=str(getattr(assumption, "formula", "")),
+        )
+        for assumption in (getattr(valuation, "assumptions", ()) or ())
+    )
+    return HistoricalValuationMethodAudit(
+        method=str(getattr(valuation, "method", "")),
+        used_in_score=used_in_score,
+        fair_value_per_share=(
+            float(fair_value) if fair_value is not None else None
+        ),
+        margin_of_safety=float(margin) if margin is not None else None,
+        confidence=confidence,
+        source=str(getattr(valuation, "source", "")),
+        exclusion_reason=exclusion_reason,
+        enterprise_value=_optional_float(enterprise_value),
+        equity_value=_optional_float(equity_value),
+        model_outputs=model_outputs,
+        assumptions=assumptions,
+    )
+
+
 def _metric_number(metric: object) -> float | None:
     value = getattr(metric, "value", None)
     return float(value) if value is not None else None
+
+
+def _optional_float(value: object) -> float | None:
+    return float(value) if value is not None else None
+
+
+def _score_dimension_audit(
+    result: AnalysisResult,
+    name: str,
+) -> tuple[float | None, float | None]:
+    dimension = result.score.dimensions.get(name)
+    if dimension is None:
+        return None, None
+    return float(dimension.score), float(dimension.confidence)
 
 
 def _cycle_audit_label(

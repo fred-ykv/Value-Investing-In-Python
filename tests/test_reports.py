@@ -227,8 +227,28 @@ class ReportTests(unittest.TestCase):
             self.assertAlmostEqual(payload["cost_of_capital"]["discount_rate"], 0.10)
             self.assertIn("cash_flow_reconciliation", payload)
             self.assertTrue(payload["valuation_table"])
+            self.assertIn("assumptions", payload["valuation_table"][0])
+            self.assertEqual(
+                payload["score_configuration"]["model_version"],
+                "multifactor_score_v1",
+            )
+            self.assertEqual(
+                len(payload["score_configuration"]["fingerprint"]),
+                64,
+            )
+            self.assertTrue(payload["score_table"])
+            self.assertIn("normalized_weight", payload["score_table"][0])
+            self.assertIn("weighted_contribution", payload["score_table"][0])
+            self.assertTrue(payload["score_component_audit"])
+            self.assertIn("raw_value", payload["score_component_audit"][0])
+            self.assertIn(
+                "weighted_contribution",
+                payload["score_component_audit"][0],
+            )
+            self.assertTrue(
+                all(row["source"] for row in payload["score_component_audit"])
+            )
 
 
 if __name__ == "__main__":
     unittest.main()
-

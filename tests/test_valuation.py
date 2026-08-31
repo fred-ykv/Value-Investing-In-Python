@@ -1,7 +1,15 @@
 import unittest
 
 from fundamental_analysis.data_sources import MetricValue, metric_value
-from fundamental_analysis.valuation import DCFInput, dcf_fcff, ddm_bank, eva_value, growth_tech_value
+from fundamental_analysis.valuation import (
+    DCFInput,
+    dcf_fcff,
+    ddm_bank,
+    eva_value,
+    graham_value,
+    growth_tech_value,
+    residual_income_bank,
+)
 
 
 class DCFValuationTests(unittest.TestCase):
@@ -9,6 +17,92 @@ class DCFValuationTests(unittest.TestCase):
         result = dcf_fcff(DCFInput(metric_value("fcff", 1_000_000_000, "manual"), metric_value("shares", 100_000_000, "manual"), metric_value("wacc", 0.10, "manual"), metric_value("growth_years", 0.04, "manual"), metric_value("terminal_growth", 0.02, "manual"), metric_value("debt", 2_000_000_000, "manual"), metric_value("cash", 500_000_000, "manual"), metric_value("price", 80, "manual")))
         self.assertIsNotNone(result.fair_value_per_share)
         self.assertIn("sensitivity", result.diagnostics)
+
+    def test_dcf_audits_input_and_effective_assumptions(self):
+        result = dcf_fcff(
+            DCFInput(
+                metric_value("fcff", 1_000, "sec_edgar", formula="nopat_plus_da_minus_capex_minus_delta_wc"),
+                metric_value("shares", 100, "sec_edgar"),
+                metric_value("wacc", 0.10, "historical_wacc"),
+                metric_value("growth_years", 0.04, "fallback", is_fallback=True),
+                metric_value("terminal_growth", 0.12, "manual"),
+                metric_value("debt", 200, "sec_edgar"),
+                metric_value("cash", 50, "sec_edgar"),
+                metric_value("price", 10, "historical_market_price"),
+            )
+        )
+
+        assumptions = {item.name: item for item in result.assumptions}
+        self.assertEqual(assumptions["fcff"].source, "sec_edgar")
+        self.assertTrue(assumptions["explicit_growth_rate"].is_fallback)
+        self.assertAlmostEqual(
+            assumptions["terminal_growth_rate"].input_value,
+            0.12,
+        )
+        self.assertLess(
+            assumptions["terminal_growth_rate"].effective_value,
+            assumptions["discount_rate"].effective_value,
+        )
+        self.assertTrue(assumptions["terminal_growth_rate"].is_fallback)
+        self.assertEqual(
+            assumptions["projection_horizon_years"].source,
+            "config.py",
+        )
+
+    def test_all_valuation_families_expose_reproducible_assumptions(self):
+        methods = (
+            graham_value(
+                metric_value("eps", 2.0, "sec_edgar"),
+                metric_value("bvps", 10.0, "sec_edgar"),
+                metric_value("price", 12.0, "historical_market_price"),
+            ),
+            eva_value(
+                metric_value("invested_capital", 1_000, "sec_edgar"),
+                metric_value("roic", 0.15, "derived"),
+                metric_value("wacc", 0.10, "historical_wacc"),
+                metric_value("terminal_growth", 0.02, "fallback", is_fallback=True),
+                metric_value("shares", 100, "sec_edgar"),
+                metric_value("price", 10, "historical_market_price"),
+                metric_value("net_debt", 200, "derived"),
+            ),
+            residual_income_bank(
+                metric_value("bvps", 25.0, "sec_edgar"),
+                metric_value("roe", 0.14, "derived"),
+                metric_value("ke", 0.10, "historical_capm"),
+                metric_value("terminal_growth", 0.02, "fallback", is_fallback=True),
+                metric_value("price", 30.0, "historical_market_price"),
+            ),
+            ddm_bank(
+                metric_value("dividend_per_share", 1.5, "sec_edgar"),
+                metric_value("ke", 0.10, "historical_capm"),
+                metric_value("terminal_growth", 0.02, "fallback", is_fallback=True),
+                metric_value("price", 30.0, "historical_market_price"),
+            ),
+            growth_tech_value(
+                metric_value("revenue", 1_000, "sec_edgar"),
+                metric_value("revenue_growth", 0.20, "sec_edgar_derived"),
+                metric_value("target_fcf_margin", None, "missing"),
+                metric_value("net_cash", 100, "derived"),
+                metric_value("shares", 100, "sec_edgar"),
+                metric_value("price", 15, "historical_market_price"),
+                metric_value("discount_rate", 0.11, "historical_wacc"),
+            ),
+        )
+
+        for method in methods:
+            with self.subTest(method=method.method):
+                self.assertTrue(method.assumptions)
+                self.assertTrue(all(item.name for item in method.assumptions))
+                self.assertTrue(all(item.source for item in method.assumptions))
+                self.assertTrue(
+                    all(0.0 <= item.confidence <= 1.0 for item in method.assumptions)
+                )
+        growth_assumptions = {item.name: item for item in methods[-1].assumptions}
+        self.assertTrue(growth_assumptions["target_fcf_margin"].is_fallback)
+        self.assertIsNone(growth_assumptions["target_fcf_margin"].input_value)
+        self.assertIsNotNone(
+            growth_assumptions["target_fcf_margin"].effective_value
+        )
 
     def test_negative_fcff_reduces_confidence(self):
         result = dcf_fcff(DCFInput(metric_value("fcff", -100_000_000, "manual"), metric_value("shares", 10_000_000, "manual"), metric_value("wacc", 0.11, "manual"), metric_value("growth_years", 0.05, "manual"), metric_value("terminal_growth", 0.02, "manual"), metric_value("debt", 0, "manual"), metric_value("cash", 0, "manual"), metric_value("price", 10, "manual")))

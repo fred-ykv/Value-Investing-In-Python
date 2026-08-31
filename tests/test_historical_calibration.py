@@ -7,6 +7,10 @@ from pathlib import Path
 from fundamental_analysis.config import CalibrationAssumptions
 from fundamental_analysis.historical_calibration import (
     HistoricalCalibrationObservation,
+    HistoricalScoreComponentAudit,
+    HistoricalScoreDimensionContribution,
+    HistoricalValuationAssumptionAudit,
+    HistoricalValuationMethodAudit,
     evaluate_historical_outcomes,
     read_historical_calibration_csv,
     write_historical_calibration_csv,
@@ -114,6 +118,7 @@ class HistoricalCalibrationTests(unittest.TestCase):
     def test_csv_preserves_point_in_time_audit_fields(self):
         original = replace(
             observations()[0],
+            total_score=0.585,
             benchmark_ticker="SPY",
             price_start_date=date(2020, 4, 1),
             price_end_date=date(2021, 4, 1),
@@ -142,6 +147,166 @@ class HistoricalCalibrationTests(unittest.TestCase):
             stock_terminal_date=date(2020, 7, 31),
             terminal_value_per_share=34.0,
             lifecycle_source_url="https://www.sec.gov/Archives/edgar/data/1234/filing.htm",
+            dimension_valuation_score=0.31,
+            dimension_valuation_confidence=0.71,
+            dimension_growth_score=0.62,
+            dimension_growth_confidence=0.72,
+            dimension_quality_score=0.53,
+            dimension_quality_confidence=0.73,
+            dimension_debt_score=0.74,
+            dimension_debt_confidence=0.74,
+            dimension_liquidity_score=0.85,
+            dimension_liquidity_confidence=0.75,
+            dimension_data_confidence_score=0.80,
+            dimension_data_confidence_confidence=0.80,
+            calculated_wacc=0.0845,
+            beta=0.95,
+            pre_tax_cost_of_debt=0.06,
+            after_tax_cost_of_debt=0.045,
+            tax_rate=0.25,
+            market_value_equity=800.0,
+            debt_value=200.0,
+            equity_weight=0.80,
+            debt_weight=0.20,
+            cost_of_capital_sources=(
+                ("beta", "Beta historico point-in-time"),
+                ("discount_rate", "WACC calculado pelo modelo"),
+            ),
+            cost_of_capital_component_confidences=(
+                ("beta", 0.82),
+                ("discount_rate", 0.81),
+            ),
+            cost_of_capital_component_fallbacks=(
+                ("beta", False),
+                ("discount_rate", False),
+            ),
+            cost_of_capital_notes=("WACC auditado.",),
+            valuation_price=100.0,
+            recommendation_before_gates="Comprar",
+            recommendation_gate_code="buy_blocked_low_valuation",
+            recommendation_gate_triggered=True,
+            recommendation_gate_explanation="Compra bloqueada por valuation.",
+            recommendation_buy_threshold=0.70,
+            recommendation_watch_threshold=0.45,
+            recommendation_min_valuation_score_for_buy=0.45,
+            recommendation_avoid_if_valuation_below=0.20,
+            recommendation_avoid_if_quality_below=0.30,
+            score_model_version="multifactor_score_v1",
+            score_config_fingerprint="a" * 64,
+            score_configured_weights=(
+                ("valuation", 0.25),
+                ("growth", 0.15),
+                ("quality", 0.25),
+                ("debt", 0.15),
+                ("liquidity", 0.10),
+                ("data_confidence", 0.10),
+            ),
+            score_normalized_weights=(
+                ("valuation", 0.25),
+                ("growth", 0.15),
+                ("quality", 0.25),
+                ("debt", 0.15),
+                ("liquidity", 0.10),
+                ("data_confidence", 0.10),
+            ),
+            score_weighted_total=0.585,
+            score_reconciliation_difference=0.0,
+            score_dimension_contributions=(
+                HistoricalScoreDimensionContribution(
+                    "valuation", 0.40, 0.80, 0.25, 0.25, 0.10
+                ),
+                HistoricalScoreDimensionContribution(
+                    "growth", 0.60, 0.80, 0.15, 0.15, 0.09
+                ),
+                HistoricalScoreDimensionContribution(
+                    "quality", 0.80, 0.80, 0.25, 0.25, 0.20
+                ),
+                HistoricalScoreDimensionContribution(
+                    "debt", 0.50, 0.80, 0.15, 0.15, 0.075
+                ),
+                HistoricalScoreDimensionContribution(
+                    "liquidity", 0.50, 0.80, 0.10, 0.10, 0.05
+                ),
+                HistoricalScoreDimensionContribution(
+                    "data_confidence", 0.70, 0.80, 0.10, 0.10, 0.07
+                ),
+            ),
+            score_component_audit=(
+                HistoricalScoreComponentAudit(
+                    "growth",
+                    "dimension",
+                    "revenue_growth",
+                    0.10,
+                    0.50,
+                    1.0,
+                    1.0,
+                    0.50,
+                    0.80,
+                    "sec_edgar",
+                    True,
+                ),
+                HistoricalScoreComponentAudit(
+                    "growth",
+                    "dimension",
+                    "fcff_growth",
+                    None,
+                    None,
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    "missing",
+                    False,
+                    "Metrica indisponivel.",
+                ),
+            ),
+            valuation_method_audit=(
+                HistoricalValuationMethodAudit(
+                    method="dcf_fcff",
+                    used_in_score=True,
+                    fair_value_per_share=120.0,
+                    margin_of_safety=0.20,
+                    confidence=0.82,
+                    source="derived",
+                    enterprise_value=12_500.0,
+                    equity_value=12_000.0,
+                    model_outputs=(
+                        ("pv_explicit_stage", 4_000.0),
+                        ("pv_terminal_value", 8_500.0),
+                        ("terminal_value_share", 0.68),
+                    ),
+                    assumptions=(
+                        HistoricalValuationAssumptionAudit(
+                            name="discount_rate",
+                            input_value=0.085,
+                            effective_value=0.085,
+                            source="historical_wacc",
+                            confidence=0.81,
+                            is_fallback=False,
+                            note="WACC point-in-time",
+                            formula="market_value_wacc",
+                        ),
+                        HistoricalValuationAssumptionAudit(
+                            name="terminal_growth_rate",
+                            input_value=None,
+                            effective_value=0.025,
+                            source="fallback",
+                            confidence=0.45,
+                            is_fallback=True,
+                            note="Premissa padrao de config.py",
+                        ),
+                    ),
+                ),
+                HistoricalValuationMethodAudit(
+                    method="graham",
+                    used_in_score=False,
+                    fair_value_per_share=None,
+                    margin_of_safety=None,
+                    confidence=0.0,
+                    source="derived",
+                    exclusion_reason="missing EPS",
+                ),
+            ),
         )
         with TemporaryDirectory() as tempdir:
             path = Path(tempdir) / "history.csv"
@@ -149,6 +314,27 @@ class HistoricalCalibrationTests(unittest.TestCase):
             restored = read_historical_calibration_csv(path)[0]
 
         self.assertEqual(restored.benchmark_ticker, "SPY")
+        self.assertEqual(restored.score_model_version, "multifactor_score_v1")
+        self.assertEqual(restored.score_config_fingerprint, "a" * 64)
+        self.assertAlmostEqual(
+            sum(dict(restored.score_normalized_weights).values()),
+            1.0,
+        )
+        self.assertAlmostEqual(restored.score_weighted_total, 0.585)
+        self.assertAlmostEqual(restored.score_reconciliation_difference, 0.0)
+        self.assertEqual(len(restored.score_dimension_contributions), 6)
+        self.assertEqual(len(restored.score_component_audit), 2)
+        self.assertEqual(restored.score_component_audit[0].source, "sec_edgar")
+        self.assertTrue(restored.score_component_audit[0].used)
+        self.assertIsNone(restored.score_component_audit[1].raw_value)
+        self.assertFalse(restored.score_component_audit[1].used)
+        self.assertAlmostEqual(
+            sum(
+                item.weighted_contribution
+                for item in restored.score_dimension_contributions
+            ),
+            restored.total_score,
+        )
         self.assertEqual(restored.price_start_date, date(2020, 4, 1))
         self.assertEqual(restored.price_end_date, date(2021, 4, 1))
         self.assertEqual(
@@ -195,6 +381,157 @@ class HistoricalCalibrationTests(unittest.TestCase):
         self.assertEqual(restored.stock_terminal_date, date(2020, 7, 31))
         self.assertEqual(restored.terminal_value_per_share, 34.0)
         self.assertIn("sec.gov", restored.lifecycle_source_url)
+        self.assertAlmostEqual(restored.dimension_valuation_score, 0.31)
+        self.assertAlmostEqual(restored.dimension_valuation_confidence, 0.71)
+        self.assertAlmostEqual(restored.dimension_growth_score, 0.62)
+        self.assertAlmostEqual(restored.dimension_growth_confidence, 0.72)
+        self.assertAlmostEqual(restored.dimension_quality_score, 0.53)
+        self.assertAlmostEqual(restored.dimension_quality_confidence, 0.73)
+        self.assertAlmostEqual(restored.dimension_debt_score, 0.74)
+        self.assertAlmostEqual(restored.dimension_debt_confidence, 0.74)
+        self.assertAlmostEqual(restored.dimension_liquidity_score, 0.85)
+        self.assertAlmostEqual(restored.dimension_liquidity_confidence, 0.75)
+        self.assertAlmostEqual(restored.dimension_data_confidence_score, 0.80)
+        self.assertAlmostEqual(
+            restored.dimension_data_confidence_confidence,
+            0.80,
+        )
+        self.assertAlmostEqual(restored.calculated_wacc, 0.0845)
+        self.assertAlmostEqual(restored.beta, 0.95)
+        self.assertAlmostEqual(restored.pre_tax_cost_of_debt, 0.06)
+        self.assertAlmostEqual(restored.after_tax_cost_of_debt, 0.045)
+        self.assertAlmostEqual(restored.tax_rate, 0.25)
+        self.assertAlmostEqual(restored.market_value_equity, 800.0)
+        self.assertAlmostEqual(restored.debt_value, 200.0)
+        self.assertAlmostEqual(restored.equity_weight, 0.80)
+        self.assertAlmostEqual(restored.debt_weight, 0.20)
+        self.assertEqual(
+            dict(restored.cost_of_capital_sources)["discount_rate"],
+            "WACC calculado pelo modelo",
+        )
+        self.assertAlmostEqual(
+            dict(restored.cost_of_capital_component_confidences)["beta"],
+            0.82,
+        )
+        self.assertFalse(
+            dict(restored.cost_of_capital_component_fallbacks)["discount_rate"]
+        )
+        self.assertEqual(restored.cost_of_capital_notes, ("WACC auditado.",))
+        self.assertAlmostEqual(restored.valuation_price, 100.0)
+        self.assertEqual(restored.recommendation_before_gates, "Comprar")
+        self.assertEqual(
+            restored.recommendation_gate_code,
+            "buy_blocked_low_valuation",
+        )
+        self.assertTrue(restored.recommendation_gate_triggered)
+        self.assertEqual(
+            restored.recommendation_gate_explanation,
+            "Compra bloqueada por valuation.",
+        )
+        self.assertAlmostEqual(restored.recommendation_buy_threshold, 0.70)
+        self.assertAlmostEqual(restored.recommendation_watch_threshold, 0.45)
+        self.assertAlmostEqual(
+            restored.recommendation_min_valuation_score_for_buy,
+            0.45,
+        )
+        self.assertAlmostEqual(
+            restored.recommendation_avoid_if_valuation_below,
+            0.20,
+        )
+        self.assertAlmostEqual(
+            restored.recommendation_avoid_if_quality_below,
+            0.30,
+        )
+        self.assertEqual(len(restored.valuation_method_audit), 2)
+        self.assertTrue(restored.valuation_method_audit[0].used_in_score)
+        self.assertAlmostEqual(
+            restored.valuation_method_audit[0].margin_of_safety,
+            0.20,
+        )
+        dcf_audit = restored.valuation_method_audit[0]
+        self.assertAlmostEqual(dcf_audit.enterprise_value, 12_500.0)
+        self.assertAlmostEqual(dcf_audit.equity_value, 12_000.0)
+        self.assertAlmostEqual(
+            dict(dcf_audit.model_outputs)["terminal_value_share"],
+            0.68,
+        )
+        self.assertEqual(len(dcf_audit.assumptions), 2)
+        self.assertEqual(dcf_audit.assumptions[0].source, "historical_wacc")
+        self.assertFalse(dcf_audit.assumptions[0].is_fallback)
+        self.assertIsNone(dcf_audit.assumptions[1].input_value)
+        self.assertAlmostEqual(dcf_audit.assumptions[1].effective_value, 0.025)
+        self.assertTrue(dcf_audit.assumptions[1].is_fallback)
+        self.assertEqual(
+            restored.valuation_method_audit[1].exclusion_reason,
+            "missing EPS",
+        )
+
+    def test_legacy_csv_infers_only_the_existing_data_confidence_dimension(self):
+        legacy_csv = (
+            "ticker,as_of,company_type,total_score,recommendation,data_confidence,"
+            "forward_return,benchmark_return,max_drawdown,point_in_time_validated\n"
+            "OLD,2020-03-31,tradicional,0.61,Observar,0.77,0.10,0.04,-0.20,1\n"
+        )
+        with TemporaryDirectory() as tempdir:
+            path = Path(tempdir) / "legacy.csv"
+            path.write_text(legacy_csv, encoding="utf-8")
+            restored = read_historical_calibration_csv(path)[0]
+
+        self.assertIsNone(restored.dimension_valuation_score)
+        self.assertIsNone(restored.dimension_growth_score)
+        self.assertIsNone(restored.dimension_quality_score)
+        self.assertIsNone(restored.dimension_debt_score)
+        self.assertIsNone(restored.dimension_liquidity_score)
+        self.assertAlmostEqual(restored.dimension_data_confidence_score, 0.77)
+        self.assertAlmostEqual(
+            restored.dimension_data_confidence_confidence,
+            0.77,
+        )
+        self.assertIsNone(restored.calculated_wacc)
+        self.assertIsNone(restored.beta)
+        self.assertIsNone(restored.pre_tax_cost_of_debt)
+        self.assertEqual(restored.cost_of_capital_sources, ())
+        self.assertEqual(restored.cost_of_capital_component_confidences, ())
+        self.assertEqual(restored.cost_of_capital_component_fallbacks, ())
+        self.assertEqual(restored.cost_of_capital_notes, ())
+        self.assertIsNone(restored.valuation_price)
+        self.assertEqual(restored.recommendation_before_gates, "")
+        self.assertEqual(restored.recommendation_gate_code, "")
+        self.assertFalse(restored.recommendation_gate_triggered)
+        self.assertIsNone(restored.recommendation_buy_threshold)
+        self.assertEqual(restored.valuation_method_audit, ())
+        self.assertEqual(restored.score_model_version, "")
+        self.assertEqual(restored.score_config_fingerprint, "")
+        self.assertEqual(restored.score_configured_weights, ())
+        self.assertEqual(restored.score_normalized_weights, ())
+        self.assertIsNone(restored.score_weighted_total)
+        self.assertIsNone(restored.score_reconciliation_difference)
+        self.assertEqual(restored.score_dimension_contributions, ())
+        self.assertEqual(restored.score_component_audit, ())
+
+    def test_previous_method_audit_schema_remains_readable(self):
+        legacy_csv = (
+            "ticker,as_of,company_type,total_score,recommendation,data_confidence,"
+            "forward_return,benchmark_return,max_drawdown,point_in_time_validated,"
+            "valuation_method_audit\n"
+            'OLD,2020-03-31,tradicional,0.61,Observar,0.77,0.10,0.04,-0.20,1,'
+            '"[{""method"":""dcf_fcff"",""used_in_score"":true,'
+            '""fair_value_per_share"":120.0,""margin_of_safety"":0.20,'
+            '""confidence"":0.82,""source"":""derived""}]"\n'
+        )
+        with TemporaryDirectory() as tempdir:
+            path = Path(tempdir) / "legacy_method_audit.csv"
+            path.write_text(legacy_csv, encoding="utf-8")
+            restored = read_historical_calibration_csv(path)[0]
+
+        self.assertEqual(len(restored.valuation_method_audit), 1)
+        method = restored.valuation_method_audit[0]
+        self.assertEqual(method.method, "dcf_fcff")
+        self.assertTrue(method.used_in_score)
+        self.assertIsNone(method.enterprise_value)
+        self.assertIsNone(method.equity_value)
+        self.assertEqual(method.model_outputs, ())
+        self.assertEqual(method.assumptions, ())
 
 
 if __name__ == "__main__":

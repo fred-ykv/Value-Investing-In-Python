@@ -9,6 +9,18 @@ from .config import CYCLICAL, DCF, GROWTH_TECH
 from .data_sources import MetricValue, clamp, metric_value, weighted_confidence
 
 
+@dataclass(frozen=True)
+class ValuationAssumption:
+    name: str
+    input_value: Optional[float]
+    effective_value: Optional[float]
+    source: str
+    confidence: float
+    is_fallback: bool = False
+    note: str = ""
+    formula: str = ""
+
+
 @dataclass
 class ValuationResult:
     method: str
@@ -19,6 +31,7 @@ class ValuationResult:
     equity_value: Optional[float] = None
     margin_of_safety: Optional[float] = None
     diagnostics: dict[str, object] = field(default_factory=dict)
+    assumptions: tuple[ValuationAssumption, ...] = ()
 
 
 @dataclass
@@ -37,13 +50,68 @@ class DCFInput:
 
 def dcf_fcff(inputs: DCFInput) -> ValuationResult:
     fcff0, shares = inputs.fcff.value, inputs.shares.value
-    if fcff0 is None:
-        return ValuationResult("dcf_fcff", None, 0.0, diagnostics={"error": "missing FCFF"})
-    if shares in (None, 0):
-        return ValuationResult("dcf_fcff", None, 0.0, diagnostics={"error": "missing shares"})
     wacc = inputs.wacc.value if inputs.wacc.value is not None else DCF.default_wacc
     growth = clamp(inputs.growth_years.value if inputs.growth_years.value is not None else DCF.default_growth_years, DCF.min_growth_years, DCF.max_growth_years)
-    terminal_growth = clamp(inputs.terminal_growth.value if inputs.terminal_growth.value is not None else DCF.default_terminal_growth, DCF.min_terminal_growth, DCF.max_terminal_growth)
+    terminal_growth_input = inputs.terminal_growth.value if inputs.terminal_growth.value is not None else DCF.default_terminal_growth
+    terminal_growth = clamp(terminal_growth_input, DCF.min_terminal_growth, DCF.max_terminal_growth)
+    terminal_growth_adjusted = wacc <= terminal_growth
+    if terminal_growth_adjusted:
+        terminal_growth = max(0.0, wacc - DCF.min_spread_wacc_terminal)
+    assumptions = (
+        _metric_assumption(inputs.fcff, name="fcff"),
+        _metric_assumption(inputs.shares, name="shares"),
+        _metric_assumption(inputs.wacc, name="discount_rate", effective_value=wacc),
+        _metric_assumption(
+            inputs.growth_years,
+            name="explicit_growth_rate",
+            effective_value=growth,
+        ),
+        _metric_assumption(
+            inputs.terminal_growth,
+            name="terminal_growth_rate",
+            effective_value=terminal_growth,
+            force_fallback=terminal_growth_adjusted,
+            adjustment_note=(
+                "Ajustado para manter a taxa terminal abaixo da taxa de desconto"
+                if terminal_growth_adjusted
+                else ""
+            ),
+        ),
+        _metric_assumption(inputs.debt, name="total_debt"),
+        _metric_assumption(inputs.cash, name="cash"),
+        _metric_assumption(inputs.current_price, name="current_price"),
+        _fixed_assumption(
+            "projection_horizon_years",
+            float(DCF.horizon_years),
+            "Horizonte explicito definido em config.py",
+        ),
+        _fixed_assumption(
+            "minimum_discount_terminal_spread",
+            DCF.min_spread_wacc_terminal,
+            "Spread minimo definido em config.py",
+        ),
+        *(
+            (_metric_assumption(inputs.normalized_fcff, name="normalized_fcff"),)
+            if inputs.normalized_fcff is not None
+            else ()
+        ),
+    )
+    if fcff0 is None:
+        return ValuationResult(
+            "dcf_fcff",
+            None,
+            0.0,
+            diagnostics={"error": "missing FCFF"},
+            assumptions=assumptions,
+        )
+    if shares in (None, 0):
+        return ValuationResult(
+            "dcf_fcff",
+            None,
+            0.0,
+            diagnostics={"error": "missing shares"},
+            assumptions=assumptions,
+        )
     diagnostics: dict[str, object] = {
         "current_fcff": fcff0,
         "fcff_definition": inputs.fcff.formula or "unknown",
@@ -65,8 +133,7 @@ def dcf_fcff(inputs: DCFInput) -> ValuationResult:
                 "normalized_fcff_note": normalized_fcff.note,
             }
         )
-    if wacc <= terminal_growth:
-        terminal_growth = max(0.0, wacc - DCF.min_spread_wacc_terminal)
+    if terminal_growth_adjusted:
         diagnostics["terminal_growth_adjusted"] = terminal_growth
     confidence_metrics = [
         inputs.fcff,
@@ -95,7 +162,7 @@ def dcf_fcff(inputs: DCFInput) -> ValuationResult:
     ev = pv_stage + pv_terminal
     if not inputs.debt.is_available or not inputs.cash.is_available:
         diagnostics.update({"error": "missing debt or cash for enterprise-to-equity bridge", "enterprise_value": ev})
-        return ValuationResult("dcf_fcff", None, max(0.0, confidence - 0.25), enterprise_value=ev, diagnostics=diagnostics)
+        return ValuationResult("dcf_fcff", None, max(0.0, confidence - 0.25), enterprise_value=ev, diagnostics=diagnostics, assumptions=assumptions)
     equity = ev - float(inputs.debt.value) + float(inputs.cash.value)
     fair = equity / shares
     margin = None if inputs.current_price.value in (None, 0) else (fair / inputs.current_price.value) - 1.0
@@ -112,7 +179,7 @@ def dcf_fcff(inputs: DCFInput) -> ValuationResult:
             "sensitivity": dcf_sensitivity(inputs),
         }
     )
-    return ValuationResult("dcf_fcff", fair, confidence, enterprise_value=ev, equity_value=equity, margin_of_safety=margin, diagnostics=diagnostics)
+    return ValuationResult("dcf_fcff", fair, confidence, enterprise_value=ev, equity_value=equity, margin_of_safety=margin, diagnostics=diagnostics, assumptions=assumptions)
 
 
 def dcf_sensitivity(inputs: DCFInput) -> dict[str, dict[str, Optional[float]]]:
@@ -196,8 +263,18 @@ def _project_fcff(inputs: DCFInput, growth: float) -> list[float]:
 
 
 def graham_value(eps: MetricValue, bvps: MetricValue, current_price: MetricValue) -> ValuationResult:
+    assumptions = (
+        _metric_assumption(eps, name="earnings_per_share"),
+        _metric_assumption(bvps, name="book_value_per_share"),
+        _metric_assumption(current_price, name="current_price"),
+        _fixed_assumption(
+            "graham_multiplier",
+            22.5,
+            "Constante do modelo de Graham definida na formula",
+        ),
+    )
     if eps.value is None or bvps.value is None or eps.value <= 0 or bvps.value <= 0:
-        return ValuationResult("graham", None, 0.0, diagnostics={"error": "requires positive EPS and BVPS"})
+        return ValuationResult("graham", None, 0.0, diagnostics={"error": "requires positive EPS and BVPS"}, assumptions=assumptions)
     fair = math.sqrt(22.5 * eps.value * bvps.value)
     margin = None if current_price.value in (None, 0) else (fair / current_price.value) - 1.0
     return ValuationResult(
@@ -210,17 +287,44 @@ def graham_value(eps: MetricValue, bvps: MetricValue, current_price: MetricValue
             "eps_note": eps.note,
             "cyclical_normalization": eps.source == "cyclical_normalization",
         },
+        assumptions=assumptions,
     )
 
 
 def eva_value(invested_capital: MetricValue, roic: MetricValue, wacc: MetricValue, growth: MetricValue, shares: MetricValue, current_price: MetricValue, net_debt: MetricValue | None = None) -> ValuationResult:
     net_debt = net_debt or MetricValue("net_debt", None, "missing", 0.0)
-    if invested_capital.value is None or roic.value is None or shares.value in (None, 0) or net_debt.value is None:
-        return ValuationResult("eva", None, 0.0, diagnostics={"error": "missing invested capital, ROIC, shares, or net debt"})
     discount = wacc.value if wacc.value is not None else DCF.default_wacc
-    g = growth.value if growth.value is not None else DCF.default_terminal_growth
-    if discount <= g:
+    growth_input = growth.value if growth.value is not None else DCF.default_terminal_growth
+    g = growth_input
+    growth_adjusted = discount <= g
+    if growth_adjusted:
         g = max(0.0, discount - DCF.min_spread_wacc_terminal)
+    assumptions = (
+        _metric_assumption(invested_capital),
+        _metric_assumption(roic),
+        _metric_assumption(wacc, name="discount_rate", effective_value=discount),
+        _metric_assumption(
+            growth,
+            name="terminal_growth_rate",
+            effective_value=g,
+            force_fallback=growth_adjusted,
+            adjustment_note=(
+                "Ajustado para manter a taxa terminal abaixo da taxa de desconto"
+                if growth_adjusted
+                else ""
+            ),
+        ),
+        _metric_assumption(shares),
+        _metric_assumption(current_price),
+        _metric_assumption(net_debt),
+        _fixed_assumption(
+            "minimum_discount_terminal_spread",
+            DCF.min_spread_wacc_terminal,
+            "Spread minimo definido em config.py",
+        ),
+    )
+    if invested_capital.value is None or roic.value is None or shares.value in (None, 0) or net_debt.value is None:
+        return ValuationResult("eva", None, 0.0, diagnostics={"error": "missing invested capital, ROIC, shares, or net debt"}, assumptions=assumptions)
     economic_profit = (roic.value - discount) * invested_capital.value
     pv_economic_profit = economic_profit * (1.0 + g) / (discount - g)
     enterprise = invested_capital.value + pv_economic_profit
@@ -238,34 +342,77 @@ def eva_value(invested_capital: MetricValue, roic: MetricValue, wacc: MetricValu
         "roic_note": roic.note,
         "cyclical_normalization": roic.source == "cyclical_normalization",
     }
-    return ValuationResult("eva", fair, weighted_confidence(invested_capital, roic, wacc, shares, net_debt), enterprise_value=enterprise, equity_value=equity, margin_of_safety=margin, diagnostics=diagnostics)
+    return ValuationResult("eva", fair, weighted_confidence(invested_capital, roic, wacc, shares, net_debt), enterprise_value=enterprise, equity_value=equity, margin_of_safety=margin, diagnostics=diagnostics, assumptions=assumptions)
 
 
 def residual_income_bank(bvps: MetricValue, roe: MetricValue, ke: MetricValue, terminal_growth: MetricValue, current_price: MetricValue) -> ValuationResult:
-    if bvps.value is None or roe.value is None or ke.value is None:
-        return ValuationResult("residual_income", None, 0.0, diagnostics={"error": "missing BVPS, ROE, or Ke"})
     g = terminal_growth.value if terminal_growth.value is not None else DCF.default_terminal_growth
-    if ke.value <= g:
+    growth_adjusted = ke.value is not None and ke.value <= g
+    if growth_adjusted:
         g = max(0.0, ke.value - DCF.min_spread_wacc_terminal)
+    assumptions = (
+        _metric_assumption(bvps),
+        _metric_assumption(roe),
+        _metric_assumption(ke, name="cost_of_equity"),
+        _metric_assumption(
+            terminal_growth,
+            name="terminal_growth_rate",
+            effective_value=g,
+            force_fallback=growth_adjusted,
+            adjustment_note=(
+                "Ajustado para manter a taxa terminal abaixo do custo do patrimonio"
+                if growth_adjusted
+                else ""
+            ),
+        ),
+        _metric_assumption(current_price),
+        _fixed_assumption(
+            "minimum_discount_terminal_spread",
+            DCF.min_spread_wacc_terminal,
+            "Spread minimo definido em config.py",
+        ),
+    )
+    if bvps.value is None or roe.value is None or ke.value is None:
+        return ValuationResult("residual_income", None, 0.0, diagnostics={"error": "missing BVPS, ROE, or Ke"}, assumptions=assumptions)
     fair = bvps.value + ((roe.value - ke.value) / (ke.value - g)) * bvps.value
     margin = None if current_price.value in (None, 0) else (fair / current_price.value) - 1.0
-    return ValuationResult("residual_income", fair, weighted_confidence(bvps, roe, ke), margin_of_safety=margin)
+    return ValuationResult("residual_income", fair, weighted_confidence(bvps, roe, ke), margin_of_safety=margin, assumptions=assumptions)
 
 
 def ddm_bank(dividend_per_share: MetricValue, ke: MetricValue, terminal_growth: MetricValue, current_price: MetricValue) -> ValuationResult:
-    if dividend_per_share.value is None or ke.value is None:
-        return ValuationResult("ddm", None, 0.0, diagnostics={"error": "missing dividend or Ke"})
     g = terminal_growth.value if terminal_growth.value is not None else DCF.default_terminal_growth
-    if ke.value <= g:
+    growth_adjusted = ke.value is not None and ke.value <= g
+    if growth_adjusted:
         g = max(0.0, ke.value - DCF.min_spread_wacc_terminal)
+    assumptions = (
+        _metric_assumption(dividend_per_share),
+        _metric_assumption(ke, name="cost_of_equity"),
+        _metric_assumption(
+            terminal_growth,
+            name="terminal_growth_rate",
+            effective_value=g,
+            force_fallback=growth_adjusted,
+            adjustment_note=(
+                "Ajustado para manter a taxa terminal abaixo do custo do patrimonio"
+                if growth_adjusted
+                else ""
+            ),
+        ),
+        _metric_assumption(current_price),
+        _fixed_assumption(
+            "minimum_discount_terminal_spread",
+            DCF.min_spread_wacc_terminal,
+            "Spread minimo definido em config.py",
+        ),
+    )
+    if dividend_per_share.value is None or ke.value is None:
+        return ValuationResult("ddm", None, 0.0, diagnostics={"error": "missing dividend or Ke"}, assumptions=assumptions)
     fair = dividend_per_share.value * (1.0 + g) / (ke.value - g)
     margin = None if current_price.value in (None, 0) else (fair / current_price.value) - 1.0
-    return ValuationResult("ddm", fair, weighted_confidence(dividend_per_share, ke), margin_of_safety=margin)
+    return ValuationResult("ddm", fair, weighted_confidence(dividend_per_share, ke), margin_of_safety=margin, assumptions=assumptions)
 
 
 def growth_tech_value(revenue: MetricValue, revenue_growth: MetricValue, target_fcf_margin: MetricValue, net_cash: MetricValue, shares: MetricValue, current_price: MetricValue, discount_rate: MetricValue) -> ValuationResult:
-    if revenue.value is None or shares.value in (None, 0) or net_cash.value is None:
-        return ValuationResult("growth_tech", None, 0.0, diagnostics={"error": "missing revenue, shares, or net cash"})
     revenue_growth_value = revenue_growth.value if revenue_growth.value is not None else 0.10
     growth = clamp(revenue_growth_value, -0.10, 0.50)
     margin = (
@@ -275,6 +422,43 @@ def growth_tech_value(revenue: MetricValue, revenue_growth: MetricValue, target_
     )
     rate = discount_rate.value if discount_rate.value is not None else GROWTH_TECH.default_discount_rate
     g_term = min(GROWTH_TECH.terminal_growth, rate - DCF.min_spread_wacc_terminal)
+    assumptions = (
+        _metric_assumption(revenue),
+        _metric_assumption(
+            revenue_growth,
+            name="revenue_growth_rate",
+            effective_value=growth,
+        ),
+        _metric_assumption(
+            target_fcf_margin,
+            effective_value=margin,
+        ),
+        _metric_assumption(net_cash),
+        _metric_assumption(shares),
+        _metric_assumption(current_price),
+        _metric_assumption(
+            discount_rate,
+            effective_value=rate,
+        ),
+        _fixed_assumption(
+            "terminal_growth_rate",
+            GROWTH_TECH.terminal_growth,
+            "Crescimento terminal definido em config.py",
+            effective_value=g_term,
+        ),
+        _fixed_assumption(
+            "projection_horizon_years",
+            float(DCF.horizon_years),
+            "Horizonte explicito definido em config.py",
+        ),
+        _fixed_assumption(
+            "minimum_discount_terminal_spread",
+            DCF.min_spread_wacc_terminal,
+            "Spread minimo definido em config.py",
+        ),
+    )
+    if revenue.value is None or shares.value in (None, 0) or net_cash.value is None:
+        return ValuationResult("growth_tech", None, 0.0, diagnostics={"error": "missing revenue, shares, or net cash"}, assumptions=assumptions)
     projected_revenue, pv = revenue.value, 0.0
     for year in range(1, DCF.horizon_years + 1):
         projected_revenue *= 1.0 + growth
@@ -284,4 +468,66 @@ def growth_tech_value(revenue: MetricValue, revenue_growth: MetricValue, target_
     equity = ev + net_cash.value
     fair = equity / shares.value
     mos = None if current_price.value in (None, 0) else (fair / current_price.value) - 1.0
-    return ValuationResult("growth_tech", fair, weighted_confidence(revenue, revenue_growth, shares), enterprise_value=ev, equity_value=equity, margin_of_safety=mos, diagnostics={"growth": growth, "target_fcf_margin": margin, "discount_rate": rate})
+    return ValuationResult(
+        "growth_tech",
+        fair,
+        weighted_confidence(revenue, revenue_growth, shares),
+        enterprise_value=ev,
+        equity_value=equity,
+        margin_of_safety=mos,
+        diagnostics={
+            "growth": growth,
+            "target_fcf_margin": margin,
+            "discount_rate": rate,
+            "terminal_growth": g_term,
+            "pv_explicit_stage": pv,
+            "pv_terminal_value": terminal / ((1.0 + rate) ** DCF.horizon_years),
+            "terminal_value_share": None
+            if ev == 0
+            else (terminal / ((1.0 + rate) ** DCF.horizon_years)) / ev,
+        },
+        assumptions=assumptions,
+    )
+
+
+def _metric_assumption(
+    metric: MetricValue,
+    *,
+    name: str | None = None,
+    effective_value: float | None = None,
+    force_fallback: bool = False,
+    adjustment_note: str = "",
+) -> ValuationAssumption:
+    input_value = float(metric.value) if metric.value is not None else None
+    effective = input_value if effective_value is None else float(effective_value)
+    changed = effective != input_value
+    notes = [note for note in (metric.note, adjustment_note) if note]
+    return ValuationAssumption(
+        name=name or metric.name,
+        input_value=input_value,
+        effective_value=effective,
+        source=metric.source,
+        confidence=metric.confidence,
+        is_fallback=metric.is_fallback or force_fallback or changed,
+        note="; ".join(notes),
+        formula=metric.formula or "",
+    )
+
+
+def _fixed_assumption(
+    name: str,
+    input_value: float,
+    note: str,
+    *,
+    effective_value: float | None = None,
+) -> ValuationAssumption:
+    effective = input_value if effective_value is None else effective_value
+    return ValuationAssumption(
+        name=name,
+        input_value=float(input_value),
+        effective_value=float(effective),
+        source="config.py",
+        confidence=1.0,
+        is_fallback=effective != input_value,
+        note=note,
+    )
