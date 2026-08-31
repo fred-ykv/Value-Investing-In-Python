@@ -12,7 +12,7 @@ from typing import Any, Callable, Iterable, Mapping
 
 from .config import POINT_IN_TIME, PointInTimeAssumptions
 from .data_sources import MetricValue, metric_value, safe_float
-from .financial_statements import FinancialStatements
+from .financial_statements import FinancialStatements, build_statement_metrics
 
 
 @dataclass(frozen=True)
@@ -169,6 +169,7 @@ SEC_FACT_SPECS: dict[str, dict[str, _FactSpec]] = {
             (
                 "DepreciationDepletionAndAmortization",
                 "DepreciationDepletionAndAmortizationPropertyPlantAndEquipment",
+                "DepreciationAndAmortization",
                 "Depreciation",
             ),
             ("USD",),
@@ -304,6 +305,18 @@ class SecEdgarClient:
                     sections[section][name] = selected
 
         _complete_ebit(sections["income_statement"], payload, anchor, source_url)
+        _complete_depreciation_amortization(
+            sections["cash_flow"],
+            payload,
+            anchor,
+            source_url,
+        )
+        _complete_capex(
+            sections["cash_flow"],
+            payload,
+            anchor,
+            source_url,
+        )
         _complete_balance_sheet(sections["balance_sheet"], payload, anchor, source_url)
         _complete_total_debt(
             sections["balance_sheet"],
@@ -321,15 +334,34 @@ class SecEdgarClient:
         )
         revenue = sections["income_statement"].get("revenue")
         if revenue is not None:
-            growth = _derive_revenue_growth(payload, revenue, anchor, source_url)
+            growth = _derive_revenue_growth(
+                payload,
+                revenue,
+                anchor,
+                source_url,
+                self.assumptions,
+            )
             if growth.is_available:
                 sections["market_data"]["revenue_growth"] = growth
+        sections["market_data"]["fcff_growth"] = _derive_fcff_growth(
+            payload,
+            sections["income_statement"],
+            sections["cash_flow"],
+            anchor,
+            source_url,
+            self.assumptions,
+        )
 
         expected = tuple(
             name for specs in SEC_FACT_SPECS.values() for name in specs
         )
         selected_names = tuple(
-            sorted(name for section in sections.values() for name in section)
+            sorted(
+                name
+                for section in sections.values()
+                for name, metric in section.items()
+                if metric.is_available
+            )
         )
         expected_names = set(expected)
         selected_expected_names = expected_names.intersection(selected_names)
@@ -355,7 +387,7 @@ class SecEdgarClient:
             metric.name
             for section in sections.values()
             for metric in section.values()
-            if metric.is_fallback
+            if metric.is_available and metric.is_fallback
         )
         if fallback_metrics:
             warnings.append(
@@ -585,6 +617,75 @@ def _matching_facts(
                 continue
             candidates.append(fact)
     return candidates
+
+
+def _complete_depreciation_amortization(
+    cash_flow: dict[str, MetricValue],
+    payload: Mapping[str, Any],
+    anchor: SecFilingAnchor,
+    source_url: str,
+) -> None:
+    if "depreciation_amortization" in cash_flow:
+        return
+    fallback = _select_metric(
+        payload,
+        "depreciation_amortization",
+        _FactSpec(
+            (
+                "DepreciationAmortizationAndAccretionNet",
+                "OtherDepreciationAndAmortization",
+            ),
+            ("USD",),
+            True,
+        ),
+        anchor,
+        source_url,
+    )
+    if fallback.is_available:
+        cash_flow["depreciation_amortization"] = replace(
+            fallback,
+            confidence=max(0.0, fallback.confidence - 0.10),
+            note=(
+                "Fallback SEC para depreciacao e amortizacao; o conceito pode "
+                "incluir accretion ou outros componentes e recebe penalidade de "
+                "confianca."
+            ),
+            basis="derived",
+            is_fallback=True,
+        )
+
+
+def _complete_capex(
+    cash_flow: dict[str, MetricValue],
+    payload: Mapping[str, Any],
+    anchor: SecFilingAnchor,
+    source_url: str,
+) -> None:
+    if "capex" in cash_flow:
+        return
+    fallback = _select_metric(
+        payload,
+        "capex",
+        _FactSpec(
+            ("PaymentsToAcquireOtherPropertyPlantAndEquipment",),
+            ("USD",),
+            True,
+        ),
+        anchor,
+        source_url,
+    )
+    if fallback.is_available:
+        cash_flow["capex"] = replace(
+            fallback,
+            confidence=max(0.0, fallback.confidence - 0.15),
+            note=(
+                "Fallback SEC parcial para CAPEX: o conceito cobre outras "
+                "aquisicoes de imobilizado e pode nao representar o investimento "
+                "total."
+            ),
+            basis="derived",
+            is_fallback=True,
+        )
 
 
 def _complete_balance_sheet(
@@ -943,6 +1044,7 @@ def _derive_revenue_growth(
     revenue: MetricValue,
     anchor: SecFilingAnchor,
     source_url: str,
+    assumptions: PointInTimeAssumptions,
 ) -> MetricValue:
     formula = revenue.formula or ""
     concept = formula.rsplit(":", 1)[-1] if formula.startswith("sec_xbrl:") else ""
@@ -958,11 +1060,19 @@ def _derive_revenue_growth(
             continue
         if str(fact.get("accn", "")) != anchor.accession_number:
             continue
+        if str(fact.get("form", "")) != anchor.form:
+            continue
         start = _parse_date(fact.get("start"))
         end = _parse_date(fact.get("end"))
         if start is None or end is None or end >= anchor.report_end:
             continue
-        if 250 <= (end - start).days <= 450:
+        gap_days = (anchor.report_end - end).days
+        if (
+            250 <= (end - start).days <= 450
+            and assumptions.minimum_annual_comparative_gap_days
+            <= gap_days
+            <= assumptions.maximum_annual_comparative_gap_days
+        ):
             prior_candidates.append(fact)
     if not prior_candidates or revenue.value in (None, 0):
         return MetricValue("revenue_growth", None, "missing", 0.0, "prior annual revenue unavailable")
@@ -983,6 +1093,235 @@ def _derive_revenue_growth(
         basis="derived",
         formula="annual_revenue_divided_by_comparative_revenue_minus_one",
         confidence=max(0.0, revenue.confidence - 0.05),
+        input_observations=(
+            ("current_revenue", float(revenue.value)),
+            ("prior_revenue", float(prior_value)),
+        ),
+    )
+
+
+def _derive_fcff_growth(
+    payload: Mapping[str, Any],
+    current_income: Mapping[str, MetricValue],
+    current_cash_flow: Mapping[str, MetricValue],
+    anchor: SecFilingAnchor,
+    source_url: str,
+    assumptions: PointInTimeAssumptions,
+) -> MetricValue:
+    current_fcff = _fcff_for_sections(
+        anchor,
+        current_income,
+        current_cash_flow,
+    )
+    if not current_fcff.is_available:
+        return _unavailable_fcff_growth(
+            anchor,
+            source_url,
+            "FCFF corrente indisponivel: " + (current_fcff.note or "insumos ausentes"),
+            current_fcff=current_fcff,
+        )
+
+    prior_fcff: MetricValue | None = None
+    prior_end: date | None = None
+    prior_failure_notes: list[str] = []
+    for candidate_end in _annual_comparative_period_ends(
+        payload,
+        anchor,
+        assumptions,
+    ):
+        comparative_anchor = replace(anchor, report_end=candidate_end)
+        prior_income, prior_cash_flow = _statement_sections_for_period(
+            payload,
+            comparative_anchor,
+            source_url,
+        )
+        candidate_fcff = _fcff_for_sections(
+            comparative_anchor,
+            prior_income,
+            prior_cash_flow,
+        )
+        if candidate_fcff.is_available:
+            prior_fcff = candidate_fcff
+            prior_end = candidate_end
+            break
+        prior_failure_notes.append(
+            f"{candidate_end.isoformat()}: {candidate_fcff.note or 'insumos ausentes'}"
+        )
+
+    if prior_fcff is None or prior_end is None:
+        detail = "; ".join(prior_failure_notes[:3])
+        reason = "FCFF anual comparativo indisponivel no mesmo filing SEC."
+        if detail:
+            reason += " Tentativas: " + detail + "."
+        return _unavailable_fcff_growth(
+            anchor,
+            source_url,
+            reason,
+            current_fcff=current_fcff,
+        )
+
+    current_value = float(current_fcff.value)
+    prior_value = float(prior_fcff.value)
+    observations = (
+        ("current_fcff", current_value),
+        ("prior_fcff", prior_value),
+    )
+    used_fallback = current_fcff.is_fallback or prior_fcff.is_fallback
+    if current_value <= 0.0 or prior_value <= 0.0:
+        reason = (
+            "Crescimento percentual de FCFF recusado porque FCFF corrente e "
+            "comparativo precisam ser positivos; uma mudanca de sinal nao e uma "
+            "taxa de crescimento economicamente interpretavel."
+        )
+        return _unavailable_fcff_growth(
+            anchor,
+            source_url,
+            reason,
+            current_fcff=current_fcff,
+            prior_fcff=prior_fcff,
+            period_start=prior_end,
+            input_observations=observations,
+            is_fallback=used_fallback,
+        )
+
+    confidence = max(
+        0.0,
+        min(current_fcff.confidence, prior_fcff.confidence)
+        - assumptions.fcff_growth_derivation_confidence_penalty,
+    )
+    note = (
+        "FCFF corrente dividido pelo FCFF anual comparativo do mesmo filing SEC "
+        "menos um. Ambos os FCFF usam a formula vigente do modelo."
+    )
+    if used_fallback:
+        note += " Pelo menos um FCFF usa fallback explicitamente identificado."
+    return metric_value(
+        "fcff_growth",
+        current_value / prior_value - 1.0,
+        "sec_edgar_derived",
+        note,
+        source_url=source_url,
+        source_document=f"SEC EDGAR {anchor.form} {anchor.accession_number}",
+        period_start=prior_end,
+        period_end=anchor.report_end,
+        filing_date=anchor.filed,
+        as_of=datetime.combine(anchor.filed, datetime.min.time()),
+        scale="ratio",
+        basis="derived",
+        is_fallback=used_fallback,
+        formula="current_positive_fcff_divided_by_prior_positive_fcff_minus_one",
+        confidence=confidence,
+        input_observations=observations,
+    )
+
+
+def _statement_sections_for_period(
+    payload: Mapping[str, Any],
+    anchor: SecFilingAnchor,
+    source_url: str,
+) -> tuple[dict[str, MetricValue], dict[str, MetricValue]]:
+    income: dict[str, MetricValue] = {}
+    cash_flow: dict[str, MetricValue] = {}
+    for name, spec in SEC_FACT_SPECS["income_statement"].items():
+        selected = _select_metric(payload, name, spec, anchor, source_url)
+        if selected.is_available:
+            income[name] = selected
+    for name, spec in SEC_FACT_SPECS["cash_flow"].items():
+        selected = _select_metric(payload, name, spec, anchor, source_url)
+        if selected.is_available:
+            cash_flow[name] = selected
+    _complete_ebit(income, payload, anchor, source_url)
+    _complete_depreciation_amortization(cash_flow, payload, anchor, source_url)
+    _complete_capex(cash_flow, payload, anchor, source_url)
+    return income, cash_flow
+
+
+def _fcff_for_sections(
+    anchor: SecFilingAnchor,
+    income: Mapping[str, MetricValue],
+    cash_flow: Mapping[str, MetricValue],
+) -> MetricValue:
+    statements = FinancialStatements(
+        ticker=anchor.ticker,
+        income_statement=income,
+        cash_flow=cash_flow,
+        source="sec_edgar",
+    )
+    return build_statement_metrics(statements).get("fcff")
+
+
+def _annual_comparative_period_ends(
+    payload: Mapping[str, Any],
+    anchor: SecFilingAnchor,
+    assumptions: PointInTimeAssumptions,
+) -> tuple[date, ...]:
+    eligible_facts = {
+        (spec.taxonomy, concept, unit)
+        for section in ("income_statement", "cash_flow")
+        for spec in SEC_FACT_SPECS[section].values()
+        for concept in spec.concepts
+        for unit in spec.units
+        if spec.duration
+    }
+    period_ends: set[date] = set()
+    for taxonomy, concept, unit, fact in _iter_facts(payload):
+        if (taxonomy, concept, unit) not in eligible_facts:
+            continue
+        if str(fact.get("accn", "")) != anchor.accession_number:
+            continue
+        if str(fact.get("form", "")) != anchor.form:
+            continue
+        start = _parse_date(fact.get("start"))
+        end = _parse_date(fact.get("end"))
+        if start is None or end is None or end >= anchor.report_end:
+            continue
+        gap_days = (anchor.report_end - end).days
+        if (
+            250 <= (end - start).days <= 450
+            and assumptions.minimum_annual_comparative_gap_days
+            <= gap_days
+            <= assumptions.maximum_annual_comparative_gap_days
+        ):
+            period_ends.add(end)
+    return tuple(sorted(period_ends, reverse=True))
+
+
+def _unavailable_fcff_growth(
+    anchor: SecFilingAnchor,
+    source_url: str,
+    reason: str,
+    *,
+    current_fcff: MetricValue | None = None,
+    prior_fcff: MetricValue | None = None,
+    period_start: date | None = None,
+    input_observations: tuple[tuple[str, float], ...] = (),
+    is_fallback: bool | None = None,
+) -> MetricValue:
+    fallback = (
+        bool(is_fallback)
+        if is_fallback is not None
+        else bool(
+            (current_fcff and current_fcff.is_fallback)
+            or (prior_fcff and prior_fcff.is_fallback)
+        )
+    )
+    return MetricValue(
+        "fcff_growth",
+        None,
+        "sec_edgar_derived",
+        0.0,
+        reason,
+        source_url=source_url,
+        source_document=f"SEC EDGAR {anchor.form} {anchor.accession_number}",
+        period_start=period_start,
+        period_end=anchor.report_end,
+        filing_date=anchor.filed,
+        as_of=datetime.combine(anchor.filed, datetime.min.time()),
+        scale="ratio",
+        basis="derived",
+        is_fallback=fallback,
+        formula="current_positive_fcff_divided_by_prior_positive_fcff_minus_one",
+        input_observations=input_observations,
     )
 
 

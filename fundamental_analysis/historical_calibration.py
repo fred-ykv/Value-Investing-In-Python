@@ -41,6 +41,14 @@ class HistoricalScoreComponentAudit:
     source: str
     used: bool
     reason: str = ""
+    source_document: str = ""
+    period_start: str = ""
+    period_end: str = ""
+    filing_date: str = ""
+    formula: str = ""
+    note: str = ""
+    is_fallback: bool = False
+    input_observations: tuple[tuple[str, float], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -1174,6 +1182,16 @@ def _parse_score_component_audit(
                 source=str(item.get("source", "")).strip(),
                 used=_parse_bool(item.get("used", False)),
                 reason=str(item.get("reason", "")).strip(),
+                source_document=str(item.get("source_document", "")).strip(),
+                period_start=str(item.get("period_start", "")).strip(),
+                period_end=str(item.get("period_end", "")).strip(),
+                filing_date=str(item.get("filing_date", "")).strip(),
+                formula=str(item.get("formula", "")).strip(),
+                note=str(item.get("note", "")).strip(),
+                is_fallback=_parse_bool(item.get("is_fallback", False)),
+                input_observations=_parse_numeric_pairs(
+                    item.get("input_observations", [])
+                ),
             )
         )
     return tuple(components)

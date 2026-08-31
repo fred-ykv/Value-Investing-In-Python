@@ -177,6 +177,14 @@ def collect_point_in_time_observation(
                 source=component.source,
                 used=component.used,
                 reason=component.reason,
+                source_document=component.source_document,
+                period_start=component.period_start,
+                period_end=component.period_end,
+                filing_date=component.filing_date,
+                formula=component.formula,
+                note=component.note,
+                is_fallback=component.is_fallback,
+                input_observations=component.input_observations,
             )
             for component in result.score.component_audit
         )

@@ -251,7 +251,12 @@ def _merge_cyclical_history(
 def enrich_metrics_with_market_inputs(metrics: MetricPack, market_data: Mapping[str, object], source: str) -> None:
     for name in ("revenue_growth", "fcff_growth", "rule_of_40", "gross_margin", "cash_runway_years", "dividend_per_share", "revenue_cagr_5y", "earnings_cagr_5y"):
         if name in market_data:
-            metrics.values[name] = metric_value(name, market_data[name], source)
+            raw_value = market_data[name]
+            metrics.values[name] = (
+                replace(raw_value, name=name)
+                if isinstance(raw_value, MetricValue)
+                else metric_value(name, raw_value, source)
+            )
 
 
 def peer_yahoo_enrichment_enabled(market_data: Mapping[str, object]) -> bool:

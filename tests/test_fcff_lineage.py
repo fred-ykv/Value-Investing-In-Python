@@ -84,6 +84,21 @@ class FCFFLineageTests(unittest.TestCase):
         self.assertLess(result.confidence, 0.70)
         self.assertIn("change_in_nwc unavailable", result.note)
 
+    def test_fcff_propagates_fallback_from_required_sec_inputs(self):
+        result = compute_fcff(
+            inputs(
+                capex=metric_value(
+                    "capex",
+                    -200,
+                    "sec_edgar",
+                    is_fallback=True,
+                )
+            )
+        )
+
+        self.assertTrue(result.is_fallback)
+        self.assertIn("fallback inputs: capex", result.note)
+
     def test_statement_metrics_keep_fcf_proxy_separate_from_fcff(self):
         metrics = build_statement_metrics(
             FinancialStatements(
@@ -145,4 +160,3 @@ class FCFFLineageTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

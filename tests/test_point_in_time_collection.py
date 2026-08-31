@@ -273,6 +273,27 @@ class PointInTimeCollectionTests(unittest.TestCase):
         self.assertTrue(
             all(component.source for component in observation.score_component_audit)
         )
+        fcff_growth = next(
+            component
+            for component in observation.score_component_audit
+            if component.dimension == "growth"
+            and component.component == "fcff_growth"
+        )
+        self.assertTrue(fcff_growth.used)
+        self.assertEqual(fcff_growth.source, "sec_edgar_derived")
+        self.assertEqual(fcff_growth.period_start, "2022-12-31")
+        self.assertEqual(fcff_growth.period_end, "2023-12-31")
+        self.assertEqual(fcff_growth.filing_date, "2024-02-15")
+        self.assertIn("0000001234-24-000001", fcff_growth.source_document)
+        self.assertEqual(
+            fcff_growth.formula,
+            "current_positive_fcff_divided_by_prior_positive_fcff_minus_one",
+        )
+        self.assertTrue(fcff_growth.is_fallback)
+        self.assertEqual(
+            {name for name, _ in fcff_growth.input_observations},
+            {"current_fcff", "prior_fcff"},
+        )
 
     def test_bank_critical_coverage_ignores_industrial_only_metrics(self):
         def get_json(url):

@@ -244,6 +244,17 @@ class HistoricalCalibrationTests(unittest.TestCase):
                     0.80,
                     "sec_edgar",
                     True,
+                    source_document="SEC EDGAR 10-K accession",
+                    period_start="2018-12-31",
+                    period_end="2019-12-31",
+                    filing_date="2020-02-15",
+                    formula="current_divided_by_prior_minus_one",
+                    note="Comparativo anual do mesmo filing.",
+                    is_fallback=True,
+                    input_observations=(
+                        ("current_revenue", 1_100.0),
+                        ("prior_revenue", 1_000.0),
+                    ),
                 ),
                 HistoricalScoreComponentAudit(
                     "growth",
@@ -326,6 +337,17 @@ class HistoricalCalibrationTests(unittest.TestCase):
         self.assertEqual(len(restored.score_component_audit), 2)
         self.assertEqual(restored.score_component_audit[0].source, "sec_edgar")
         self.assertTrue(restored.score_component_audit[0].used)
+        self.assertEqual(
+            restored.score_component_audit[0].source_document,
+            "SEC EDGAR 10-K accession",
+        )
+        self.assertEqual(restored.score_component_audit[0].period_start, "2018-12-31")
+        self.assertEqual(restored.score_component_audit[0].period_end, "2019-12-31")
+        self.assertTrue(restored.score_component_audit[0].is_fallback)
+        self.assertEqual(
+            dict(restored.score_component_audit[0].input_observations),
+            {"current_revenue": 1_100.0, "prior_revenue": 1_000.0},
+        )
         self.assertIsNone(restored.score_component_audit[1].raw_value)
         self.assertFalse(restored.score_component_audit[1].used)
         self.assertAlmostEqual(
