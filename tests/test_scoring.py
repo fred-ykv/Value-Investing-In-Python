@@ -152,6 +152,28 @@ class ScoringCalibrationTests(unittest.TestCase):
             )
         self.assertIsNotNone(score.configuration_audit)
         self.assertEqual(len(score.configuration_audit.fingerprint), 64)
+        for name, dimension in score.dimensions.items():
+            components = [
+                component
+                for component in score.component_audit
+                if component.dimension == name
+                and component.stage == "dimension"
+                and component.used
+            ]
+            self.assertTrue(components)
+            self.assertAlmostEqual(
+                sum(component.weighted_contribution for component in components),
+                dimension.score,
+            )
+        revenue = next(
+            component
+            for component in score.component_audit
+            if component.dimension == "growth"
+            and component.component == "revenue_growth"
+        )
+        self.assertEqual(revenue.source, "manual")
+        self.assertAlmostEqual(revenue.raw_value, 0.20)
+        self.assertTrue(revenue.used)
 
     def test_score_configuration_fingerprint_is_deterministic_and_profile_specific(self):
         metrics = metric_pack(
@@ -249,6 +271,72 @@ class ScoringCalibrationTests(unittest.TestCase):
         self.assertGreater(dimension.score, valuation_dimension(valuations, metrics, CompanyType.TRADITIONAL).score)
         self.assertLess(dimension.score, 0.90)
         self.assertIn("multiplos relativos de pares", dimension.explanation)
+
+    def test_component_audit_records_relative_comparables_when_used(self):
+        metrics = metric_pack(current_ratio=1.5)
+        valuations = [
+            ValuationResult(
+                "dcf_fcff",
+                80.0,
+                0.80,
+                source="derived",
+                margin_of_safety=-0.20,
+            )
+        ]
+        comparables = ComparableReport(
+            [],
+            overall_score=0.90,
+            confidence=1.0,
+            summary="discount to peers",
+            basis="approved_peer_medians",
+        )
+
+        report = compute_score(
+            CompanyType.TRADITIONAL,
+            valuations,
+            metrics,
+            metric_value("price", 100.0, "manual"),
+            comparables,
+        )
+
+        final_components = [
+            component
+            for component in report.component_audit
+            if component.dimension == "valuation"
+            and component.stage == "dimension"
+            and component.used
+        ]
+        self.assertEqual(
+            {component.component for component in final_components},
+            {"intrinsic_or_bank_valuation", "relative_comparables"},
+        )
+        self.assertAlmostEqual(
+            sum(component.effective_weight for component in final_components),
+            1.0,
+        )
+        self.assertAlmostEqual(
+            sum(component.weighted_contribution for component in final_components),
+            report.dimensions["valuation"].score,
+        )
+
+    def test_component_audit_marks_missing_metric_outside_dynamic_average(self):
+        report = compute_score(
+            CompanyType.TRADITIONAL,
+            [],
+            metric_pack(revenue_growth=0.10),
+            metric_value("price", 100.0, "manual"),
+        )
+
+        growth = {
+            component.component: component
+            for component in report.component_audit
+            if component.dimension == "growth"
+        }
+        self.assertTrue(growth["revenue_growth"].used)
+        self.assertAlmostEqual(growth["revenue_growth"].effective_weight, 1.0)
+        self.assertFalse(growth["fcff_growth"].used)
+        self.assertAlmostEqual(growth["fcff_growth"].effective_weight, 0.0)
+        self.assertTrue(growth["fcff_growth"].reason)
 
 
 if __name__ == "__main__":

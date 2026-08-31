@@ -365,6 +365,7 @@ def save_report_artifacts(ticker: str, report: dict[str, object], output_dir: st
             "comparable_table",
             "score_table",
             "score_configuration",
+            "score_component_audit",
             "metric_lineage_table",
             "risk_diagnostics",
             "key_indicator_table",

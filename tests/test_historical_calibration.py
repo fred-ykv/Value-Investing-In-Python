@@ -7,6 +7,7 @@ from pathlib import Path
 from fundamental_analysis.config import CalibrationAssumptions
 from fundamental_analysis.historical_calibration import (
     HistoricalCalibrationObservation,
+    HistoricalScoreComponentAudit,
     HistoricalScoreDimensionContribution,
     HistoricalValuationAssumptionAudit,
     HistoricalValuationMethodAudit,
@@ -230,6 +231,35 @@ class HistoricalCalibrationTests(unittest.TestCase):
                     "data_confidence", 0.70, 0.80, 0.10, 0.10, 0.07
                 ),
             ),
+            score_component_audit=(
+                HistoricalScoreComponentAudit(
+                    "growth",
+                    "dimension",
+                    "revenue_growth",
+                    0.10,
+                    0.50,
+                    1.0,
+                    1.0,
+                    0.50,
+                    0.80,
+                    "sec_edgar",
+                    True,
+                ),
+                HistoricalScoreComponentAudit(
+                    "growth",
+                    "dimension",
+                    "fcff_growth",
+                    None,
+                    None,
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    "missing",
+                    False,
+                    "Metrica indisponivel.",
+                ),
+            ),
             valuation_method_audit=(
                 HistoricalValuationMethodAudit(
                     method="dcf_fcff",
@@ -293,6 +323,11 @@ class HistoricalCalibrationTests(unittest.TestCase):
         self.assertAlmostEqual(restored.score_weighted_total, 0.585)
         self.assertAlmostEqual(restored.score_reconciliation_difference, 0.0)
         self.assertEqual(len(restored.score_dimension_contributions), 6)
+        self.assertEqual(len(restored.score_component_audit), 2)
+        self.assertEqual(restored.score_component_audit[0].source, "sec_edgar")
+        self.assertTrue(restored.score_component_audit[0].used)
+        self.assertIsNone(restored.score_component_audit[1].raw_value)
+        self.assertFalse(restored.score_component_audit[1].used)
         self.assertAlmostEqual(
             sum(
                 item.weighted_contribution
@@ -472,6 +507,7 @@ class HistoricalCalibrationTests(unittest.TestCase):
         self.assertIsNone(restored.score_weighted_total)
         self.assertIsNone(restored.score_reconciliation_difference)
         self.assertEqual(restored.score_dimension_contributions, ())
+        self.assertEqual(restored.score_component_audit, ())
 
     def test_previous_method_audit_schema_remains_readable(self):
         legacy_csv = (

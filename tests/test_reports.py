@@ -239,6 +239,15 @@ class ReportTests(unittest.TestCase):
             self.assertTrue(payload["score_table"])
             self.assertIn("normalized_weight", payload["score_table"][0])
             self.assertIn("weighted_contribution", payload["score_table"][0])
+            self.assertTrue(payload["score_component_audit"])
+            self.assertIn("raw_value", payload["score_component_audit"][0])
+            self.assertIn(
+                "weighted_contribution",
+                payload["score_component_audit"][0],
+            )
+            self.assertTrue(
+                all(row["source"] for row in payload["score_component_audit"])
+            )
 
 
 if __name__ == "__main__":

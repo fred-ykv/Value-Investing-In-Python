@@ -31,6 +31,14 @@
   valuation method.
 - Exposed score contributions and the configuration fingerprint in both the
   historical artifacts and the normal report JSON.
+- Added component-level score telemetry with raw value, transformed score,
+  configured and effective weights, weighted contribution, confidence, source,
+  inclusion status, and exclusion reason.
+- Separated intrinsic-model, bank-valuation, and final comparable-blend stages
+  so each final dimension can be reconciled without double counting internal
+  calculation layers.
+- Added fail-closed reconciliation between the recorded components and all six
+  dimension scores, while retaining empty component telemetry for legacy CSVs.
 - Centralized recommendation-gate evaluation and covered its boundary cases
   against the previous decision logic; recommendation behavior is unchanged.
 - Kept legacy historical CSVs readable without fabricating unavailable

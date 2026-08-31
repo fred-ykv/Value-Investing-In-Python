@@ -73,6 +73,14 @@ perfil da empresa, pesos, limiares, travas e limite de peso por metodo de
 valuation, permitindo separar observacoes calculadas sob configuracoes
 diferentes sem alterar ou recalcular o historico.
 
+Cada dimensao tambem preserva seus componentes internos: valor bruto, score
+transformado, peso previsto, peso efetivo apos ausencias, contribuicao,
+confianca, fonte, uso ou descarte e respectivo motivo. Em valuation, a trilha
+separa os modelos intrinsecos, as regras especificas de bancos e a combinacao
+final com comparaveis. Somente o estagio `dimension` entra na reconciliacao do
+subtotal, evitando dupla contagem das camadas intermediarias. A coleta falha se
+a soma dos componentes finais nao reproduzir qualquer uma das seis dimensoes.
+
 A decisao de recomendacao tambem fica reproduzivel. O historico registra a
 recomendacao que resultaria apenas dos limiares do score, a recomendacao final,
 a trava eventualmente acionada, sua justificativa e os cinco limites vigentes
@@ -160,7 +168,7 @@ Detalhes: `fundamental_analysis/TIINGO_HISTORICAL_PRICES.md`.
 
 Os arquivos sao gravados em `historical_calibration_outputs/`:
 
-- `historical_observations.csv`: observacoes, scores, pesos e contribuicoes dimensionais, versao da configuracao, decisao e travas de recomendacao, valuation por metodo, premissas macro, custo de capital e auditoria da normalizacao ciclica;
+- `historical_observations.csv`: observacoes, scores, pesos, contribuicoes dimensionais e componentes internos, versao da configuracao, decisao e travas de recomendacao, valuation por metodo, premissas macro, custo de capital e auditoria da normalizacao ciclica;
 - `collection_manifest.json`: trilha detalhada de sucessos, avisos e erros;
 - `collection_report.md`: cobertura por ticker e filing;
 - `historical_calibration.md`: Spearman, monotonicidade, retorno e drawdown.

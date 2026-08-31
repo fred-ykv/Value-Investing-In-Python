@@ -13,6 +13,7 @@ from .config import CYCLICAL, POINT_IN_TIME, PointInTimeAssumptions
 from .data_sources import metric_value
 from .historical_calibration import (
     HistoricalCalibrationObservation,
+    HistoricalScoreComponentAudit,
     HistoricalScoreDimensionContribution,
     HistoricalValuationAssumptionAudit,
     HistoricalValuationMethodAudit,
@@ -162,6 +163,35 @@ def collect_point_in_time_observation(
                 "Contribuicoes dimensionais nao reconciliam com o score total"
             )
         score_configuration = result.score.configuration_audit
+        score_component_audit = tuple(
+            HistoricalScoreComponentAudit(
+                dimension=component.dimension,
+                stage=component.stage,
+                component=component.component,
+                raw_value=component.raw_value,
+                transformed_score=component.transformed_score,
+                configured_weight=component.configured_weight,
+                effective_weight=component.effective_weight,
+                weighted_contribution=component.weighted_contribution,
+                confidence=component.confidence,
+                source=component.source,
+                used=component.used,
+                reason=component.reason,
+            )
+            for component in result.score.component_audit
+        )
+        for dimension_name, (dimension_score, _) in dimension_audit.items():
+            reconciled = sum(
+                component.weighted_contribution
+                for component in score_component_audit
+                if component.dimension == dimension_name
+                and component.stage == "dimension"
+                and component.used
+            )
+            if dimension_score is not None and abs(reconciled - dimension_score) > 1e-12:
+                raise ValueError(
+                    f"Componentes historicos de {dimension_name} nao reconciliam com a dimensao"
+                )
         critical_coverage, missing_critical = _critical_metric_audit(
             case,
             snapshot,
@@ -215,6 +245,7 @@ def collect_point_in_time_observation(
             score_weighted_total=score_weighted_total,
             score_reconciliation_difference=score_reconciliation_difference,
             score_dimension_contributions=score_contributions,
+            score_component_audit=score_component_audit,
             recommendation=result.score.recommendation,
             recommendation_before_gates=decision.recommendation_before_gates,
             recommendation_gate_code=decision.gate_code,

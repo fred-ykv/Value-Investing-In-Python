@@ -160,6 +160,9 @@ def analyze_ticker_from_inputs(ticker: str, income_statement: Mapping[str, objec
             if score.configuration_audit is not None
             else {}
         ),
+        "score_component_audit": [
+            asdict(component) for component in score.component_audit
+        ],
         "metric_lineage_table": metric_lineage_table(metric_lineage),
         "risk_diagnostics": risk_diagnostics(score, valuations, metric_lineage),
         "didactic_summary": didactic_summary_table(score, metric_lineage, valuations),

@@ -253,6 +253,26 @@ class PointInTimeCollectionTests(unittest.TestCase):
                 contribution.score * contribution.normalized_weight,
                 contribution.weighted_contribution,
             )
+        self.assertTrue(observation.score_component_audit)
+        for dimension_score, dimension_name in (
+            (observation.dimension_valuation_score, "valuation"),
+            (observation.dimension_growth_score, "growth"),
+            (observation.dimension_quality_score, "quality"),
+            (observation.dimension_debt_score, "debt"),
+            (observation.dimension_liquidity_score, "liquidity"),
+            (observation.dimension_data_confidence_score, "data_confidence"),
+        ):
+            reconciled = sum(
+                component.weighted_contribution
+                for component in observation.score_component_audit
+                if component.dimension == dimension_name
+                and component.stage == "dimension"
+                and component.used
+            )
+            self.assertAlmostEqual(reconciled, dimension_score)
+        self.assertTrue(
+            all(component.source for component in observation.score_component_audit)
+        )
 
     def test_bank_critical_coverage_ignores_industrial_only_metrics(self):
         def get_json(url):

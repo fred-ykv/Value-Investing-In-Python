@@ -28,6 +28,22 @@ class HistoricalScoreDimensionContribution:
 
 
 @dataclass(frozen=True)
+class HistoricalScoreComponentAudit:
+    dimension: str
+    stage: str
+    component: str
+    raw_value: float | None
+    transformed_score: float | None
+    configured_weight: float
+    effective_weight: float
+    weighted_contribution: float
+    confidence: float
+    source: str
+    used: bool
+    reason: str = ""
+
+
+@dataclass(frozen=True)
 class HistoricalValuationAssumptionAudit:
     name: str
     input_value: float | None
@@ -153,6 +169,7 @@ class HistoricalCalibrationObservation:
     score_dimension_contributions: tuple[
         HistoricalScoreDimensionContribution, ...
     ] = ()
+    score_component_audit: tuple[HistoricalScoreComponentAudit, ...] = ()
 
     @property
     def excess_return(self) -> float | None:
@@ -386,6 +403,7 @@ def write_historical_calibration_csv(
         "score_weighted_total",
         "score_reconciliation_difference",
         "score_dimension_contributions",
+        "score_component_audit",
         "recommendation",
         "recommendation_before_gates",
         "recommendation_gate_code",
@@ -501,6 +519,9 @@ def write_historical_calibration_csv(
                         _format_score_dimension_contributions(
                             observation.score_dimension_contributions
                         )
+                    ),
+                    "score_component_audit": _format_score_component_audit(
+                        observation.score_component_audit
                     ),
                     "recommendation": observation.recommendation,
                     "recommendation_before_gates": (
@@ -747,6 +768,9 @@ def read_historical_calibration_csv(path: str | Path) -> list[HistoricalCalibrat
                         _parse_score_dimension_contributions(
                             row.get("score_dimension_contributions", "")
                         )
+                    ),
+                    score_component_audit=_parse_score_component_audit(
+                        row.get("score_component_audit", "")
                     ),
                     recommendation=row["recommendation"],
                     recommendation_before_gates=row.get(
@@ -1102,6 +1126,57 @@ def _parse_score_dimension_contributions(
             )
         )
     return tuple(contributions)
+
+
+def _format_score_component_audit(
+    components: Iterable[HistoricalScoreComponentAudit],
+) -> str:
+    return json.dumps(
+        [asdict(component) for component in components],
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+
+
+def _parse_score_component_audit(
+    value: str | None,
+) -> tuple[HistoricalScoreComponentAudit, ...]:
+    value = (value or "").strip()
+    if not value:
+        return ()
+    payload = json.loads(value)
+    if not isinstance(payload, list):
+        raise ValueError("Auditoria dos componentes do score invalida no CSV")
+    components: list[HistoricalScoreComponentAudit] = []
+    for item in payload:
+        if not isinstance(item, dict):
+            raise ValueError("Componente do score invalido no CSV")
+        components.append(
+            HistoricalScoreComponentAudit(
+                dimension=str(item.get("dimension", "")).strip(),
+                stage=str(item.get("stage", "")).strip(),
+                component=str(item.get("component", "")).strip(),
+                raw_value=_parse_optional_number(item.get("raw_value")),
+                transformed_score=_parse_optional_number(
+                    item.get("transformed_score")
+                ),
+                configured_weight=float(
+                    item.get("configured_weight", 0.0) or 0.0
+                ),
+                effective_weight=float(
+                    item.get("effective_weight", 0.0) or 0.0
+                ),
+                weighted_contribution=float(
+                    item.get("weighted_contribution", 0.0) or 0.0
+                ),
+                confidence=float(item.get("confidence", 0.0) or 0.0),
+                source=str(item.get("source", "")).strip(),
+                used=_parse_bool(item.get("used", False)),
+                reason=str(item.get("reason", "")).strip(),
+            )
+        )
+    return tuple(components)
 
 
 def _format_valuation_method_audit(
