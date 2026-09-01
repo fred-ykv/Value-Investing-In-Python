@@ -797,6 +797,7 @@ def _derive_change_in_nwc(
         anchor,
         source_url,
         reported_customer_liability,
+        assumptions,
         (
             reported_customer_liability.period_start
             if reported_customer_liability.period_start is not None
@@ -913,6 +914,18 @@ def _derive_change_in_nwc(
         (metric.formula or "").rsplit(":", 1)[-1]
         for metric in metrics
     )
+    uses_partial_customer_liability = any(
+        group_name == "customer_liability"
+        and (metric.formula or "").endswith("Current")
+        for group_name, _, group_metrics, _ in groups
+        for metric in group_metrics
+    )
+    coverage_note = (
+        " Obrigacoes com clientes usam apenas o saldo corrente e recebem "
+        "penalidade adicional de confianca."
+        if uses_partial_customer_liability
+        else ""
+    )
     group_names = tuple(name for name, *_ in groups)
     observations = tuple(
         (f"{name}_economic_delta", group_value)
@@ -931,7 +944,8 @@ def _derive_change_in_nwc(
         "grupos operacionais SEC. Aumentos de ativos sao positivos; "
         "aumentos de passivos sao subtraidos. A reconstrucao permanece fallback "
         "porque conceitos customizados podem nao aparecer no Company Facts. "
-        f"Grupos: {', '.join(group_names)}. Conceitos: {', '.join(concepts)}.",
+        f"Grupos: {', '.join(group_names)}. Conceitos: {', '.join(concepts)}."
+        f"{coverage_note}",
         source_url=source_url,
         source_document=f"SEC EDGAR {anchor.form} {anchor.accession_number}",
         period_start=next(iter(period_starts)),
@@ -953,6 +967,7 @@ def _derive_customer_liability_delta(
     anchor: SecFilingAnchor,
     source_url: str,
     reported_change: MetricValue,
+    assumptions: PointInTimeAssumptions,
     period_start: date | None,
 ) -> MetricValue:
     if period_start is None:
@@ -992,6 +1007,18 @@ def _derive_customer_liability_delta(
         closing_value = sum(float(metric.value) for metric in closing)
         opening_value = sum(float(metric.value) for metric in opening)
         concept_list = ", ".join(concepts)
+        is_partial = len(concepts) == 1 and concepts[0].endswith("Current")
+        confidence_penalty = (
+            assumptions.nwc_partial_balance_confidence_penalty
+            if is_partial
+            else 0.0
+        )
+        coverage_note = (
+            " O conceito cobre apenas o saldo corrente e recebe penalidade "
+            "adicional de confianca."
+            if is_partial
+            else ""
+        )
         return metric_value(
             "nwc_customer_liability",
             closing_value - opening_value,
@@ -999,7 +1026,7 @@ def _derive_customer_liability_delta(
             "Variacao da obrigacao com clientes calculada pelos saldos "
             "comparativos do mesmo filing SEC. Esse saldo economico prevalece "
             "sobre a tag de fluxo, que pode representar movimentacao bruta. "
-            f"Conceitos: {concept_list}.",
+            f"Conceitos: {concept_list}.{coverage_note}",
             source_url=source_url,
             source_document=f"SEC EDGAR {anchor.form} {anchor.accession_number}",
             period_start=period_start,
@@ -1011,8 +1038,10 @@ def _derive_customer_liability_delta(
             basis="derived",
             is_fallback=True,
             formula=f"sec_balance_sheet_delta:{concept_list}",
-            confidence=min(
-                metric.confidence for metric in (*closing, *opening)
+            confidence=max(
+                0.0,
+                min(metric.confidence for metric in (*closing, *opening))
+                - confidence_penalty,
             ),
             input_observations=(
                 ("customer_liability_opening", opening_value),

@@ -164,6 +164,37 @@ class SecEdgarClientTests(unittest.TestCase):
         self.assertEqual(nwc.value, 20)
         self.assertIn("IncreaseDecreaseInDeferredRevenue", nwc.note)
 
+    def test_partial_current_customer_liability_reduces_confidence(self):
+        complete_payload = company_facts_fixture()
+        partial_payload = deepcopy(complete_payload)
+        balance = partial_payload["facts"]["us-gaap"].pop("DeferredRevenue")
+        partial_payload["facts"]["us-gaap"]["DeferredRevenueCurrent"] = balance
+
+        def client_for(payload, tempdir):
+            def get_json(url):
+                return ticker_map_fixture() if "company_tickers" in url else payload
+
+            return SecEdgarClient(
+                "Test Research test@example.com",
+                cache_dir=tempdir,
+                json_getter=get_json,
+            )
+
+        with tempfile.TemporaryDirectory() as complete_dir:
+            complete = client_for(complete_payload, complete_dir).build_snapshot(
+                "TEST", date(2024, 2, 16)
+            )
+        with tempfile.TemporaryDirectory() as partial_dir:
+            partial = client_for(partial_payload, partial_dir).build_snapshot(
+                "TEST", date(2024, 2, 16)
+            )
+
+        complete_nwc = complete.cash_flow["change_in_nwc"]
+        partial_nwc = partial.cash_flow["change_in_nwc"]
+        self.assertEqual(partial_nwc.value, complete_nwc.value)
+        self.assertLess(partial_nwc.confidence, complete_nwc.confidence)
+        self.assertIn("apenas o saldo corrente", partial_nwc.note)
+
     def test_rejects_one_sided_nwc_component_coverage(self):
         payload = deepcopy(company_facts_fixture())
         gaap = payload["facts"]["us-gaap"]

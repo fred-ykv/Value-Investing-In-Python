@@ -12,6 +12,8 @@
   the same filing accession, while retaining the reported cash-flow concept as
   an auditable fallback. This prevents gross contract-liability movements from
   being mistaken for economic working-capital changes.
+- Marked current-only customer-liability balances as partial and applied an
+  additional confidence penalty configured in `config.py`.
 - Added source document, period, filing date, concepts, formula, component
   observations, confidence, and fallback lineage to every reconstructed value.
 - Applied reconstructed working capital to both annual FCFF periods only when
@@ -34,7 +36,7 @@
   Spearman from -0.076 to -0.078, so no recalibration is supported.
 - Added regression coverage for economic signs, incomplete and asymmetric SEC
   coverage, temporal comparability, and mislabeled gross customer-liability
-  movements. All 190 tests pass.
+  movements. All 191 tests pass.
 - Kept score weights, gates, recommendation thresholds, and valuation formulas
   unchanged.
 

@@ -248,6 +248,7 @@ class PointInTimeAssumptions:
     minimum_nwc_component_groups: int = 2
     nwc_component_reconstruction_confidence_penalty: float = 0.15
     nwc_sparse_reconstruction_confidence_penalty: float = 0.10
+    nwc_partial_balance_confidence_penalty: float = 0.10
     zero_debt_fallback_confidence: float = 0.35
     weighted_average_shares_fallback_confidence: float = 0.75
     price_start_max_lag_days: int = 7
