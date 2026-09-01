@@ -6,7 +6,7 @@ import json
 import os
 import time
 from dataclasses import dataclass, replace
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping
 
@@ -316,6 +316,12 @@ class SecEdgarClient:
             payload,
             anchor,
             source_url,
+        )
+        sections["cash_flow"]["change_in_nwc"] = _derive_change_in_nwc(
+            payload,
+            anchor,
+            source_url,
+            self.assumptions,
         )
         _complete_balance_sheet(sections["balance_sheet"], payload, anchor, source_url)
         _complete_total_debt(
@@ -686,6 +692,409 @@ def _complete_capex(
             basis="derived",
             is_fallback=True,
         )
+
+
+def _derive_change_in_nwc(
+    payload: Mapping[str, Any],
+    anchor: SecFilingAnchor,
+    source_url: str,
+    assumptions: PointInTimeAssumptions,
+) -> MetricValue:
+    groups: list[tuple[str, float, tuple[MetricValue, ...], str]] = []
+
+    def select(name: str, concepts: tuple[str, ...]) -> MetricValue:
+        return _select_metric(
+            payload,
+            name,
+            _FactSpec(concepts, ("USD",), True),
+            anchor,
+            source_url,
+        )
+
+    receivables = select(
+        "nwc_receivables",
+        (
+            "IncreaseDecreaseInAccountsReceivable",
+            "IncreaseDecreaseInReceivables",
+        ),
+    )
+    if receivables.is_available:
+        groups.append(
+            ("receivables", float(receivables.value), (receivables,), "asset")
+        )
+
+    inventories = select(
+        "nwc_inventories",
+        ("IncreaseDecreaseInInventories",),
+    )
+    if inventories.is_available:
+        groups.append(
+            ("inventories", float(inventories.value), (inventories,), "asset")
+        )
+
+    contract_asset = select(
+        "nwc_contract_asset",
+        ("IncreaseDecreaseInContractWithCustomerAsset",),
+    )
+    if contract_asset.is_available:
+        groups.append(
+            (
+                "contract_asset",
+                float(contract_asset.value),
+                (contract_asset,),
+                "asset",
+            )
+        )
+
+    payables = select(
+        "nwc_payables_accrued",
+        ("IncreaseDecreaseInAccountsPayableAndAccruedLiabilities",),
+    )
+    payable_metrics: tuple[MetricValue, ...] = ()
+    payable_value: float | None = None
+    if payables.is_available:
+        payable_metrics = (payables,)
+        payable_value = float(payables.value)
+    else:
+        accounts_payable = select(
+            "nwc_accounts_payable",
+            ("IncreaseDecreaseInAccountsPayable",),
+        )
+        accrued = select(
+            "nwc_accrued_liabilities",
+            (
+                "IncreaseDecreaseInAccruedLiabilitiesAndOtherOperatingLiabilities",
+                "IncreaseDecreaseInAccruedLiabilities",
+            ),
+        )
+        payable_metrics = tuple(
+            metric
+            for metric in (accounts_payable, accrued)
+            if metric.is_available
+        )
+        if payable_metrics:
+            payable_value = sum(float(metric.value) for metric in payable_metrics)
+    if payable_value is not None:
+        groups.append(
+            ("payables_accrued", -payable_value, payable_metrics, "liability")
+        )
+
+    reported_customer_liability = select(
+        "nwc_customer_liability",
+        (
+            "IncreaseDecreaseInContractWithCustomerLiability",
+            "IncreaseDecreaseInDeferredRevenue",
+        ),
+    )
+    candidate_period_starts = {
+        metric.period_start
+        for _, _, group_metrics, _ in groups
+        for metric in group_metrics
+        if metric.period_start is not None
+    }
+    customer_liability = _derive_customer_liability_delta(
+        payload,
+        anchor,
+        source_url,
+        reported_customer_liability,
+        assumptions,
+        (
+            reported_customer_liability.period_start
+            if reported_customer_liability.period_start is not None
+            else next(iter(candidate_period_starts))
+            if len(candidate_period_starts) == 1
+            else None
+        ),
+    )
+    if customer_liability.is_available:
+        groups.append(
+            (
+                "customer_liability",
+                -float(customer_liability.value),
+                (customer_liability,),
+                "liability",
+            )
+        )
+
+    other_net = select(
+        "nwc_other_operating_capital_net",
+        ("IncreaseDecreaseInOtherOperatingCapitalNet",),
+    )
+    if other_net.is_available:
+        groups.append(
+            (
+                "other_operating_capital",
+                float(other_net.value),
+                (other_net,),
+                "net",
+            )
+        )
+    else:
+        other_asset = select(
+            "nwc_other_operating_assets",
+            (
+                "IncreaseDecreaseInPrepaidDeferredExpenseAndOtherAssets",
+                "IncreaseDecreaseInPrepaidExpense",
+                "IncreaseDecreaseInOtherCurrentAssets",
+            ),
+        )
+        other_liability = select(
+            "nwc_other_operating_liabilities",
+            (
+                "IncreaseDecreaseInOtherOperatingLiabilities",
+                "IncreaseDecreaseInOtherCurrentLiabilities",
+            ),
+        )
+        other_metrics = tuple(
+            metric
+            for metric in (other_asset, other_liability)
+            if metric.is_available
+        )
+        if other_metrics:
+            value = (
+                float(other_asset.value) if other_asset.is_available else 0.0
+            ) - (
+                float(other_liability.value)
+                if other_liability.is_available
+                else 0.0
+            )
+            side = (
+                "net"
+                if other_asset.is_available and other_liability.is_available
+                else "asset"
+                if other_asset.is_available
+                else "liability"
+            )
+            groups.append(
+                ("other_operating_capital", value, other_metrics, side)
+            )
+
+    sides = {side for _, _, _, side in groups}
+    has_asset_side = "asset" in sides
+    has_funding_side = bool({"liability", "net"}.intersection(sides))
+    if (
+        len(groups) < assumptions.minimum_nwc_component_groups
+        or not has_asset_side
+        or not has_funding_side
+    ):
+        return _unavailable_change_in_nwc(
+            anchor,
+            source_url,
+            "Reconstrucao de NWC recusada: exige ao menos "
+            f"{assumptions.minimum_nwc_component_groups} grupos, incluindo "
+            "ativos operacionais e passivos ou capital operacional liquido; "
+            f"grupos encontrados: {', '.join(name for name, *_ in groups) or 'nenhum'}.",
+        )
+
+    metrics = tuple(
+        metric
+        for _, _, group_metrics, _ in groups
+        for metric in group_metrics
+    )
+    period_starts = {
+        metric.period_start for metric in metrics if metric.period_start is not None
+    }
+    if len(period_starts) != 1:
+        return _unavailable_change_in_nwc(
+            anchor,
+            source_url,
+            "Reconstrucao de NWC recusada: componentes SEC usam janelas anuais "
+            "inconsistentes.",
+        )
+
+    confidence_penalty = assumptions.nwc_component_reconstruction_confidence_penalty
+    if len(groups) == assumptions.minimum_nwc_component_groups:
+        confidence_penalty += assumptions.nwc_sparse_reconstruction_confidence_penalty
+    confidence = max(
+        0.0,
+        min(metric.confidence for metric in metrics) - confidence_penalty,
+    )
+    value = sum(group_value for _, group_value, _, _ in groups)
+    concepts = tuple(
+        (metric.formula or "").rsplit(":", 1)[-1]
+        for metric in metrics
+    )
+    uses_partial_customer_liability = any(
+        group_name == "customer_liability"
+        and (metric.formula or "").endswith("Current")
+        for group_name, _, group_metrics, _ in groups
+        for metric in group_metrics
+    )
+    coverage_note = (
+        " Obrigacoes com clientes usam apenas o saldo corrente e recebem "
+        "penalidade adicional de confianca."
+        if uses_partial_customer_liability
+        else ""
+    )
+    group_names = tuple(name for name, *_ in groups)
+    observations = tuple(
+        (f"{name}_economic_delta", group_value)
+        for name, group_value, _, _ in groups
+    ) + tuple(
+        (f"{group_name}_{input_name}", input_value)
+        for group_name, _, group_metrics, _ in groups
+        for metric in group_metrics
+        for input_name, input_value in metric.input_observations
+    ) + (("change_in_nwc", value),)
+    return metric_value(
+        "change_in_nwc",
+        value,
+        "sec_edgar_derived",
+        "Aumento economico do capital de giro operacional reconstruido por "
+        "grupos operacionais SEC. Aumentos de ativos sao positivos; "
+        "aumentos de passivos sao subtraidos. A reconstrucao permanece fallback "
+        "porque conceitos customizados podem nao aparecer no Company Facts. "
+        f"Grupos: {', '.join(group_names)}. Conceitos: {', '.join(concepts)}."
+        f"{coverage_note}",
+        source_url=source_url,
+        source_document=f"SEC EDGAR {anchor.form} {anchor.accession_number}",
+        period_start=next(iter(period_starts)),
+        period_end=anchor.report_end,
+        filing_date=anchor.filed,
+        as_of=datetime.combine(anchor.filed, datetime.min.time()),
+        currency="USD",
+        scale="raw",
+        basis="derived",
+        is_fallback=True,
+        formula="economic_delta_nwc_from_sec_operating_component_groups",
+        confidence=confidence,
+        input_observations=observations,
+    )
+
+
+def _derive_customer_liability_delta(
+    payload: Mapping[str, Any],
+    anchor: SecFilingAnchor,
+    source_url: str,
+    reported_change: MetricValue,
+    assumptions: PointInTimeAssumptions,
+    period_start: date | None,
+) -> MetricValue:
+    if period_start is None:
+        return reported_change
+
+    opening_end = period_start - timedelta(days=1)
+    concept_groups = (
+        ("ContractWithCustomerLiability",),
+        ("DeferredRevenue",),
+        (
+            "ContractWithCustomerLiabilityCurrent",
+            "ContractWithCustomerLiabilityNoncurrent",
+        ),
+        ("DeferredRevenueCurrent", "DeferredRevenueNoncurrent"),
+        ("ContractWithCustomerLiabilityCurrent",),
+        ("DeferredRevenueCurrent",),
+    )
+    for concepts in concept_groups:
+        closing = _select_instant_group(
+            payload,
+            "nwc_customer_liability_closing",
+            concepts,
+            anchor,
+            anchor.report_end,
+            source_url,
+        )
+        opening = _select_instant_group(
+            payload,
+            "nwc_customer_liability_opening",
+            concepts,
+            anchor,
+            opening_end,
+            source_url,
+        )
+        if not closing or not opening:
+            continue
+        closing_value = sum(float(metric.value) for metric in closing)
+        opening_value = sum(float(metric.value) for metric in opening)
+        concept_list = ", ".join(concepts)
+        is_partial = len(concepts) == 1 and concepts[0].endswith("Current")
+        confidence_penalty = (
+            assumptions.nwc_partial_balance_confidence_penalty
+            if is_partial
+            else 0.0
+        )
+        coverage_note = (
+            " O conceito cobre apenas o saldo corrente e recebe penalidade "
+            "adicional de confianca."
+            if is_partial
+            else ""
+        )
+        return metric_value(
+            "nwc_customer_liability",
+            closing_value - opening_value,
+            "sec_edgar_derived",
+            "Variacao da obrigacao com clientes calculada pelos saldos "
+            "comparativos do mesmo filing SEC. Esse saldo economico prevalece "
+            "sobre a tag de fluxo, que pode representar movimentacao bruta. "
+            f"Conceitos: {concept_list}.{coverage_note}",
+            source_url=source_url,
+            source_document=f"SEC EDGAR {anchor.form} {anchor.accession_number}",
+            period_start=period_start,
+            period_end=anchor.report_end,
+            filing_date=anchor.filed,
+            as_of=datetime.combine(anchor.filed, datetime.min.time()),
+            currency="USD",
+            scale="raw",
+            basis="derived",
+            is_fallback=True,
+            formula=f"sec_balance_sheet_delta:{concept_list}",
+            confidence=max(
+                0.0,
+                min(metric.confidence for metric in (*closing, *opening))
+                - confidence_penalty,
+            ),
+            input_observations=(
+                ("customer_liability_opening", opening_value),
+                ("customer_liability_closing", closing_value),
+            ),
+        )
+    return reported_change
+
+
+def _select_instant_group(
+    payload: Mapping[str, Any],
+    name: str,
+    concepts: tuple[str, ...],
+    anchor: SecFilingAnchor,
+    period_end: date,
+    source_url: str,
+) -> tuple[MetricValue, ...]:
+    comparative_anchor = replace(anchor, report_end=period_end)
+    selected = tuple(
+        _select_metric(
+            payload,
+            f"{name}_{concept}",
+            _FactSpec((concept,), ("USD",), False),
+            comparative_anchor,
+            source_url,
+        )
+        for concept in concepts
+    )
+    return selected if all(metric.is_available for metric in selected) else ()
+
+
+def _unavailable_change_in_nwc(
+    anchor: SecFilingAnchor,
+    source_url: str,
+    reason: str,
+) -> MetricValue:
+    return MetricValue(
+        "change_in_nwc",
+        None,
+        "sec_edgar_derived",
+        0.0,
+        reason,
+        source_url=source_url,
+        source_document=f"SEC EDGAR {anchor.form} {anchor.accession_number}",
+        period_end=anchor.report_end,
+        filing_date=anchor.filed,
+        as_of=datetime.combine(anchor.filed, datetime.min.time()),
+        currency="USD",
+        scale="raw",
+        basis="derived",
+        is_fallback=True,
+        formula="economic_delta_nwc_from_sec_operating_component_groups",
+    )
 
 
 def _complete_balance_sheet(
@@ -1108,21 +1517,26 @@ def _derive_fcff_growth(
     source_url: str,
     assumptions: PointInTimeAssumptions,
 ) -> MetricValue:
-    current_fcff = _fcff_for_sections(
+    raw_current_fcff = _fcff_for_sections(
         anchor,
         current_income,
         current_cash_flow,
     )
-    if not current_fcff.is_available:
+    if not raw_current_fcff.is_available:
         return _unavailable_fcff_growth(
             anchor,
             source_url,
-            "FCFF corrente indisponivel: " + (current_fcff.note or "insumos ausentes"),
-            current_fcff=current_fcff,
+            "FCFF corrente indisponivel: "
+            + (raw_current_fcff.note or "insumos ausentes"),
+            current_fcff=raw_current_fcff,
         )
 
+    current_fcff: MetricValue | None = None
     prior_fcff: MetricValue | None = None
     prior_end: date | None = None
+    selected_current_cash_flow: Mapping[str, MetricValue] | None = None
+    selected_prior_cash_flow: Mapping[str, MetricValue] | None = None
+    nwc_pair_mode = ""
     prior_failure_notes: list[str] = []
     for candidate_end in _annual_comparative_period_ends(
         payload,
@@ -1134,21 +1548,36 @@ def _derive_fcff_growth(
             payload,
             comparative_anchor,
             source_url,
+            assumptions,
+        )
+        aligned_current_cash_flow, aligned_prior_cash_flow, candidate_nwc_mode = (
+            _align_nwc_pair(current_cash_flow, prior_cash_flow)
+        )
+        candidate_current_fcff = _fcff_for_sections(
+            anchor,
+            current_income,
+            aligned_current_cash_flow,
         )
         candidate_fcff = _fcff_for_sections(
             comparative_anchor,
             prior_income,
-            prior_cash_flow,
+            aligned_prior_cash_flow,
         )
-        if candidate_fcff.is_available:
+        if candidate_current_fcff.is_available and candidate_fcff.is_available:
+            current_fcff = candidate_current_fcff
             prior_fcff = candidate_fcff
             prior_end = candidate_end
+            selected_current_cash_flow = aligned_current_cash_flow
+            selected_prior_cash_flow = aligned_prior_cash_flow
+            nwc_pair_mode = candidate_nwc_mode
             break
         prior_failure_notes.append(
-            f"{candidate_end.isoformat()}: {candidate_fcff.note or 'insumos ausentes'}"
+            f"{candidate_end.isoformat()}: corrente="
+            f"{candidate_current_fcff.note or 'insumos ausentes'}; comparativo="
+            f"{candidate_fcff.note or 'insumos ausentes'}"
         )
 
-    if prior_fcff is None or prior_end is None:
+    if current_fcff is None or prior_fcff is None or prior_end is None:
         detail = "; ".join(prior_failure_notes[:3])
         reason = "FCFF anual comparativo indisponivel no mesmo filing SEC."
         if detail:
@@ -1157,7 +1586,7 @@ def _derive_fcff_growth(
             anchor,
             source_url,
             reason,
-            current_fcff=current_fcff,
+            current_fcff=raw_current_fcff,
         )
 
     current_value = float(current_fcff.value)
@@ -1165,13 +1594,17 @@ def _derive_fcff_growth(
     observations = (
         ("current_fcff", current_value),
         ("prior_fcff", prior_value),
+    ) + _nwc_pair_observations(
+        selected_current_cash_flow or {},
+        selected_prior_cash_flow or {},
     )
     used_fallback = current_fcff.is_fallback or prior_fcff.is_fallback
     if current_value <= 0.0 or prior_value <= 0.0:
         reason = (
             "Crescimento percentual de FCFF recusado porque FCFF corrente e "
             "comparativo precisam ser positivos; uma mudanca de sinal nao e uma "
-            "taxa de crescimento economicamente interpretavel."
+            "taxa de crescimento economicamente interpretavel. Tratamento NWC: "
+            f"{nwc_pair_mode}."
         )
         return _unavailable_fcff_growth(
             anchor,
@@ -1191,7 +1624,8 @@ def _derive_fcff_growth(
     )
     note = (
         "FCFF corrente dividido pelo FCFF anual comparativo do mesmo filing SEC "
-        "menos um. Ambos os FCFF usam a formula vigente do modelo."
+        "menos um. Ambos os FCFF usam a formula vigente do modelo. Tratamento "
+        f"simetrico do capital de giro: {nwc_pair_mode}."
     )
     if used_fallback:
         note += " Pelo menos um FCFF usa fallback explicitamente identificado."
@@ -1219,6 +1653,7 @@ def _statement_sections_for_period(
     payload: Mapping[str, Any],
     anchor: SecFilingAnchor,
     source_url: str,
+    assumptions: PointInTimeAssumptions,
 ) -> tuple[dict[str, MetricValue], dict[str, MetricValue]]:
     income: dict[str, MetricValue] = {}
     cash_flow: dict[str, MetricValue] = {}
@@ -1233,7 +1668,72 @@ def _statement_sections_for_period(
     _complete_ebit(income, payload, anchor, source_url)
     _complete_depreciation_amortization(cash_flow, payload, anchor, source_url)
     _complete_capex(cash_flow, payload, anchor, source_url)
+    cash_flow["change_in_nwc"] = _derive_change_in_nwc(
+        payload,
+        anchor,
+        source_url,
+        assumptions,
+    )
     return income, cash_flow
+
+
+def _align_nwc_pair(
+    current_cash_flow: Mapping[str, MetricValue],
+    prior_cash_flow: Mapping[str, MetricValue],
+) -> tuple[dict[str, MetricValue], dict[str, MetricValue], str]:
+    current = dict(current_cash_flow)
+    prior = dict(prior_cash_flow)
+    current_nwc = current.get("change_in_nwc")
+    prior_nwc = prior.get("change_in_nwc")
+    current_available = bool(current_nwc and current_nwc.is_available)
+    prior_available = bool(prior_nwc and prior_nwc.is_available)
+    if current_available and prior_available:
+        return current, prior, "nwc_reconstruido_nos_dois_periodos"
+    if not current_available and not prior_available:
+        return current, prior, "fallback_zero_nos_dois_periodos"
+
+    reason = (
+        "Cobertura assimetrica de NWC entre os periodos; a aproximacao zero foi "
+        "aplicada aos dois FCFF para preservar comparabilidade temporal."
+    )
+    current["change_in_nwc"] = MetricValue(
+        "change_in_nwc",
+        None,
+        "sec_edgar_derived",
+        0.0,
+        reason,
+        basis="derived",
+        is_fallback=True,
+        formula="symmetric_zero_nwc_for_fcff_growth",
+    )
+    prior["change_in_nwc"] = replace(
+        current["change_in_nwc"],
+        period_end=(prior_nwc.period_end if prior_nwc else None),
+        filing_date=(prior_nwc.filing_date if prior_nwc else None),
+    )
+    return current, prior, "fallback_zero_simetrico_por_cobertura_assimetrica"
+
+
+def _nwc_pair_observations(
+    current_cash_flow: Mapping[str, MetricValue],
+    prior_cash_flow: Mapping[str, MetricValue],
+) -> tuple[tuple[str, float], ...]:
+    observations: list[tuple[str, float]] = []
+    for prefix, cash_flow in (
+        ("current", current_cash_flow),
+        ("prior", prior_cash_flow),
+    ):
+        nwc = cash_flow.get("change_in_nwc")
+        if nwc is None or not nwc.is_available:
+            observations.append((f"{prefix}_change_in_nwc_fallback_zero", 0.0))
+            continue
+        observations.append((f"{prefix}_change_in_nwc", float(nwc.value)))
+        observations.extend(
+            (f"{prefix}_nwc_{name}", value)
+            for name, value in nwc.input_observations
+            if name != "change_in_nwc"
+        )
+    return tuple(observations)
 
 
 def _fcff_for_sections(

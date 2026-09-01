@@ -85,6 +85,28 @@ def company_facts_fixture():
                 "DepreciationDepletionAndAmortization": concept(
                     annual_pair(35, 40, 60)
                 ),
+                "IncreaseDecreaseInAccountsReceivable": concept(
+                    annual_pair(5, 10, 20)
+                ),
+                "IncreaseDecreaseInInventories": concept(
+                    annual_pair(10, 15, 25)
+                ),
+                "IncreaseDecreaseInAccountsPayable": concept(
+                    annual_pair(3, 4, 8)
+                ),
+                "IncreaseDecreaseInDeferredRevenue": concept(
+                    annual_pair(2, 1, 3)
+                ),
+                "DeferredRevenue": concept(
+                    [
+                        instant_fact(8, "2021-12-31", filed1, a1),
+                        instant_fact(10, "2022-12-31", filed1, a1),
+                        instant_fact(11, "2023-12-31", filed1, a1),
+                        instant_fact(10, "2022-12-31", filed2, a2),
+                        instant_fact(11, "2023-12-31", filed2, a2),
+                        instant_fact(14, "2024-12-31", filed2, a2),
+                    ]
+                ),
                 "CommonStockDividendsPerShareDeclared": concept(
                     [
                         annual_fact(1.0, "2023-01-01", "2023-12-31", filed1, a1),
