@@ -290,9 +290,16 @@ class PointInTimeCollectionTests(unittest.TestCase):
             "current_positive_fcff_divided_by_prior_positive_fcff_minus_one",
         )
         self.assertTrue(fcff_growth.is_fallback)
-        self.assertEqual(
-            {name for name, _ in fcff_growth.input_observations},
-            {"current_fcff", "prior_fcff"},
+        observation_names = {
+            name for name, _ in fcff_growth.input_observations
+        }
+        self.assertTrue(
+            {
+                "current_fcff",
+                "prior_fcff",
+                "current_change_in_nwc",
+                "prior_change_in_nwc",
+            }.issubset(observation_names)
         )
 
     def test_bank_critical_coverage_ignores_industrial_only_metrics(self):

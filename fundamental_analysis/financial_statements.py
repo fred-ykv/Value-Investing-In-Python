@@ -119,7 +119,17 @@ def compute_fcff(values: Mapping[str, MetricValue]) -> MetricValue:
     else:
         working_capital_adjustment = 0.0
         working_capital_metric = None
-        working_capital_note = "change_in_nwc unavailable, used explicit 0 approximation with confidence penalty"
+        missing_nwc_notes = tuple(
+            item.note
+            for item in (economic_delta, cash_effect)
+            if item.note and item.note not in {"not found", "not found in anchor filing"}
+        )
+        working_capital_note = (
+            "change_in_nwc unavailable, used explicit 0 approximation with "
+            "confidence penalty"
+        )
+        if missing_nwc_notes:
+            working_capital_note += "; reason: " + " | ".join(missing_nwc_notes)
         formula = "nopat_plus_da_minus_capex_nwc_fallback_zero"
 
     normalized_capex = abs(capex)

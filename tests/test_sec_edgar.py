@@ -69,8 +69,8 @@ class SecEdgarClientTests(unittest.TestCase):
         self.assertEqual(snapshot.market_data["shares"].value, 100)
         self.assertEqual(snapshot.balance_sheet["total_liabilities"].value, 600)
         self.assertEqual(snapshot.balance_sheet["total_debt"].value, 350)
-        current_fcff = 140 * (1 - 25 / (140 - 10)) + 40 - 50
-        prior_fcff = 120 * (1 - 20 / (120 - 8)) + 35 - 45
+        current_fcff = 140 * (1 - 25 / (140 - 10)) + 40 - 50 - 20
+        prior_fcff = 120 * (1 - 20 / (120 - 8)) + 35 - 45 - 10
         fcff_growth = snapshot.market_data["fcff_growth"]
         self.assertAlmostEqual(fcff_growth.value, current_fcff / prior_fcff - 1)
         self.assertEqual(fcff_growth.period_start, date(2022, 12, 31))
@@ -80,14 +80,162 @@ class SecEdgarClientTests(unittest.TestCase):
             fcff_growth.formula,
             "current_positive_fcff_divided_by_prior_positive_fcff_minus_one",
         )
-        self.assertEqual(
-            dict(fcff_growth.input_observations),
-            {"current_fcff": current_fcff, "prior_fcff": prior_fcff},
-        )
+        observations = dict(fcff_growth.input_observations)
+        self.assertAlmostEqual(observations["current_fcff"], current_fcff)
+        self.assertAlmostEqual(observations["prior_fcff"], prior_fcff)
+        self.assertEqual(observations["current_change_in_nwc"], 20)
+        self.assertEqual(observations["prior_change_in_nwc"], 10)
+        self.assertIn("nwc_reconstruido_nos_dois_periodos", fcff_growth.note)
         self.assertTrue(fcff_growth.is_fallback)
         self.assertGreater(fcff_growth.confidence, 0.0)
         self.assertTrue(snapshot.audit.point_in_time_valid)
         self.assertEqual(snapshot.audit.coverage_ratio, 1.0)
+
+    def test_reconstructs_economic_nwc_with_asset_and_liability_signs(self):
+        with tempfile.TemporaryDirectory() as tempdir:
+            client = self.build_client(tempdir)
+            snapshot = client.build_snapshot("TEST", date(2024, 2, 16))
+
+        nwc = snapshot.cash_flow["change_in_nwc"]
+        observations = dict(nwc.input_observations)
+        self.assertEqual(nwc.value, 20)
+        self.assertEqual(observations["receivables_economic_delta"], 10)
+        self.assertEqual(observations["inventories_economic_delta"], 15)
+        self.assertEqual(observations["payables_accrued_economic_delta"], -4)
+        self.assertEqual(observations["customer_liability_economic_delta"], -1)
+        self.assertEqual(
+            observations["customer_liability_customer_liability_opening"],
+            10,
+        )
+        self.assertEqual(
+            observations["customer_liability_customer_liability_closing"],
+            11,
+        )
+        self.assertEqual(
+            nwc.formula,
+            "economic_delta_nwc_from_sec_operating_component_groups",
+        )
+        self.assertTrue(nwc.is_fallback)
+        self.assertGreater(nwc.confidence, 0.0)
+
+    def test_customer_liability_prefers_comparative_balance_delta(self):
+        payload = deepcopy(company_facts_fixture())
+        entries = payload["facts"]["us-gaap"][
+            "IncreaseDecreaseInDeferredRevenue"
+        ]["units"]["USD"]
+        for fact in entries:
+            if (
+                fact["accn"] == "0000001234-24-000001"
+                and fact["end"] == "2023-12-31"
+            ):
+                fact["val"] = 999
+
+        def get_json(url):
+            return ticker_map_fixture() if "company_tickers" in url else payload
+
+        with tempfile.TemporaryDirectory() as tempdir:
+            client = SecEdgarClient(
+                "Test Research test@example.com",
+                cache_dir=tempdir,
+                json_getter=get_json,
+            )
+            snapshot = client.build_snapshot("TEST", date(2024, 2, 16))
+
+        nwc = snapshot.cash_flow["change_in_nwc"]
+        self.assertEqual(nwc.value, 20)
+        self.assertIn("DeferredRevenue", nwc.note)
+
+    def test_customer_liability_falls_back_without_comparative_balances(self):
+        payload = deepcopy(company_facts_fixture())
+        payload["facts"]["us-gaap"].pop("DeferredRevenue")
+
+        def get_json(url):
+            return ticker_map_fixture() if "company_tickers" in url else payload
+
+        with tempfile.TemporaryDirectory() as tempdir:
+            client = SecEdgarClient(
+                "Test Research test@example.com",
+                cache_dir=tempdir,
+                json_getter=get_json,
+            )
+            snapshot = client.build_snapshot("TEST", date(2024, 2, 16))
+
+        nwc = snapshot.cash_flow["change_in_nwc"]
+        self.assertEqual(nwc.value, 20)
+        self.assertIn("IncreaseDecreaseInDeferredRevenue", nwc.note)
+
+    def test_rejects_one_sided_nwc_component_coverage(self):
+        payload = deepcopy(company_facts_fixture())
+        gaap = payload["facts"]["us-gaap"]
+        gaap.pop("IncreaseDecreaseInAccountsPayable")
+        gaap.pop("IncreaseDecreaseInDeferredRevenue")
+        gaap.pop("DeferredRevenue")
+
+        def get_json(url):
+            return ticker_map_fixture() if "company_tickers" in url else payload
+
+        with tempfile.TemporaryDirectory() as tempdir:
+            client = SecEdgarClient(
+                "Test Research test@example.com",
+                cache_dir=tempdir,
+                json_getter=get_json,
+            )
+            snapshot = client.build_snapshot("TEST", date(2024, 2, 16))
+
+        nwc = snapshot.cash_flow["change_in_nwc"]
+        self.assertFalse(nwc.is_available)
+        self.assertIn("ativos operacionais e passivos", nwc.note)
+        observations = dict(snapshot.market_data["fcff_growth"].input_observations)
+        self.assertEqual(observations["current_change_in_nwc_fallback_zero"], 0.0)
+        self.assertEqual(observations["prior_change_in_nwc_fallback_zero"], 0.0)
+
+    def test_fcff_growth_uses_symmetric_zero_for_asymmetric_nwc_coverage(self):
+        payload = deepcopy(company_facts_fixture())
+        gaap = payload["facts"]["us-gaap"]
+        for concept in (
+            "IncreaseDecreaseInAccountsPayable",
+            "IncreaseDecreaseInDeferredRevenue",
+        ):
+            entries = gaap[concept]["units"]["USD"]
+            gaap[concept]["units"]["USD"] = [
+                fact
+                for fact in entries
+                if not (
+                    fact["accn"] == "0000001234-24-000001"
+                    and fact["end"] == "2022-12-31"
+                )
+            ]
+        gaap["DeferredRevenue"]["units"]["USD"] = [
+            fact
+            for fact in gaap["DeferredRevenue"]["units"]["USD"]
+            if not (
+                fact["accn"] == "0000001234-24-000001"
+                and fact["end"] == "2021-12-31"
+            )
+        ]
+
+        def get_json(url):
+            return ticker_map_fixture() if "company_tickers" in url else payload
+
+        with tempfile.TemporaryDirectory() as tempdir:
+            client = SecEdgarClient(
+                "Test Research test@example.com",
+                cache_dir=tempdir,
+                json_getter=get_json,
+            )
+            snapshot = client.build_snapshot("TEST", date(2024, 2, 16))
+
+        growth = snapshot.market_data["fcff_growth"]
+        observations = dict(growth.input_observations)
+        current_without_nwc = 140 * (1 - 25 / (140 - 10)) + 40 - 50
+        prior_without_nwc = 120 * (1 - 20 / (120 - 8)) + 35 - 45
+        self.assertAlmostEqual(
+            growth.value,
+            current_without_nwc / prior_without_nwc - 1,
+        )
+        self.assertEqual(observations["current_change_in_nwc_fallback_zero"], 0.0)
+        self.assertEqual(observations["prior_change_in_nwc_fallback_zero"], 0.0)
+        self.assertIn("cobertura_assimetrica", growth.note)
 
     def test_fcff_growth_rejects_sign_changes_instead_of_inventing_growth(self):
         payload = deepcopy(company_facts_fixture())
@@ -295,7 +443,7 @@ class SecEdgarClientTests(unittest.TestCase):
         self.assertEqual(ebit.formula, "pretax_income_plus_abs_interest_expense")
         self.assertLess(ebit.confidence, snapshot.income_statement["net_income"].confidence)
         self.assertIn(
-            "Metricas derivadas por fallback: ebit, fcff_growth.",
+            "Metricas derivadas por fallback: change_in_nwc, ebit, fcff_growth.",
             snapshot.audit.warnings,
         )
 

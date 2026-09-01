@@ -1,5 +1,43 @@
 # Changelog
 
+## Point-in-time working-capital reconstruction
+
+- Reconstructed economic change in operating working capital from annual SEC
+  cash-flow component groups, with asset increases treated as cash uses and
+  liability increases treated as funding sources in the existing FCFF formula.
+- Required at least two component groups and evidence from both the operating
+  asset side and the liability or net-operating-capital side; incomplete or
+  one-sided reconstructions now fail closed with an explicit reason.
+- Preferred the comparative balance-sheet delta for customer liabilities from
+  the same filing accession, while retaining the reported cash-flow concept as
+  an auditable fallback. This prevents gross contract-liability movements from
+  being mistaken for economic working-capital changes.
+- Added source document, period, filing date, concepts, formula, component
+  observations, confidence, and fallback lineage to every reconstructed value.
+- Applied reconstructed working capital to both annual FCFF periods only when
+  both are available. Asymmetric coverage uses zero for both periods so
+  `fcff_growth` never compares unlike definitions.
+- Kept the existing zero approximation when neither period has sufficient SEC
+  component coverage and made the missing-component reasons visible in FCFF
+  telemetry.
+- Audited 346 cached active-company SEC snapshots with no collection errors:
+  246 working-capital values were reconstructed (71.1% coverage), every value
+  reconciled exactly to its component groups, and the remaining large ratios
+  were confined to low-revenue early-stage companies.
+- Re-ran the 345-observation active benchmark with a 100% collection success
+  rate. FCFF growth was used in 190 observations, five more than in PR #52;
+  score configuration fingerprints and configured weights were identical in
+  every matched observation.
+- The mean score change versus PR #52 was -0.0010. Twenty-one recommendations
+  changed because FCFF now includes working capital, without an overall upward
+  or downward bias. Full-sample Spearman moved from 0.015 to 0.012 and holdout
+  Spearman from -0.076 to -0.078, so no recalibration is supported.
+- Added regression coverage for economic signs, incomplete and asymmetric SEC
+  coverage, temporal comparability, and mislabeled gross customer-liability
+  movements. All 190 tests pass.
+- Kept score weights, gates, recommendation thresholds, and valuation formulas
+  unchanged.
+
 ## Point-in-time FCFF growth reconstruction
 
 - Reconstructed annual `fcff_growth` from current and comparative FCFF values
