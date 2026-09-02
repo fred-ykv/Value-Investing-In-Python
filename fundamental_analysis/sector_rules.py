@@ -9,8 +9,42 @@ from .config import COMPANY_PROFILE, CompanyType
 
 FINANCIAL_KEYWORDS = ("financial", "bank", "banks", "capital markets", "asset management", "insurance", "mortgage", "credit")
 GROWTH_TECH_KEYWORDS = ("technology", "software", "semiconductor", "internet", "cloud", "ai", "data", "electric vehicle", "ev")
-TRADITIONAL_BUSINESS_MODELS = ("traditional_auto", "legacy_auto", "industrial", "consumer_staples")
-GROWTH_BUSINESS_MODELS = ("ev_pure_play", "saas", "cloud", "ai_platform", "fabless_semiconductor")
+TRADITIONAL_BUSINESS_MODELS = (
+    "traditional_auto",
+    "legacy_auto",
+    "industrial",
+    "consumer_staples",
+    "steel_producer",
+    "metal_fabrication",
+    "physical_retail",
+    "large_pharma",
+    "reit",
+)
+GROWTH_BUSINESS_MODELS = (
+    "ev_pure_play",
+    "saas",
+    "software_platform",
+    "cloud",
+    "ai_platform",
+    "semiconductor",
+    "fabless_semiconductor",
+    "marketplace",
+)
+
+INDUSTRY_BUSINESS_MODELS = (
+    (("banks - diversified", "banks - regional", "bank"), "bank"),
+    (("insurance",), "insurance"),
+    (("software - infrastructure",), "software_platform"),
+    (("software - application",), "saas"),
+    (("semiconductor",), "semiconductor"),
+    (("internet retail",), "marketplace"),
+    (("auto manufacturers", "automobile manufacturers"), "traditional_auto"),
+    (("steel",), "steel_producer"),
+    (("metal fabrication", "aluminum"), "metal_fabrication"),
+    (("discount stores", "home improvement retail"), "physical_retail"),
+    (("reit",), "reit"),
+    (("drug manufacturers - general",), "large_pharma"),
+)
 
 
 @dataclass(frozen=True)
@@ -33,6 +67,7 @@ def classify_company_profile(
     industry = str(info.get("industry", "") or "").lower()
     ticker = str(info.get("ticker", info.get("symbol", "")) or "").upper().strip()
     explicit_business_model = str(info.get("business_model", "") or "").lower().strip()
+    inferred_business_model = infer_industry_business_model(industry)
     sector_industry_text = f"{sector} {industry}"
     descriptive_text = " ".join(
         str(info.get(name, "") or "").lower()
@@ -47,7 +82,7 @@ def classify_company_profile(
     if any(_matches_keyword(sector_industry_text, key) for key in FINANCIAL_KEYWORDS):
         return CompanyClassification(
             CompanyType.FINANCIAL,
-            explicit_business_model or "financial_institution",
+            explicit_business_model or inferred_business_model or "financial_institution",
             "financial_sector",
             "Setor ou industria financeira exige modelos proprios de capital e patrimonio.",
         )
@@ -91,13 +126,13 @@ def classify_company_profile(
     if any(_matches_keyword(sector_industry_text, key) for key in GROWTH_TECH_KEYWORDS):
         return CompanyClassification(
             CompanyType.GROWTH_TECH,
-            "growth_tech",
+            inferred_business_model or "growth_tech",
             "growth_sector_or_industry",
             "Setor ou industria corresponde a taxonomia growth/tech.",
         )
     return CompanyClassification(
         CompanyType.TRADITIONAL,
-        explicit_business_model or "traditional",
+        explicit_business_model or inferred_business_model or "traditional",
         "traditional_default",
         (
             "Sem evidencia suficiente para aplicar modelos growth/tech; "
@@ -120,3 +155,11 @@ def _matches_keyword(text: str, keyword: str) -> bool:
     if len(keyword) <= 2:
         return re.search(rf"(^|[^a-z0-9]){re.escape(keyword)}([^a-z0-9]|$)", text) is not None
     return keyword in text
+
+
+def infer_industry_business_model(industry: str) -> str:
+    normalized = industry.strip().lower()
+    for keywords, business_model in INDUSTRY_BUSINESS_MODELS:
+        if any(keyword in normalized for keyword in keywords):
+            return business_model
+    return ""

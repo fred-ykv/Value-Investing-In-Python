@@ -191,6 +191,9 @@ class PeerSelectionTests(unittest.TestCase):
         self.assertEqual(report.rejected[0].status, "weak_reference")
         self.assertEqual(report.peer_medians["price_to_earnings"], 18.0)
         self.assertEqual(report.peer_median_counts["price_to_earnings"], 2)
+        self.assertEqual(
+            [peer.ticker for peer in report.median_candidates], ["MLI", "ATI"]
+        )
         self.assertIn("mediana exploratoria", report.summary)
         self.assertLess(report.confidence, 1.0)
 

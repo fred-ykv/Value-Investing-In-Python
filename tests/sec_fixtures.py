@@ -65,6 +65,7 @@ def company_facts_fixture():
                         future_revenue,
                     ]
                 ),
+                "GrossProfit": concept(annual_pair(360, 420, 800)),
                 "OperatingIncomeLoss": concept(annual_pair(120, 140, 280)),
                 "NetIncomeLoss": concept(annual_pair(80, 100, 200)),
                 "IncomeTaxExpenseBenefit": concept(annual_pair(20, 25, 50)),

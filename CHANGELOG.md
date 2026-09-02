@@ -1,5 +1,37 @@
 # Changelog
 
+## Historical signal and comparable-peer provenance
+
+- Added annual, like-for-like reconstruction for revenue growth, FCFF growth,
+  and gross margin, including source documents, comparison periods, formula,
+  confidence, fallback status, and input observations.
+- Preferred dated annual growth over an undated Yahoo profile estimate while
+  preserving explicit manual inputs and point-in-time SEC metrics.
+- Rejected FCFF percentage growth when either annual FCFF is non-positive, so
+  sign changes cannot be presented as economically meaningful growth.
+- Added optional SEC gross-profit coverage without weakening the core filing
+  coverage gate, and preserved complementary Yahoo fields when an SEC annual
+  snapshot lacks a non-critical line item.
+- Added granular peer taxonomies for steel producers, software platforms, and
+  banks without changing their valuation family.
+- Expanded transparent seed universes for steel producers and software
+  platforms; the existing final equivalence thresholds and vetoes remain in
+  force.
+- Added per-multiple peer lineage with the provider field, source URL,
+  observation timestamp, derivation formula, and inputs used.
+- Stopped mixing forward P/E with the trailing earnings basis used for the
+  target company.
+- Persisted every constituent of each peer median, including weak-reference
+  status, equivalence score, data confidence, value, and source.
+- Propagated peer-selection confidence into relative valuation. Exploratory
+  medians remain visible but receive reduced influence and an explicit label.
+- Validated live behavior for NUE, MSFT, JPM, and RIVN and added regression
+  coverage for missing periods, FCFF sign changes, mixed-source lineage,
+  peer-basis consistency, and exploratory median confidence. All 207 tests
+  pass.
+- Kept valuation formulas, score weights, recommendation gates, and thresholds
+  unchanged.
+
 ## Point-in-time working-capital reconstruction
 
 - Reconstructed economic change in operating working capital from annual SEC

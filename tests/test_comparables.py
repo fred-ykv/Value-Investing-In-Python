@@ -107,6 +107,35 @@ class ComparableTests(unittest.TestCase):
         self.assertLess(result.comparables.confidence, 0.50)
         self.assertIn("rebaixada por amostra limitada", result.comparables.summary)
 
+    def test_exploratory_peer_median_propagates_equivalence_confidence(self):
+        result = analyze_ticker_from_inputs(
+            "SOFT",
+            {"revenue": 1_000_000, "ebit": 200_000, "net_income": 100_000},
+            {
+                "total_assets": 1_500_000,
+                "total_liabilities": 500_000,
+                "equity": 1_000_000,
+                "cash": 100_000,
+                "total_debt": 200_000,
+                "current_assets": 500_000,
+                "current_liabilities": 250_000,
+            },
+            {"cfo": 140_000, "capex": -40_000},
+            {
+                "shares": 10_000,
+                "price": 50,
+                "peer_medians": {"price_to_earnings": 8.0},
+                "peer_median_counts": {"price_to_earnings": 3},
+                "peer_selection_confidence": 0.30,
+            },
+            {"sector": "Industrials"},
+        )
+
+        self.assertLessEqual(result.comparables.confidence, 0.30)
+        self.assertEqual(result.comparables.peer_selection_confidence, 0.30)
+        self.assertEqual(result.comparables.basis, "exploratory_peer_medians")
+        self.assertIn("equivalencia da cesta", " ".join(result.comparables.diagnostics))
+
     def test_comparable_report_handles_missing_peers(self):
         report = build_comparable_report(CompanyType.TRADITIONAL, {}, {}, {})
 

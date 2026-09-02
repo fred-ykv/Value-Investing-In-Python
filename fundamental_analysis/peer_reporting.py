@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from html import escape
 
+from .config import PEER_ENRICHMENT, PEER_SELECTION
 from .peer_selection import MULTIPLE_FIELDS, PeerSelectionReport
 from .reports import _fmt_number
 
@@ -50,10 +51,26 @@ def peer_median_detail_table(peer_selection: PeerSelectionReport) -> list[dict[s
         median_value = peer_selection.peer_medians.get(field_name)
         count = peer_selection.peer_median_counts.get(field_name, 0)
         used = []
-        for result in peer_selection.approved:
-            if result.metrics.get(field_name) is not None:
+        inputs = []
+        for result in peer_selection.median_candidates:
+            if (
+                result.metrics.get(field_name) is not None
+                and result.data_confidence
+                >= PEER_ENRICHMENT.minimum_confidence_for_relative_valuation
+            ):
                 source = result.metric_sources.get(field_name, "fonte nao informada")
                 used.append(f"{result.ticker} {_fmt_number(result.metrics.get(field_name))} ({source})")
+                inputs.append(
+                    {
+                        "ticker": result.ticker,
+                        "value": result.metrics.get(field_name),
+                        "source": source,
+                        "lineage": result.metric_lineage.get(field_name, {}),
+                        "equivalence_status": result.status,
+                        "equivalence_score": result.score,
+                        "data_confidence": result.data_confidence,
+                    }
+                )
         if median_value is not None or count:
             rows.append(
                 {
@@ -63,9 +80,31 @@ def peer_median_detail_table(peer_selection: PeerSelectionReport) -> list[dict[s
                     "peer_count": count,
                     "used_peers": "; ".join(used) if used else "-",
                     "included_in_median": median_value is not None,
+                    "median_inputs": inputs,
                 }
             )
     return rows
+
+
+def peer_equivalence_policy() -> dict[str, object]:
+    return {
+        "strong_threshold": PEER_SELECTION.strong_threshold,
+        "acceptable_threshold": PEER_SELECTION.acceptable_threshold,
+        "weak_reference_threshold": PEER_SELECTION.weak_threshold,
+        "minimum_evidence_weight": PEER_SELECTION.min_evidence_weight,
+        "minimum_approved_peers": PEER_SELECTION.min_approved_peers,
+        "minimum_data_confidence_for_median": PEER_ENRICHMENT.minimum_confidence_for_relative_valuation,
+        "weights": {
+            "sector": PEER_SELECTION.sector_weight,
+            "industry": PEER_SELECTION.industry_weight,
+            "sic": PEER_SELECTION.sic_weight,
+            "business_model": PEER_SELECTION.business_model_weight,
+            "size": PEER_SELECTION.size_weight,
+            "growth": PEER_SELECTION.growth_weight,
+            "margin": PEER_SELECTION.margin_weight,
+            "leverage": PEER_SELECTION.leverage_weight,
+        },
+    }
 
 
 def append_peer_selection_to_markdown(markdown: str, peer_selection: PeerSelectionReport) -> str:
@@ -136,6 +175,13 @@ def _peer_selection_markdown(peer_selection: PeerSelectionReport) -> str:
         "",
         peer_selection.summary,
         "",
+        (
+            f"Regua: forte >= {PEER_SELECTION.strong_threshold:.2f}; "
+            f"aceitavel >= {PEER_SELECTION.acceptable_threshold:.2f}; "
+            f"referencia fraca >= {PEER_SELECTION.weak_threshold:.2f}; "
+            f"evidencia minima {PEER_SELECTION.min_evidence_weight:.2f}."
+        ),
+        "",
         "| Ticker | Decisao | Score | Evidencia | Confianca dados | Por que | Multiplos encontrados |",
         "| --- | --- | ---: | ---: | ---: | --- | --- |",
     ]
@@ -172,6 +218,13 @@ def _peer_selection_html(peer_selection: PeerSelectionReport) -> str:
             '<section class="panel peer-selection">',
             "<h2>Selecao de pares</h2>",
             f"<p>{escape(str(peer_selection.summary))}</p>",
+            (
+                '<p class="muted">Regua de equivalencia: '
+                f"forte &gt;= {PEER_SELECTION.strong_threshold:.2f}; "
+                f"aceitavel &gt;= {PEER_SELECTION.acceptable_threshold:.2f}; "
+                f"referencia fraca &gt;= {PEER_SELECTION.weak_threshold:.2f}; "
+                f"evidencia minima {PEER_SELECTION.min_evidence_weight:.2f}.</p>"
+            ),
             '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin:12px 0 16px;">',
             _peer_summary_card("Aprovados", approved),
             _peer_summary_card("Rejeitados", rejected),

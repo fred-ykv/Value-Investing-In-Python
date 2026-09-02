@@ -1,5 +1,6 @@
 import unittest
 
+from fundamental_analysis.data_sources import metric_value
 from fundamental_analysis.main import _merge_cyclical_history, analyze_ticker_from_inputs
 from tests.test_cyclical_normalization import annual_statement
 
@@ -125,6 +126,12 @@ class AcceptanceProfileTests(unittest.TestCase):
 
     def test_live_history_merge_prefers_sec_and_preserves_unique_yahoo_year(self):
         yahoo_2023 = annual_statement(2023, 1_000, 0.10, 0.06)
+        yahoo_2023.income_statement["gross_profit"] = metric_value(
+            "gross_profit",
+            400,
+            "yfinance",
+            period_end=yahoo_2023.income_statement["revenue"].period_end,
+        )
         yahoo_2024 = annual_statement(2024, 1_100, 0.11, 0.07)
         sec_2023 = annual_statement(2023, 1_005, 0.10, 0.06)
 
@@ -135,6 +142,8 @@ class AcceptanceProfileTests(unittest.TestCase):
 
         self.assertEqual(len(merged), 2)
         self.assertEqual(merged[0].income_statement["revenue"].value, 1_005)
+        self.assertEqual(merged[0].income_statement["gross_profit"].value, 400)
+        self.assertEqual(merged[0].source, sec_2023.source)
         self.assertEqual(merged[1].income_statement["revenue"].value, 1_100)
 
 

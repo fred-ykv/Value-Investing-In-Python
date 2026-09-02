@@ -59,6 +59,32 @@ class SectorRuleTests(unittest.TestCase):
 
         self.assertEqual(profile.company_type, CompanyType.TRADITIONAL)
 
+    def test_industry_adds_peer_taxonomy_without_changing_valuation_family(self):
+        steel = classify_company_profile(
+            {"ticker": "NUE", "sector": "Basic Materials", "industry": "Steel"}
+        )
+        software = classify_company_profile(
+            {
+                "ticker": "MSFT",
+                "sector": "Technology",
+                "industry": "Software - Infrastructure",
+            }
+        )
+        bank = classify_company_profile(
+            {
+                "ticker": "JPM",
+                "sector": "Financial Services",
+                "industry": "Banks - Diversified",
+            }
+        )
+
+        self.assertEqual(steel.company_type, CompanyType.TRADITIONAL)
+        self.assertEqual(steel.business_model, "steel_producer")
+        self.assertEqual(software.company_type, CompanyType.GROWTH_TECH)
+        self.assertEqual(software.business_model, "software_platform")
+        self.assertEqual(bank.company_type, CompanyType.FINANCIAL)
+        self.assertEqual(bank.business_model, "bank")
+
 
 if __name__ == "__main__":
     unittest.main()

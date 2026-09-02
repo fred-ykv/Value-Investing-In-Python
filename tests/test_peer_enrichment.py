@@ -26,6 +26,13 @@ class PeerEnrichmentTests(unittest.TestCase):
         self.assertEqual(peer["price_to_earnings"], 8.0)
         self.assertAlmostEqual(peer["debt_to_equity"], 1.2)
         self.assertEqual(peer["_peer_metric_sources"]["price_to_earnings"], "yfinance")
+        lineage = peer["_peer_metric_lineage"]["price_to_earnings"]
+        self.assertEqual(lineage["basis"], "reported")
+        self.assertEqual(lineage["source_field"], "trailingPE")
+        self.assertEqual(
+            lineage["source_url"], "https://finance.yahoo.com/quote/GM"
+        )
+        self.assertTrue(lineage["as_of"])
         self.assertGreaterEqual(peer["peer_data_confidence"], 0.70)
 
     def test_manual_values_are_not_overwritten_by_yahoo(self):
@@ -57,6 +64,23 @@ class PeerEnrichmentTests(unittest.TestCase):
         self.assertEqual(peer["ev_to_ebit"], 15.0)
         self.assertEqual(peer["price_to_earnings"], 20.0)
         self.assertEqual(peer["_peer_metric_sources"]["ev_to_ebit"], "yfinance_derived")
+        lineage = peer["_peer_metric_lineage"]["ev_to_ebit"]
+        self.assertEqual(lineage["basis"], "derived")
+        self.assertEqual(
+            lineage["formula"], "enterprise_value_divided_by_derived_ebit"
+        )
+        self.assertEqual(
+            [item["name"] for item in lineage["input_observations"]],
+            ["enterprise_value", "total_revenue", "operating_margin"],
+        )
+
+    def test_forward_pe_is_not_mixed_with_trailing_company_earnings(self):
+        enriched = enrich_peer_candidates(
+            [{"ticker": "LOSS"}],
+            fetch_info=lambda ticker: {"forwardPE": 12.0},
+        )
+
+        self.assertNotIn("price_to_earnings", enriched[0])
 
     def test_relative_median_requires_two_peers_with_usable_multiple_confidence(self):
         report = build_peer_selection_report(
