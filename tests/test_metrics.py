@@ -30,6 +30,33 @@ class MetricDefinitionTests(unittest.TestCase):
         self.assertEqual(statements.values["invested_capital"].value, 600)
         self.assertAlmostEqual(metrics.get("roic_proxy"), 0.125)
 
+    def test_negative_denominators_do_not_create_false_positive_ratios(self):
+        statements = build_statement_metrics(
+            FinancialStatements(
+                "LOSS",
+                {"ebit": -100, "net_income": -120, "revenue": 500},
+                {
+                    "total_assets": 1_000,
+                    "total_liabilities": 1_200,
+                    "equity": -200,
+                    "total_debt": 300,
+                    "cash": 100,
+                    "current_assets": 200,
+                    "current_liabilities": 250,
+                },
+                {"cfo": -80, "capex": -20, "depreciation_amortization": 10},
+                {"shares": 100, "price": 10},
+            )
+        )
+
+        metrics = build_metrics(statements.values)
+
+        self.assertIsNone(metrics.get("roe"))
+        self.assertIsNone(metrics.get("debt_to_equity"))
+        self.assertIsNone(metrics.get("price_to_book"))
+        self.assertIsNone(metrics.get("cfo_to_net_income"))
+        self.assertIsNone(metrics.get("net_debt_to_ebit"))
+
 
 if __name__ == "__main__":
     unittest.main()

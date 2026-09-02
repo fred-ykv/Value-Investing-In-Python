@@ -34,6 +34,53 @@ class AcceptanceProfileTests(unittest.TestCase):
         self.assertEqual(result.company_type, "growth_tech")
         self.assertTrue(any(v.diagnostics.get("negative_fcff") for v in result.valuations))
 
+    def test_negative_fcf_ev_pure_play_fails_closed_on_inapplicable_metrics(self):
+        income = dict(
+            BASE_INCOME,
+            ebit=-1_200_000_000,
+            net_income=-1_500_000_000,
+        )
+        cash_flow = dict(
+            BASE_CASH_FLOW,
+            cfo=-1_000_000_000,
+            capex=-800_000_000,
+        )
+        market = dict(
+            BASE_MARKET,
+            revenue_growth=0.27,
+            cyclical_history=[],
+        )
+
+        result = analyze_ticker_from_inputs(
+            "RIVN",
+            income,
+            BASE_BALANCE,
+            cash_flow,
+            market,
+            {"sector": "Consumer Cyclical", "industry": "Auto Manufacturers"},
+        )
+
+        self.assertEqual(result.company_type, "growth_tech")
+        self.assertFalse(result.cyclical_normalization.applied)
+        self.assertEqual(
+            result.report["company_profile"]["business_model"],
+            "ev_pure_play",
+        )
+        dcf = next(item for item in result.valuations if item.method == "dcf_fcff")
+        self.assertIsNone(dcf.fair_value_per_share)
+        self.assertEqual(
+            dcf.diagnostics["model_applicability"],
+            "not_applicable_negative_fcff",
+        )
+        self.assertIsNone(result.metrics.get("net_debt_to_ebit"))
+        debt_rows = {
+            row["indicator"]: row for row in result.report["key_indicator_table"]
+        }
+        self.assertIsNone(debt_rows["Div. liquida/EBIT"].get("value"))
+        self.assertEqual(debt_rows["Div. liquida/EBIT"]["signal"], "missing")
+        self.assertLess(result.score.dimensions["growth"].score, 1.0)
+        self.assertLess(result.score.dimensions["growth"].confidence, 0.50)
+
     def test_cyclical_company_uses_normalized_inputs_and_explains_them(self):
         history = [
             annual_statement(

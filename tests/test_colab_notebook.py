@@ -12,7 +12,7 @@ class ColabNotebookTests(unittest.TestCase):
 
         self.assertEqual(payload["nbformat"], 4)
         self.assertIn("!git clone https://github.com/fred-ykv/Value-Investing-In-Python.git", sources)
-        self.assertIn("!pip install -r requirements.txt", sources)
+        self.assertRegex(sources, r"!pip install(?: -q)? -r requirements\.txt")
         self.assertIn("run_colab_analysis", sources)
         self.assertIn("default_ticker=\"MLI\"", sources)
         self.assertIn("files.download(path)", sources)

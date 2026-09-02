@@ -236,7 +236,7 @@ class PointInTimeCollectionTests(unittest.TestCase):
             observation.valuation_price,
         )
         self.assertIn("pv_terminal_value", dict(dcf_audit.model_outputs))
-        self.assertEqual(observation.score_model_version, "multifactor_score_v1")
+        self.assertEqual(observation.score_model_version, "multifactor_score_v2_semantic_controls")
         self.assertEqual(len(observation.score_config_fingerprint), 64)
         self.assertEqual(len(observation.score_dimension_contributions), 6)
         self.assertAlmostEqual(

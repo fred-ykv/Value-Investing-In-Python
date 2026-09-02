@@ -75,6 +75,8 @@ def scenario_table(scenarios: Iterable[ScenarioResult]) -> list[dict[str, object
             "confidence": scenario.confidence,
             "assumptions": scenario.assumptions,
             "description": scenario.description,
+            "control_status": scenario.control_status,
+            "control_note": scenario.control_note,
         }
         for scenario in scenarios
     ]
@@ -218,9 +220,9 @@ def key_indicator_table(metrics: dict[str, MetricValue] | None = None) -> list[d
         _indicator_row("Valuation", "P/SR", _safe_div(price, revenue_per_share), metrics, ("price", "revenue", "shares"), "Preco dividido pela receita por acao.", "number"),
         _indicator_row("Valuation", "P/Cap. Giro", _safe_div(market_cap, working_capital), metrics, ("market_cap", "current_assets", "current_liabilities"), "Valor de mercado dividido pelo capital de giro.", "number"),
         _indicator_row("Valuation", "P/Ativo Circ. Liq.", _safe_div(market_cap, ncav), metrics, ("market_cap", "current_assets", "total_liabilities"), "Valor de mercado dividido pelo ativo circulante liquido.", "number"),
-        _indicator_row("Endividamento", "Div. liquida/PL", _safe_div(net_debt, equity), metrics, ("total_debt", "cash", "equity"), "Divida liquida dividida pelo patrimonio liquido.", "number"),
-        _indicator_row("Endividamento", "Div. liquida/EBITDA", _safe_div(net_debt, ebitda), metrics, ("total_debt", "cash", "ebit", "depreciation_amortization"), "Divida liquida dividida pelo EBITDA.", "number"),
-        _indicator_row("Endividamento", "Div. liquida/EBIT", _safe_div(net_debt, ebit), metrics, ("total_debt", "cash", "ebit"), "Divida liquida dividida pelo EBIT.", "number"),
+        _indicator_row("Endividamento", "Div. liquida/PL", _safe_positive_denominator_div(net_debt, equity), metrics, ("total_debt", "cash", "equity"), "Divida liquida dividida pelo patrimonio liquido; indisponivel quando o patrimonio nao e positivo.", "number"),
+        _indicator_row("Endividamento", "Div. liquida/EBITDA", _safe_positive_denominator_div(net_debt, ebitda), metrics, ("total_debt", "cash", "ebit", "depreciation_amortization"), "Divida liquida dividida pelo EBITDA; indisponivel quando o EBITDA nao e positivo.", "number"),
+        _indicator_row("Endividamento", "Div. liquida/EBIT", _safe_positive_denominator_div(net_debt, ebit), metrics, ("total_debt", "cash", "ebit"), "Divida liquida dividida pelo EBIT; indisponivel quando o EBIT nao e positivo.", "number"),
         _indicator_row("Endividamento", "PL/Ativos", _safe_div(equity, assets), metrics, ("equity", "total_assets"), "Patrimonio liquido dividido pelos ativos.", "percent"),
         _indicator_row("Endividamento", "Passivos/Ativos", _safe_div(liabilities, assets), metrics, ("total_liabilities", "total_assets"), "Passivos totais divididos pelos ativos.", "percent"),
         _indicator_row("Endividamento", "Liq. corrente", metric_number(metrics.get("current_ratio")), metrics, ("current_ratio",), "Ativos circulantes divididos por passivos circulantes.", "number"),
@@ -249,8 +251,10 @@ def risk_diagnostics(score: ScoreReport, valuations: Iterable[ValuationResult], 
     if score.dimensions.get("data_confidence") and score.dimensions["data_confidence"].score < 0.50:
         risks.append("Baixa confianca dos dados; revise fontes antes de usar a recomendacao.")
     for valuation in valuations:
-        if valuation.diagnostics.get("negative_fcff"):
-            risks.append("DCF usa FCFF negativo; a confianca do modelo foi reduzida.")
+        if valuation.diagnostics.get("model_applicability") == "not_applicable_negative_fcff":
+            risks.append("DCF por FCFF foi bloqueado: nao ha fluxo positivo atual nem base normalizada positiva auditavel.")
+        elif valuation.diagnostics.get("negative_fcff"):
+            risks.append("DCF parte de FCFF corrente negativo, mas usa base normalizada positiva; valide a reversao operacional.")
         if valuation.diagnostics.get("fallback_assumptions"):
             risks.append("DCF usou premissas ou aproximacoes fallback; revise a definicao do fluxo e as premissas antes de usar a recomendacao.")
         if valuation.diagnostics.get("terminal_growth_adjusted") is not None:
@@ -297,12 +301,12 @@ def render_markdown_report(ticker: str, score: ScoreReport, valuations: Iterable
     for row in valuation_table(valuations):
         lines.append(f"| {row['display_method']} | {_fmt_money(row['fair_value_per_share'])} | {_fmt_pct(row['margin_of_safety'])} | {row['source']} | {float(row['confidence'] or 0):.2f} |")
     if scenarios:
-        lines.extend(["", "## Cenarios hipoteticos", "| Cenario | Preco justo medio | Margem de seguranca | Confianca | Premissas-chave |", "|---|---:|---:|---:|---|"])
+        lines.extend(["", "## Cenarios hipoteticos", "| Cenario | Preco justo medio | Margem de seguranca | Confianca | Controle | Premissas-chave |", "|---|---:|---:|---:|---|---|"])
         for row in scenario_table(scenarios):
             assumptions = row["assumptions"]
             lines.append(
                 f"| {row['scenario']} | {_fmt_money(row['fair_value_per_share'])} | {_fmt_pct(row['margin_of_safety'])} | "
-                f"{float(row['confidence'] or 0):.2f} | {scenario_assumption_text(assumptions)} |"
+                f"{float(row['confidence'] or 0):.2f} | {scenario_control_text(row)} | {scenario_assumption_text(assumptions)} |"
             )
     if peer_selection and (peer_selection.approved or peer_selection.rejected):
         lines.extend(["", "## Selecao assistida de pares", peer_selection.summary, "", "| Ticker | Status | Score | Confianca dados | Fontes | Motivos | Vetos |", "|---|---|---:|---:|---|---|---|"])
@@ -355,6 +359,8 @@ def save_report_artifacts(ticker: str, report: dict[str, object], output_dir: st
     table_payload = {
         key: report.get(key)
         for key in (
+            "company_profile",
+            "model_controls",
             "executive_summary",
             "recommendation",
             "cost_of_capital",
@@ -376,8 +382,7 @@ def save_report_artifacts(ticker: str, report: dict[str, object], output_dir: st
 
 
 def recommendation_summary(score: ScoreReport, valuations: Iterable[ValuationResult] | None = None) -> str:
-    best = max(score.dimensions.values(), key=lambda d: d.score)
-    worst = min(score.dimensions.values(), key=lambda d: d.score)
+    best, worst = weighted_decision_drivers(score)
     lines = [
         f"A acao ficou como **{score.recommendation}** com score total de **{score.total_score:.2f}**.",
         f"O principal suporte da tese foi **{best.name}** ({best.score:.2f}); o maior ponto de atencao foi **{worst.name}** ({worst.score:.2f}).",
@@ -395,8 +400,7 @@ def decision_bridge(score: ScoreReport, valuations: Iterable[ValuationResult] | 
     dimensions = list(score.dimensions.values())
     if not dimensions:
         return ["Nao ha dimensoes suficientes para explicar a recomendacao."]
-    strongest = max(dimensions, key=lambda dimension: dimension.score)
-    weakest = min(dimensions, key=lambda dimension: dimension.score)
+    strongest, weakest = weighted_decision_drivers(score)
     bridge = [
         f"Principal motor positivo: {strongest.name} com score {strongest.score:.2f}; este fator sustentou a recomendacao.",
         f"Principal gargalo: {weakest.name} com score {weakest.score:.2f}; este e o primeiro ponto a validar antes de aumentar exposicao.",
@@ -421,6 +425,30 @@ def decision_bridge(score: ScoreReport, valuations: Iterable[ValuationResult] | 
     else:
         bridge.append("Como nao houve margem de seguranca conclusiva, a decisao deve dar peso maior a qualidade dos dados, liquidez e consistencia dos fundamentos.")
     return bridge
+
+
+def weighted_decision_drivers(score: ScoreReport):
+    contributions = {
+        item.name: item for item in score.dimension_contributions
+    }
+    strongest = max(
+        score.dimensions.values(),
+        key=lambda dimension: (
+            contributions[dimension.name].weighted_contribution
+            if dimension.name in contributions
+            else dimension.score
+        ),
+    )
+    weakest = max(
+        score.dimensions.values(),
+        key=lambda dimension: (
+            contributions[dimension.name].normalized_weight
+            * (1.0 - dimension.score)
+            if dimension.name in contributions
+            else 1.0 - dimension.score
+        ),
+    )
+    return strongest, weakest
 
 
 def recommendation_gate_note(score: ScoreReport) -> str:
@@ -478,8 +506,10 @@ def explanatory_notes(score: ScoreReport, valuations: Iterable[ValuationResult],
     gate = recommendation_gate_note(score)
     if gate:
         notes.insert(0, gate)
-    if any(v.diagnostics.get("negative_fcff") for v in valuations):
-        notes.append("FCFF negativo reduz a confianca do DCF porque empresas nessa fase dependem mais de premissas de reversao, runway e margem futura.")
+    if any(v.diagnostics.get("model_applicability") == "not_applicable_negative_fcff" for v in valuations):
+        notes.append("FCFF negativo sem base normalizada positiva torna o DCF perpetuo nao aplicavel; a leitura deve priorizar runway, unit economics, margem futura e cenarios de virada.")
+    elif any(v.diagnostics.get("negative_fcff") for v in valuations):
+        notes.append("FCFF corrente negativo exige validar a base normalizada positiva usada pelo DCF e a velocidade da reversao operacional.")
     if any(v.diagnostics.get("fallback_assumptions") for v in valuations):
         notes.append("Fallbacks e aproximacoes materiais aparecem na tabela de fontes; eles reduzem a confianca e devem ser substituidos por dados observados quando possivel.")
     if metrics:
@@ -546,6 +576,18 @@ def scenario_assumption_text(assumptions: object) -> str:
     )
 
 
+def scenario_control_text(row: dict[str, object]) -> str:
+    status = str(row.get("control_status", "not_checked"))
+    if status == "validated":
+        return "Validado"
+    if status == "insufficient_data":
+        return "Inconclusivo: menos de dois cenarios aplicaveis"
+    if status == "blocked_non_monotonic":
+        note = str(row.get("control_note", "")).replace("|", "/")
+        return f"Bloqueado: {note}"
+    return "Nao verificado"
+
+
 def metric_number(metric: MetricValue | None) -> float | None:
     if metric is None or metric.value is None:
         return None
@@ -597,6 +639,13 @@ def _safe_filename(ticker: str) -> str:
 
 def _safe_div(num: float | None, den: float | None) -> float | None:
     return None if num is None or den in (None, 0) else num / den
+
+
+def _safe_positive_denominator_div(
+    num: float | None,
+    den: float | None,
+) -> float | None:
+    return None if num is None or den is None or den <= 0 else num / den
 
 
 def _safe_mul(left: float | None, right: float | None) -> float | None:

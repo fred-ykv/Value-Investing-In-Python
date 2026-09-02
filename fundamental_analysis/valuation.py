@@ -147,7 +147,7 @@ def dcf_fcff(inputs: DCFInput) -> ValuationResult:
     confidence = weighted_confidence(*confidence_metrics)
     if inputs.fcff.is_fallback:
         confidence = max(0.0, confidence - 0.10)
-    if fcff0 < 0:
+    if fcff0 <= 0:
         penalty = (
             DCF.negative_fcff_confidence_penalty / 2.0
             if uses_normalization and float(normalized_fcff.value) > 0
@@ -155,6 +155,28 @@ def dcf_fcff(inputs: DCFInput) -> ValuationResult:
         )
         confidence = max(0.0, confidence - penalty)
         diagnostics["negative_fcff"] = True
+    has_positive_fcff_base = fcff0 > 0 or (
+        uses_normalization and float(normalized_fcff.value) > 0
+    )
+    if DCF.require_positive_fcff_base and not has_positive_fcff_base:
+        diagnostics.update(
+            {
+                "model_applicability": "not_applicable_negative_fcff",
+                "applicability_reason": (
+                    "O DCF perpetuo por FCFF exige fluxo positivo atual ou uma "
+                    "base normalizada positiva e auditavel. A tese deve ser avaliada "
+                    "por runway, unit economics, margem-alvo e cenarios de virada."
+                ),
+                "input_confidence": confidence,
+            }
+        )
+        return ValuationResult(
+            "dcf_fcff",
+            None,
+            0.0,
+            diagnostics=diagnostics,
+            assumptions=assumptions,
+        )
     projected = _project_fcff(inputs, growth)
     pv_stage = sum(cf / ((1.0 + wacc) ** year) for year, cf in enumerate(projected, start=1))
     terminal = projected[-1] * (1.0 + terminal_growth) / (wacc - terminal_growth)
@@ -168,6 +190,7 @@ def dcf_fcff(inputs: DCFInput) -> ValuationResult:
     margin = None if inputs.current_price.value in (None, 0) else (fair / inputs.current_price.value) - 1.0
     diagnostics.update(
         {
+            "model_applicability": "applicable",
             "growth_years": growth,
             "terminal_growth": terminal_growth,
             "wacc": wacc,
@@ -227,6 +250,22 @@ def dcf_fcff_no_sensitivity(inputs: DCFInput) -> ValuationResult:
     fcff0, shares = inputs.fcff.value, inputs.shares.value
     if fcff0 is None or shares in (None, 0) or not inputs.debt.is_available or not inputs.cash.is_available:
         return ValuationResult("dcf_fcff", None, 0.0)
+    normalized_fcff = inputs.normalized_fcff
+    has_positive_fcff_base = fcff0 > 0 or (
+        normalized_fcff is not None
+        and normalized_fcff.is_available
+        and float(normalized_fcff.value) > 0
+    )
+    if DCF.require_positive_fcff_base and not has_positive_fcff_base:
+        return ValuationResult(
+            "dcf_fcff",
+            None,
+            0.0,
+            diagnostics={
+                "negative_fcff": True,
+                "model_applicability": "not_applicable_negative_fcff",
+            },
+        )
     wacc = inputs.wacc.value if inputs.wacc.value is not None else DCF.default_wacc
     growth_value = inputs.growth_years.value if inputs.growth_years.value is not None else DCF.default_growth_years
     growth = clamp(growth_value, DCF.min_growth_years, DCF.max_growth_years)

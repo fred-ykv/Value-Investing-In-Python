@@ -27,6 +27,8 @@ class ScenarioResult:
     fair_value_per_share: float | None
     margin_of_safety: float | None
     confidence: float
+    control_status: str = "not_checked"
+    control_note: str = ""
 
 
 @dataclass
@@ -85,6 +87,52 @@ def build_scenarios(
                 confidence=aggregate_confidence(valuations),
             )
         )
+    return apply_scenario_order_control(results)
+
+
+def apply_scenario_order_control(
+    results: list[ScenarioResult],
+) -> list[ScenarioResult]:
+    available = [
+        result
+        for result in results
+        if result.fair_value_per_share is not None
+    ]
+    if len(available) < 2:
+        for result in results:
+            result.control_status = "insufficient_data"
+            result.control_note = (
+                "Menos de dois cenarios produziram valor justo aplicavel; "
+                "a leitura comparativa nao e conclusiva."
+            )
+        return results
+
+    violations = [
+        (left.label, right.label)
+        for left, right in zip(available, available[1:])
+        if float(left.fair_value_per_share)
+        > float(right.fair_value_per_share) + SCENARIOS.ordering_tolerance
+    ]
+    if not violations:
+        for result in results:
+            result.control_status = "validated"
+            result.control_note = (
+                "Ordem economica validada: cenarios mais favoraveis nao "
+                "reduziram o valor justo."
+            )
+        return results
+
+    pairs = ", ".join(f"{left} > {right}" for left, right in violations)
+    note = (
+        "Controle bloqueou a leitura dos cenarios por inversao economica "
+        f"({pairs}). Revise a aplicabilidade do modelo e as premissas."
+    )
+    for result in results:
+        result.fair_value_per_share = None
+        result.margin_of_safety = None
+        result.confidence = 0.0
+        result.control_status = "blocked_non_monotonic"
+        result.control_note = note
     return results
 
 

@@ -3,7 +3,7 @@ import unittest
 from fundamental_analysis.data_sources import metric_value
 from fundamental_analysis.main import analyze_ticker_from_inputs
 from fundamental_analysis.config import DCF
-from fundamental_analysis.scenarios import aggregate_fair_value, aggregate_margin_of_safety, build_reverse_dcf
+from fundamental_analysis.scenarios import ScenarioResult, aggregate_fair_value, aggregate_margin_of_safety, apply_scenario_order_control, build_reverse_dcf
 from fundamental_analysis.valuation import DCFInput, ValuationResult, dcf_fcff_no_sensitivity
 
 
@@ -68,6 +68,20 @@ class ScenarioTests(unittest.TestCase):
 
         self.assertAlmostEqual(aggregate_fair_value(valuations), 90.0)
         self.assertAlmostEqual(aggregate_margin_of_safety(valuations), 0.06)
+
+    def test_non_monotonic_scenarios_are_blocked_instead_of_published(self):
+        results = [
+            ScenarioResult("stress", "Stress", "", {}, [], 120.0, 0.20, 0.80),
+            ScenarioResult("base", "Base", "", {}, [], 100.0, 0.00, 0.80),
+        ]
+
+        controlled = apply_scenario_order_control(results)
+
+        self.assertTrue(all(item.fair_value_per_share is None for item in controlled))
+        self.assertTrue(all(item.confidence == 0.0 for item in controlled))
+        self.assertTrue(
+            all(item.control_status == "blocked_non_monotonic" for item in controlled)
+        )
 
     def test_reverse_dcf_solves_growth_implied_by_current_price(self):
         values = {

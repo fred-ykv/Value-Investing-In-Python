@@ -24,6 +24,24 @@ def safe_div(num: Optional[float], den: Optional[float]) -> Optional[float]:
     return None if num is None or den in (None, 0) else num / den
 
 
+def safe_positive_denominator_div(
+    num: Optional[float],
+    den: Optional[float],
+) -> Optional[float]:
+    """Return a leverage multiple only when operating profit is positive."""
+    return None if num is None or den is None or den <= 0 else num / den
+
+
+def safe_accruals_to_assets(
+    net_income: Optional[float],
+    cfo: Optional[float],
+    assets: Optional[float],
+) -> Optional[float]:
+    if net_income is None or cfo is None:
+        return None
+    return safe_positive_denominator_div(net_income - cfo, assets)
+
+
 def cash_burn_amount(cfo: Optional[float], fcff: Optional[float]) -> Optional[float]:
     burns = [abs(value) for value in (cfo, fcff) if value is not None and value < 0]
     return max(burns) if burns else None
@@ -38,18 +56,30 @@ def build_metrics(statement_values: Mapping[str, MetricValue]) -> MetricPack:
     bvps, fcff = v["book_value_per_share"].value, v["fcff"].value
     cash_burn = cash_burn_amount(cfo, fcff)
     metrics = {
-        "roe": metric_value("roe", safe_div(ni, eq), "derived"),
-        "roa": metric_value("roa", safe_div(ni, assets), "derived"),
-        "roic_proxy": metric_value("roic_proxy", safe_div(nopat, invested_capital), "derived", "NOPAT divided by invested capital net of cash"),
-        "operating_margin": metric_value("operating_margin", safe_div(ebit, revenue), "derived"),
-        "net_margin": metric_value("net_margin", safe_div(ni, revenue), "derived"),
-        "cfo_to_net_income": metric_value("cfo_to_net_income", safe_div(cfo, ni), "derived"),
-        "accruals_to_assets": metric_value("accruals_to_assets", safe_div((ni or 0.0) - (cfo or 0.0), assets), "derived"),
-        "debt_to_equity": metric_value("debt_to_equity", safe_div(debt, eq), "derived"),
-        "net_debt_to_ebit": metric_value("net_debt_to_ebit", safe_div((debt or 0.0) - (cash or 0.0), ebit), "derived"),
-        "current_ratio": metric_value("current_ratio", safe_div(ca, cl), "derived"),
-        "price_to_book": metric_value("price_to_book", safe_div(price, bvps), "derived"),
-        "fcff_yield": metric_value("fcff_yield", safe_div(fcff, (price or 0.0) * (shares or 0.0)), "derived"),
+        "roe": metric_value("roe", safe_positive_denominator_div(ni, eq), "derived", "ROE indisponivel quando o patrimonio liquido nao e positivo." if eq is None or eq <= 0 else "Lucro liquido / patrimonio liquido positivo."),
+        "roa": metric_value("roa", safe_positive_denominator_div(ni, assets), "derived"),
+        "roic_proxy": metric_value("roic_proxy", safe_positive_denominator_div(nopat, invested_capital), "derived", "NOPAT divided by positive invested capital net of cash"),
+        "operating_margin": metric_value("operating_margin", safe_positive_denominator_div(ebit, revenue), "derived"),
+        "net_margin": metric_value("net_margin", safe_positive_denominator_div(ni, revenue), "derived"),
+        "cfo_to_net_income": metric_value("cfo_to_net_income", safe_positive_denominator_div(cfo, ni), "derived", "CFO / lucro liquido indisponivel quando o lucro nao e positivo." if ni is None or ni <= 0 else "CFO dividido por lucro liquido positivo."),
+        "accruals_to_assets": metric_value("accruals_to_assets", safe_accruals_to_assets(ni, cfo, assets), "derived"),
+        "debt_to_equity": metric_value("debt_to_equity", safe_positive_denominator_div(debt, eq), "derived", "Divida / patrimonio indisponivel quando o patrimonio nao e positivo." if eq is None or eq <= 0 else "Divida dividida por patrimonio liquido positivo."),
+        "net_debt_to_ebit": metric_value(
+            "net_debt_to_ebit",
+            safe_positive_denominator_div(
+                (debt or 0.0) - (cash or 0.0),
+                ebit,
+            ),
+            "derived",
+            (
+                "Divida liquida / EBIT indisponivel quando o EBIT nao e positivo."
+                if ebit is None or ebit <= 0
+                else "Divida liquida dividida por EBIT positivo."
+            ),
+        ),
+        "current_ratio": metric_value("current_ratio", safe_positive_denominator_div(ca, cl), "derived"),
+        "price_to_book": metric_value("price_to_book", safe_positive_denominator_div(price, bvps), "derived", "P/VP indisponivel quando o valor patrimonial por acao nao e positivo." if bvps is None or bvps <= 0 else "Preco / valor patrimonial por acao positivo."),
+        "fcff_yield": metric_value("fcff_yield", safe_positive_denominator_div(fcff, (price or 0.0) * (shares or 0.0)), "derived"),
         "cash_burn": metric_value("cash_burn", cash_burn, "derived", "annual cash burn based on negative CFO/FCFF"),
         "cash_runway_years": metric_value("cash_runway_years", safe_div(cash, cash_burn), "derived", "cash divided by annual cash burn"),
     }

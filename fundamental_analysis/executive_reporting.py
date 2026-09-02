@@ -63,8 +63,32 @@ def decision_drivers(score: ScoreReport) -> tuple[list[dict[str, object]], list[
     if not dimensions:
         empty = [{"name": "Sem dimensoes", "label": "Sem dimensoes", "score": None, "reading": "Sem leitura", "explanation": "Nao ha pilares suficientes para explicar a decisao."}]
         return empty, empty
-    ordered = sorted(dimensions, key=lambda dimension: dimension.score, reverse=True)
-    return [_driver_row(item) for item in ordered[:3]], [_driver_row(item) for item in reversed(ordered[-3:])]
+    contributions = {
+        item.name: item for item in score.dimension_contributions
+    }
+    supports = sorted(
+        dimensions,
+        key=lambda dimension: (
+            contributions[dimension.name].weighted_contribution
+            if dimension.name in contributions
+            else dimension.score
+        ),
+        reverse=True,
+    )
+    pressures = sorted(
+        dimensions,
+        key=lambda dimension: (
+            contributions[dimension.name].normalized_weight
+            * (1.0 - dimension.score)
+            if dimension.name in contributions
+            else 1.0 - dimension.score
+        ),
+        reverse=True,
+    )
+    return (
+        [_driver_row(item, contributions.get(item.name)) for item in supports[:3]],
+        [_driver_row(item, contributions.get(item.name)) for item in pressures[:3]],
+    )
 
 
 def total_score_band(value: float) -> tuple[str, str]:
@@ -130,13 +154,19 @@ def _executive_html(summary: dict[str, object]) -> str:
     )
 
 
-def _driver_row(dimension: object) -> dict[str, object]:
+def _driver_row(dimension: object, contribution: object | None = None) -> dict[str, object]:
     score_value = float(getattr(dimension, "score", 0.0))
     name = str(getattr(dimension, "name", "-"))
     return {
         "name": name,
         "label": DIMENSION_LABELS.get(name, name),
         "score": score_value,
+        "weighted_contribution": float(
+            getattr(contribution, "weighted_contribution", score_value)
+        ),
+        "weighted_shortfall": float(
+            getattr(contribution, "normalized_weight", 1.0)
+        ) * (1.0 - score_value),
         "reading": dimension_reading(score_value),
         "explanation": getattr(dimension, "explanation", "-"),
     }
