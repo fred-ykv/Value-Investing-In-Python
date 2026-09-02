@@ -29,7 +29,7 @@ from .reports import comparable_table, executive_summary, key_indicator_table, m
 from .reverse_dcf_reporting import append_reverse_dcf_to_html, append_reverse_dcf_to_markdown, reverse_dcf_table
 from .scenarios import ReverseDCFResult, ScenarioResult, build_reverse_dcf, build_scenarios
 from .scoring import ScoreReport, compute_score
-from .sector_rules import classify_company
+from .sector_rules import classify_company_profile
 from .valuation import DCFInput, ValuationResult, dcf_fcff, ddm_bank, eva_value, graham_value, growth_tech_value, residual_income_bank
 from .visual_reporting import apply_visual_polish_to_html
 
@@ -56,13 +56,22 @@ def analyze_ticker_from_inputs(ticker: str, income_statement: Mapping[str, objec
     statements = update_market_from_info(statements)
     statement_metrics = build_statement_metrics(statements)
     metrics = build_metrics(statement_metrics.values)
-    company_type = classify_company(statements.info, has_negative_fcf=(statement_metrics.get("fcff").value or 0.0) < 0)
+    profile_info = {**statements.info, "ticker": ticker.upper()}
+    classification = classify_company_profile(
+        profile_info,
+        has_negative_fcf=(statement_metrics.get("fcff").value or 0.0) < 0,
+    )
+    company_type = classification.company_type
+    profile_info = {
+        **profile_info,
+        "business_model": classification.business_model,
+    }
     values = statement_metrics.values
     cyclical_normalization = normalize_cyclical_financials(
         company_type,
         values,
         market_data.get("cyclical_history", ()),
-        statements.info,
+        profile_info,
         market_data,
     )
     enrich_metrics_with_market_inputs(metrics, market_data, source)
@@ -110,11 +119,11 @@ def analyze_ticker_from_inputs(ticker: str, income_statement: Mapping[str, objec
     reverse_dcf = build_reverse_dcf(values, resolved_market_data, capital.discount_rate)
     use_peer_yahoo = peer_yahoo_enrichment_enabled(market_data)
     peer_candidates = enrich_peer_candidates(
-        discover_peer_candidates({**statements.info, **market_data}, metrics, market_data),
+        discover_peer_candidates({**profile_info, **market_data}, metrics, market_data),
         use_yahoo=use_peer_yahoo,
     )
-    peer_selection = build_peer_selection_report({**statements.info, **market_data}, metrics, peer_candidates)
-    comparable_market_data = {**statements.info, **merge_peer_medians(market_data, peer_selection)}
+    peer_selection = build_peer_selection_report({**profile_info, **market_data}, metrics, peer_candidates)
+    comparable_market_data = {**profile_info, **merge_peer_medians(market_data, peer_selection)}
     comparables = build_comparable_report(company_type, values, metrics, comparable_market_data)
     score = compute_score(company_type, valuations, metrics, values["price"], comparables)
     cash_flow_reconciliation = reconcile_cash_flows(values)
@@ -139,6 +148,29 @@ def analyze_ticker_from_inputs(ticker: str, income_statement: Mapping[str, objec
     html = apply_didactic_layer_to_html(html, score, metric_lineage, valuations)
     html = apply_visual_polish_to_html(html, score.recommendation)
     report = {
+        "company_profile": {
+            "company_type": company_type.value,
+            "business_model": classification.business_model,
+            "classification_rule": classification.rule_code,
+            "rationale": classification.rationale,
+        },
+        "model_controls": {
+            "valuation_applicability": {
+                valuation.method: valuation.diagnostics.get(
+                    "model_applicability",
+                    "applicable" if valuation.fair_value_per_share is not None else "inconclusive",
+                )
+                for valuation in valuations
+            },
+            "scenario_controls": [
+                {
+                    "scenario": scenario.key,
+                    "status": scenario.control_status,
+                    "note": scenario.control_note,
+                }
+                for scenario in scenarios
+            ],
+        },
         "executive_summary": executive_summary(ticker, score, valuations),
         "executive_decision": executive_decision_summary(score, valuations),
         "valuation_table": valuation_table(valuations),

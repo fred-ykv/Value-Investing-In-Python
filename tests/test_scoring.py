@@ -221,7 +221,7 @@ class ScoringCalibrationTests(unittest.TestCase):
         )
         self.assertEqual(
             traditional_a.configuration_audit.model_version,
-            "multifactor_score_v1",
+            "multifactor_score_v2_semantic_controls",
         )
 
     def test_low_valuation_and_low_quality_remain_avoid(self):
@@ -260,6 +260,28 @@ class ScoringCalibrationTests(unittest.TestCase):
 
         self.assertLess(dimension.score, 0.80)
         self.assertIn("runway de caixa", dimension.explanation)
+
+    def test_growth_tech_missing_runway_does_not_transfer_its_weight(self):
+        metrics = metric_pack(current_ratio=3.0)
+
+        report = compute_score(
+            CompanyType.GROWTH_TECH,
+            [],
+            metrics,
+            metric_value("price", 10.0, "manual"),
+        )
+
+        dimension = report.dimensions["liquidity"]
+        self.assertAlmostEqual(dimension.score, 0.70)
+        components = {
+            component.component: component
+            for component in report.component_audit
+            if component.dimension == "liquidity"
+            and component.stage == "dimension"
+        }
+        self.assertAlmostEqual(components["current_ratio"].effective_weight, 0.40)
+        self.assertAlmostEqual(components["cash_runway_years"].effective_weight, 0.60)
+        self.assertTrue(components["cash_runway_years"].is_fallback)
 
     def test_relative_comparables_blend_into_valuation_without_overriding_intrinsic_value(self):
         metrics = metric_pack()
@@ -319,7 +341,7 @@ class ScoringCalibrationTests(unittest.TestCase):
             report.dimensions["valuation"].score,
         )
 
-    def test_component_audit_marks_missing_metric_outside_dynamic_average(self):
+    def test_component_audit_preserves_missing_metric_weight_with_fallback(self):
         report = compute_score(
             CompanyType.TRADITIONAL,
             [],
@@ -333,9 +355,10 @@ class ScoringCalibrationTests(unittest.TestCase):
             if component.dimension == "growth"
         }
         self.assertTrue(growth["revenue_growth"].used)
-        self.assertAlmostEqual(growth["revenue_growth"].effective_weight, 1.0)
-        self.assertFalse(growth["fcff_growth"].used)
-        self.assertAlmostEqual(growth["fcff_growth"].effective_weight, 0.0)
+        self.assertAlmostEqual(growth["revenue_growth"].effective_weight, 0.5)
+        self.assertTrue(growth["fcff_growth"].used)
+        self.assertAlmostEqual(growth["fcff_growth"].effective_weight, 0.5)
+        self.assertAlmostEqual(growth["fcff_growth"].transformed_score, 0.5)
         self.assertTrue(growth["fcff_growth"].reason)
 
     def test_component_audit_keeps_missing_growth_signals_with_neutral_default(self):
@@ -351,14 +374,14 @@ class ScoringCalibrationTests(unittest.TestCase):
             for component in report.component_audit
             if component.dimension == "growth"
         }
-        self.assertTrue(growth["default_missing_data"].used)
         self.assertAlmostEqual(
-            growth["default_missing_data"].weighted_contribution,
+            sum(item.weighted_contribution for item in growth.values()),
             report.dimensions["growth"].score,
         )
-        self.assertFalse(growth["revenue_growth"].used)
-        self.assertFalse(growth["fcff_growth"].used)
-        self.assertEqual(growth["fcff_growth"].effective_weight, 0.0)
+        self.assertTrue(growth["revenue_growth"].used)
+        self.assertTrue(growth["fcff_growth"].used)
+        self.assertEqual(growth["fcff_growth"].effective_weight, 0.5)
+        self.assertEqual(report.dimensions["growth"].confidence, 0.0)
 
 
 if __name__ == "__main__":

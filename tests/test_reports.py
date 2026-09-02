@@ -223,6 +223,8 @@ class ReportTests(unittest.TestCase):
 
             payload = json.loads(json_path.read_text(encoding="utf-8"))
             self.assertEqual(payload["recommendation"], result.score.recommendation)
+            self.assertIn("company_profile", payload)
+            self.assertIn("model_controls", payload)
             self.assertIn("cost_of_capital", payload)
             self.assertAlmostEqual(payload["cost_of_capital"]["discount_rate"], 0.10)
             self.assertIn("cash_flow_reconciliation", payload)
@@ -230,7 +232,7 @@ class ReportTests(unittest.TestCase):
             self.assertIn("assumptions", payload["valuation_table"][0])
             self.assertEqual(
                 payload["score_configuration"]["model_version"],
-                "multifactor_score_v1",
+                "multifactor_score_v2_semantic_controls",
             )
             self.assertEqual(
                 len(payload["score_configuration"]["fingerprint"]),

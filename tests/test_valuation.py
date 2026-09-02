@@ -104,10 +104,15 @@ class DCFValuationTests(unittest.TestCase):
             growth_assumptions["target_fcf_margin"].effective_value
         )
 
-    def test_negative_fcff_reduces_confidence(self):
+    def test_negative_fcff_without_positive_normalization_blocks_dcf(self):
         result = dcf_fcff(DCFInput(metric_value("fcff", -100_000_000, "manual"), metric_value("shares", 10_000_000, "manual"), metric_value("wacc", 0.11, "manual"), metric_value("growth_years", 0.05, "manual"), metric_value("terminal_growth", 0.02, "manual"), metric_value("debt", 0, "manual"), metric_value("cash", 0, "manual"), metric_value("price", 10, "manual")))
         self.assertTrue(result.diagnostics["negative_fcff"])
-        self.assertLess(result.confidence, 0.70)
+        self.assertIsNone(result.fair_value_per_share)
+        self.assertEqual(result.confidence, 0.0)
+        self.assertEqual(
+            result.diagnostics["model_applicability"],
+            "not_applicable_negative_fcff",
+        )
 
     def test_dcf_does_not_assume_missing_cash_is_zero(self):
         result = dcf_fcff(

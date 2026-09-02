@@ -18,6 +18,22 @@ class CompanyType(str, Enum):
 
 
 @dataclass(frozen=True)
+class CompanyProfileAssumptions:
+    business_model_by_ticker: Tuple[Tuple[str, str], ...] = (
+        ("RIVN", "ev_pure_play"),
+        ("LCID", "ev_pure_play"),
+        ("NIO", "ev_pure_play"),
+        ("TSLA", "ev_pure_play"),
+    )
+    ev_pure_play_keywords: Tuple[str, ...] = (
+        "electric vehicle manufacturer",
+        "electric vehicles and accessories",
+        "pure-play electric vehicle",
+        "ev automaker",
+    )
+
+
+@dataclass(frozen=True)
 class DCFAssumptions:
     horizon_years: int = 10
     default_wacc: float = 0.11
@@ -30,6 +46,7 @@ class DCFAssumptions:
     min_spread_wacc_terminal: float = 0.01
     safety_margin_required: float = 0.25
     negative_fcff_confidence_penalty: float = 0.30
+    require_positive_fcff_base: bool = True
     sensitivity_wacc_range: Tuple[float, ...] = (0.08, 0.09, 0.10, 0.11, 0.12, 0.13, 0.14)
     sensitivity_terminal_growth_range: Tuple[float, ...] = (0.00, 0.01, 0.02, 0.03, 0.04)
 
@@ -137,6 +154,7 @@ class ScenarioAssumptions:
             description="Execucao melhor, margem mais alta e custo de capital ligeiramente menor.",
         ),
     )
+    ordering_tolerance: float = 1e-9
 
 
 @dataclass(frozen=True)
@@ -388,11 +406,21 @@ class ScoreConfig:
     avoid_if_quality_below: float = 0.30
 
 
+@dataclass(frozen=True)
+class ScoreCoverageAssumptions:
+    missing_growth_component_score: float = 0.50
+    missing_quality_component_score: float = 0.00
+    missing_debt_component_score: float = 0.50
+    missing_liquidity_component_score: float = 0.50
+
+
 DCF = DCFAssumptions()
 GROWTH_TECH = GrowthTechAssumptions()
 MARKET = MarketAssumptions()
 VALUATION_SCORE = ValuationScoreAssumptions()
 SCORE = ScoreConfig()
+SCORE_COVERAGE = ScoreCoverageAssumptions()
+COMPANY_PROFILE = CompanyProfileAssumptions()
 SCENARIOS = ScenarioAssumptions()
 REVERSE_DCF = ReverseDCFAssumptions()
 CASH_FLOW_RECONCILIATION = CashFlowReconciliationAssumptions()

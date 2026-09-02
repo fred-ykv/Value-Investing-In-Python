@@ -21,6 +21,7 @@ from .reports import (
     recommendation_summary,
     risk_diagnostics,
     scenario_assumption_text,
+    scenario_control_text,
     scenario_table,
     score_scale_note,
     score_table,
@@ -64,7 +65,7 @@ def render_html_report(ticker: str, score: ScoreReport, valuations: Iterable[Val
         "</head>",
         "<body>",
         '<main class="page">',
-        f"<header><p>Analise fundamentalista</p><h1>{escape(ticker.upper())}</h1><p>{escape(recommendation_summary(score, valuations))}</p></header>",
+        f"<header><p>Analise fundamentalista</p><h1>{escape(ticker.upper())}</h1><p>{escape(recommendation_summary(score, valuations).replace('**', ''))}</p></header>",
         '<section class="cards">',
         *[_metric_card(title, value, subtitle, score.recommendation if title == "Recomendacao" else "") for title, value, subtitle in cards],
         "</section>",
@@ -104,8 +105,8 @@ def render_html_report(ticker: str, score: ScoreReport, valuations: Iterable[Val
                 "<h2>Cenarios</h2>",
                 "<p>Os cenarios abaixo testam como o valor justo muda quando crescimento, custo de capital, crescimento terminal e FCFF sao alterados.</p>",
                 _html_table(
-                    ["Cenario", "Leitura", "Preco justo", "Margem", "Confianca", "Premissas"],
-                    [[row["scenario"], scenario_readthrough(row), _fmt_money(row["fair_value_per_share"]), _fmt_pct(row["margin_of_safety"]), f"{float(row['confidence'] or 0):.2f}", scenario_assumption_text(row["assumptions"])] for row in scenario_rows],
+                    ["Cenario", "Leitura", "Preco justo", "Margem", "Confianca", "Controle", "Premissas"],
+                    [[row["scenario"], scenario_readthrough(row), _fmt_money(row["fair_value_per_share"]), _fmt_pct(row["margin_of_safety"]), f"{float(row['confidence'] or 0):.2f}", scenario_control_text(row), scenario_assumption_text(row["assumptions"])] for row in scenario_rows],
                 ),
                 "</section>",
             ]

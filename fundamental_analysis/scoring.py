@@ -7,13 +7,13 @@ import json
 from typing import Iterable, Mapping
 
 from .comparables import ComparableReport
-from .config import CompanyType, GROWTH_TECH, SCORE, VALUATION_SCORE, ScoreWeights
+from .config import CompanyType, GROWTH_TECH, SCORE, SCORE_COVERAGE, VALUATION_SCORE, ScoreWeights
 from .data_sources import MetricValue
 from .metrics import MetricPack
 from .valuation import ValuationResult
 
 
-SCORE_MODEL_VERSION = "multifactor_score_v1"
+SCORE_MODEL_VERSION = "multifactor_score_v2_semantic_controls"
 SCORE_DIMENSIONS = (
     "valuation",
     "growth",
@@ -78,6 +78,7 @@ class ScoreConfigurationAudit:
     avoid_if_valuation_below: float
     avoid_if_quality_below: float
     max_single_valuation_method_weight: float
+    coverage_policy: tuple[tuple[str, float], ...]
     fingerprint: str
 
 
@@ -154,7 +155,7 @@ def compute_score(company_type: CompanyType, valuations: Iterable[ValuationResul
         total,
         recommendation,
         dimensions,
-        explain_score(recommendation, dimensions),
+        explain_score(recommendation, dimensions, contributions),
         decision,
         contributions,
         configuration_audit,
@@ -505,149 +506,59 @@ def _metric_average_component_audit(
     specifications: tuple[tuple[str, float, float], ...],
     default_score: float,
 ) -> list[ScoreComponentAudit]:
-    available = [
-        (name, low, high, metrics.values.get(name))
-        for name, low, high in specifications
-        if metrics.values.get(name) is not None
-        and metrics.values[name].value is not None
-    ]
-    if not available:
-        components = [
+    if not specifications:
+        return []
+    fixed_weight = 1.0 / len(specifications)
+    components: list[ScoreComponentAudit] = []
+    for name, low, high in specifications:
+        metric = metrics.values.get(name)
+        available = metric is not None and metric.value is not None
+        transformed = (
+            _normalize(metric.value, low, high)
+            if available
+            else default_score
+        )
+        components.append(
             ScoreComponentAudit(
                 dimension,
                 "dimension",
-                "default_missing_data",
-                None,
-                default_score,
-                1.0,
-                1.0,
-                default_score,
-                0.0,
-                "config",
+                name,
+                metric.value if available else None,
+                transformed,
+                fixed_weight,
+                fixed_weight,
+                transformed * fixed_weight,
+                metric.confidence if available else 0.0,
+                metric.source if available else "config",
                 True,
-                "Nenhum componente da dimensao ficou disponivel.",
+                ""
+                if available
+                else (
+                    (metric.note if metric and metric.note else "Metrica indisponivel.")
+                    + " Peso preservado com fallback configurado para impedir inflacao por cobertura parcial."
+                ),
+                source_document=(metric.source_document or "") if metric else "",
+                period_start=(
+                    metric.period_start.isoformat()
+                    if metric and metric.period_start
+                    else ""
+                ),
+                period_end=(
+                    metric.period_end.isoformat()
+                    if metric and metric.period_end
+                    else ""
+                ),
+                filing_date=(
+                    metric.filing_date.isoformat()
+                    if metric and metric.filing_date
+                    else ""
+                ),
+                formula=(metric.formula or "") if metric else "",
+                note=metric.note if metric else "",
+                is_fallback=not available or (metric.is_fallback if metric else False),
+                input_observations=metric.input_observations if metric else (),
             )
-        ]
-        for name, _, _ in specifications:
-            metric = metrics.values.get(name)
-            components.append(
-                ScoreComponentAudit(
-                    dimension,
-                    "dimension",
-                    name,
-                    None,
-                    None,
-                    1.0,
-                    0.0,
-                    0.0,
-                    metric.confidence if metric else 0.0,
-                    metric.source if metric else "missing",
-                    False,
-                    (
-                        metric.note
-                        if metric and metric.note
-                        else "Metrica indisponivel; fallback neutro da dimensao aplicado."
-                    ),
-                    source_document=(metric.source_document or "") if metric else "",
-                    period_start=(
-                        metric.period_start.isoformat()
-                        if metric and metric.period_start
-                        else ""
-                    ),
-                    period_end=(
-                        metric.period_end.isoformat()
-                        if metric and metric.period_end
-                        else ""
-                    ),
-                    filing_date=(
-                        metric.filing_date.isoformat()
-                        if metric and metric.filing_date
-                        else ""
-                    ),
-                    formula=(metric.formula or "") if metric else "",
-                    note=metric.note if metric else "",
-                    is_fallback=metric.is_fallback if metric else False,
-                    input_observations=(
-                        metric.input_observations if metric else ()
-                    ),
-                )
-            )
-        return components
-    effective_weight = 1.0 / len(available)
-    components = [
-        ScoreComponentAudit(
-            dimension,
-            "dimension",
-            name,
-            metric.value,
-            _normalize(metric.value, low, high),
-            1.0,
-            effective_weight,
-            _normalize(metric.value, low, high) * effective_weight,
-            metric.confidence,
-            metric.source,
-            True,
-            source_document=metric.source_document or "",
-            period_start=(
-                metric.period_start.isoformat() if metric.period_start else ""
-            ),
-            period_end=(metric.period_end.isoformat() if metric.period_end else ""),
-            filing_date=(
-                metric.filing_date.isoformat() if metric.filing_date else ""
-            ),
-            formula=metric.formula or "",
-            note=metric.note,
-            is_fallback=metric.is_fallback,
-            input_observations=metric.input_observations,
         )
-        for name, low, high, metric in available
-    ]
-    available_names = {name for name, _, _, _ in available}
-    for name, _, _ in specifications:
-        if name not in available_names:
-            metric = metrics.values.get(name)
-            components.append(
-                ScoreComponentAudit(
-                    dimension,
-                    "dimension",
-                    name,
-                    None,
-                    None,
-                    1.0,
-                    0.0,
-                    0.0,
-                    metric.confidence if metric else 0.0,
-                    metric.source if metric else "missing",
-                    False,
-                    (
-                        metric.note
-                        if metric and metric.note
-                        else "Metrica indisponivel; removida da media dinamica."
-                    ),
-                    source_document=(metric.source_document or "") if metric else "",
-                    period_start=(
-                        metric.period_start.isoformat()
-                        if metric and metric.period_start
-                        else ""
-                    ),
-                    period_end=(
-                        metric.period_end.isoformat()
-                        if metric and metric.period_end
-                        else ""
-                    ),
-                    filing_date=(
-                        metric.filing_date.isoformat()
-                        if metric and metric.filing_date
-                        else ""
-                    ),
-                    formula=(metric.formula or "") if metric else "",
-                    note=metric.note if metric else "",
-                    is_fallback=metric.is_fallback if metric else False,
-                    input_observations=(
-                        metric.input_observations if metric else ()
-                    ),
-                )
-            )
     return components
 
 
@@ -656,7 +567,7 @@ def _growth_component_audit(metrics: MetricPack) -> list[ScoreComponentAudit]:
         "growth",
         metrics,
         (("revenue_growth", -0.05, 0.25), ("fcff_growth", -0.10, 0.20)),
-        0.50,
+        SCORE_COVERAGE.missing_growth_component_score,
     )
 
 
@@ -669,7 +580,7 @@ def _quality_component_audit(metrics: MetricPack) -> list[ScoreComponentAudit]:
             ("earnings_quality", 0.0, 1.0),
             ("piotroski_proxy", 0.0, 1.0),
         ),
-        0.0,
+        SCORE_COVERAGE.missing_quality_component_score,
     )
 
 
@@ -698,7 +609,7 @@ def _debt_component_audit(
         "debt",
         metrics,
         (("debt_to_equity", 0.0, 3.0), ("net_debt_to_ebit", 0.0, 5.0)),
-        0.50,
+        SCORE_COVERAGE.missing_debt_component_score,
     )
     return [
         ScoreComponentAudit(
@@ -709,7 +620,6 @@ def _debt_component_audit(
             (
                 1.0 - item.transformed_score
                 if item.transformed_score is not None
-                and item.component != "default_missing_data"
                 else item.transformed_score
             ),
             item.configured_weight,
@@ -717,7 +627,6 @@ def _debt_component_audit(
             (
                 (1.0 - item.transformed_score) * item.effective_weight
                 if item.transformed_score is not None
-                and item.component != "default_missing_data"
                 else item.weighted_contribution
             ),
             item.confidence,
@@ -775,11 +684,15 @@ def _liquidity_component_audit(
         if runway_metric is not None and runway_metric.value is not None
         else None
     )
-    if company_type == CompanyType.GROWTH_TECH and runway_value is not None:
-        runway_score = _normalize(
-            runway_value,
-            0.5,
-            max(GROWTH_TECH.min_cash_runway_years, 0.5),
+    if company_type == CompanyType.GROWTH_TECH:
+        runway_score = (
+            _normalize(
+                runway_value,
+                0.5,
+                max(GROWTH_TECH.min_cash_runway_years, 0.5),
+            )
+            if runway_value is not None
+            else SCORE_COVERAGE.missing_liquidity_component_score
         )
         return [
             ScoreComponentAudit(
@@ -795,6 +708,10 @@ def _liquidity_component_audit(
                 current_metric.source if current_metric else "config",
                 True,
                 "Fallback neutro aplicado." if current_value is None else "",
+                is_fallback=(
+                    current_value is None
+                    or (current_metric.is_fallback if current_metric else False)
+                ),
             ),
             ScoreComponentAudit(
                 "liquidity",
@@ -805,9 +722,18 @@ def _liquidity_component_audit(
                 0.60,
                 0.60,
                 runway_score * 0.60,
-                runway_metric.confidence,
-                runway_metric.source,
+                runway_metric.confidence if runway_value is not None else 0.0,
+                runway_metric.source if runway_value is not None else "config",
                 True,
+                (
+                    "Runway indisponivel; peso preservado com fallback neutro."
+                    if runway_value is None
+                    else ""
+                ),
+                is_fallback=(
+                    runway_value is None
+                    or (runway_metric.is_fallback if runway_metric else False)
+                ),
             ),
         ]
     components = [
@@ -826,23 +752,6 @@ def _liquidity_component_audit(
             "Fallback neutro aplicado." if current_value is None else "",
         )
     ]
-    if company_type == CompanyType.GROWTH_TECH:
-        components.append(
-            ScoreComponentAudit(
-                "liquidity",
-                "dimension",
-                "cash_runway_years",
-                None,
-                None,
-                0.60,
-                0.0,
-                0.0,
-                runway_metric.confidence if runway_metric else 0.0,
-                runway_metric.source if runway_metric else "missing",
-                False,
-                "Runway indisponivel; liquidez corrente recebeu todo o peso efetivo.",
-            )
-        )
     return components
 
 
@@ -905,6 +814,12 @@ def score_configuration_audit(
         (name, float(getattr(normalized_weights, name)))
         for name in SCORE_DIMENSIONS
     )
+    coverage_policy = (
+        ("missing_growth_component_score", SCORE_COVERAGE.missing_growth_component_score),
+        ("missing_quality_component_score", SCORE_COVERAGE.missing_quality_component_score),
+        ("missing_debt_component_score", SCORE_COVERAGE.missing_debt_component_score),
+        ("missing_liquidity_component_score", SCORE_COVERAGE.missing_liquidity_component_score),
+    )
     payload = {
         "model_version": SCORE_MODEL_VERSION,
         "company_type": company_type.value,
@@ -918,6 +833,7 @@ def score_configuration_audit(
         "max_single_valuation_method_weight": (
             SCORE.max_single_valuation_method_weight
         ),
+        "coverage_policy": dict(coverage_policy),
     }
     fingerprint = hashlib.sha256(
         json.dumps(
@@ -940,6 +856,7 @@ def score_configuration_audit(
         max_single_valuation_method_weight=(
             SCORE.max_single_valuation_method_weight
         ),
+        coverage_policy=coverage_policy,
         fingerprint=fingerprint,
     )
 
@@ -995,18 +912,54 @@ def financial_valuation_dimension(metrics: MetricPack, model_score: float | None
 
 
 def growth_dimension(metrics: MetricPack) -> DimensionScore:
-    return DimensionScore("growth", _average([_metric_score(metrics.values.get("revenue_growth"), -0.05, 0.25), _metric_score(metrics.values.get("fcff_growth"), -0.10, 0.20)], 0.50), metrics.confidence(), "Avalia o perfil de crescimento de receita e de fluxo de caixa livre para a firma.")
+    names = ("revenue_growth", "fcff_growth")
+    return DimensionScore(
+        "growth",
+        _fixed_average(
+            [
+                _metric_score(metrics.values.get("revenue_growth"), -0.05, 0.25),
+                _metric_score(metrics.values.get("fcff_growth"), -0.10, 0.20),
+            ],
+            SCORE_COVERAGE.missing_growth_component_score,
+        ),
+        _metric_dimension_confidence(metrics, names),
+        "Avalia crescimento de receita e FCFF com pesos fixos; dado ausente recebe leitura neutra e reduz a confianca.",
+    )
 
 
 def quality_dimension(metrics: MetricPack) -> DimensionScore:
-    return DimensionScore("quality", _average([_metric_score(metrics.values.get("fama_french_profitability"), 0, 1), _metric_score(metrics.values.get("earnings_quality"), 0, 1), _metric_score(metrics.values.get("piotroski_proxy"), 0, 1)], 0.0), metrics.confidence(), "Avalia rentabilidade, qualidade do lucro, accruals e sinais inspirados no Piotroski F-Score.")
+    names = ("fama_french_profitability", "earnings_quality", "piotroski_proxy")
+    return DimensionScore(
+        "quality",
+        _fixed_average(
+            [
+                _metric_score(metrics.values.get("fama_french_profitability"), 0, 1),
+                _metric_score(metrics.values.get("earnings_quality"), 0, 1),
+                _metric_score(metrics.values.get("piotroski_proxy"), 0, 1),
+            ],
+            SCORE_COVERAGE.missing_quality_component_score,
+        ),
+        _metric_dimension_confidence(metrics, names),
+        "Avalia rentabilidade, qualidade do lucro, accruals e sinais inspirados no Piotroski F-Score.",
+    )
 
 
 def debt_dimension(metrics: MetricPack, company_type: CompanyType) -> DimensionScore:
     if company_type == CompanyType.FINANCIAL:
         return DimensionScore("debt", 0.50, metrics.confidence(), "Indicadores tradicionais de divida sao menos comparaveis em bancos; por isso o score fica neutro.")
     de, nd = metrics.get("debt_to_equity"), metrics.get("net_debt_to_ebit")
-    return DimensionScore("debt", _average([None if de is None else 1.0 - _normalize(de, 0, 3), None if nd is None else 1.0 - _normalize(nd, 0, 5)], 0.50), metrics.confidence(), "Avalia a alavancagem do balanco, principalmente divida sobre patrimonio e divida liquida sobre EBIT.")
+    return DimensionScore(
+        "debt",
+        _fixed_average(
+            [
+                None if de is None else 1.0 - _normalize(de, 0, 3),
+                None if nd is None else 1.0 - _normalize(nd, 0, 5),
+            ],
+            SCORE_COVERAGE.missing_debt_component_score,
+        ),
+        _metric_dimension_confidence(metrics, ("debt_to_equity", "net_debt_to_ebit")),
+        "Avalia divida sobre patrimonio e divida liquida sobre EBIT; o multiplo de EBIT fica indisponivel quando o lucro operacional nao e positivo.",
+    )
 
 
 def liquidity_dimension(metrics: MetricPack, company_type: CompanyType) -> DimensionScore:
@@ -1016,11 +969,18 @@ def liquidity_dimension(metrics: MetricPack, company_type: CompanyType) -> Dimen
     current_ratio_score = _normalize(current_ratio, 0.8, 2.0) if current_ratio is not None else 0.50
     if company_type == CompanyType.GROWTH_TECH:
         runway = metrics.get("cash_runway_years")
-        if runway is not None:
-            runway_score = _normalize(runway, 0.5, max(GROWTH_TECH.min_cash_runway_years, 0.5))
-            score = (current_ratio_score * 0.40) + (runway_score * 0.60)
-            return DimensionScore("liquidity", score, metrics.confidence(), "Para growth/tech, combina liquidez corrente com runway de caixa para capturar risco de queima de caixa.")
-    return DimensionScore("liquidity", current_ratio_score, metrics.confidence(), "Avalia a folga de liquidez de curto prazo, principalmente ativos circulantes contra passivos circulantes.")
+        runway_score = (
+            _normalize(runway, 0.5, max(GROWTH_TECH.min_cash_runway_years, 0.5))
+            if runway is not None
+            else SCORE_COVERAGE.missing_liquidity_component_score
+        )
+        score = (current_ratio_score * 0.40) + (runway_score * 0.60)
+        confidence = (
+            _metric_dimension_confidence(metrics, ("current_ratio",)) * 0.40
+            + _metric_dimension_confidence(metrics, ("cash_runway_years",)) * 0.60
+        )
+        return DimensionScore("liquidity", score, confidence, "Para growth/tech, combina liquidez corrente e runway de caixa com pesos fixos; runway ausente recebe leitura neutra e reduz a confianca.")
+    return DimensionScore("liquidity", current_ratio_score, _metric_dimension_confidence(metrics, ("current_ratio",)), "Avalia a folga de liquidez de curto prazo, principalmente ativos circulantes contra passivos circulantes.")
 
 
 def data_confidence_dimension(valuations: Iterable[ValuationResult], metrics: MetricPack) -> DimensionScore:
@@ -1112,9 +1072,34 @@ def recommendation_decision_from_score(
     )
 
 
-def explain_score(recommendation: str, dimensions: Mapping[str, DimensionScore]) -> str:
-    best, worst = max(dimensions.values(), key=lambda d: d.score), min(dimensions.values(), key=lambda d: d.score)
-    return f"Recomendacao {recommendation}: a dimensao mais forte foi {best.name} ({best.score:.2f}); a dimensao mais fraca foi {worst.name} ({worst.score:.2f})."
+def explain_score(
+    recommendation: str,
+    dimensions: Mapping[str, DimensionScore],
+    contributions: Iterable[DimensionContribution] = (),
+) -> str:
+    contribution_by_name = {item.name: item for item in contributions}
+    best = max(
+        dimensions.values(),
+        key=lambda dimension: (
+            contribution_by_name[dimension.name].weighted_contribution
+            if dimension.name in contribution_by_name
+            else dimension.score
+        ),
+    )
+    worst = max(
+        dimensions.values(),
+        key=lambda dimension: (
+            contribution_by_name[dimension.name].normalized_weight
+            * (1.0 - dimension.score)
+            if dimension.name in contribution_by_name
+            else 1.0 - dimension.score
+        ),
+    )
+    return (
+        f"Recomendacao {recommendation}: o maior suporte ponderado foi {best.name} "
+        f"({best.score:.2f}); o maior redutor ponderado foi {worst.name} "
+        f"({worst.score:.2f})."
+    )
 
 
 def _metric_score(metric: MetricValue | None, low: float, high: float) -> float | None:
@@ -1149,6 +1134,21 @@ def _justified_bank_price_to_book(roe: float) -> float:
     return max(0.0, (roe - g) / (ke - g))
 
 
-def _average(values: list[float | None], default: float) -> float:
-    available = [value for value in values if value is not None]
-    return sum(available) / len(available) if available else default
+def _fixed_average(values: list[float | None], missing_score: float) -> float:
+    if not values:
+        return missing_score
+    resolved = [missing_score if value is None else value for value in values]
+    return sum(resolved) / len(resolved)
+
+
+def _metric_dimension_confidence(
+    metrics: MetricPack,
+    names: tuple[str, ...],
+) -> float:
+    if not names:
+        return 0.0
+    confidences = []
+    for name in names:
+        metric = metrics.values.get(name)
+        confidences.append(metric.confidence if metric and metric.is_available else 0.0)
+    return sum(confidences) / len(confidences)
