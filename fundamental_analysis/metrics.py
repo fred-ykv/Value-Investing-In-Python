@@ -55,6 +55,7 @@ def build_metrics(statement_values: Mapping[str, MetricValue]) -> MetricPack:
     ca, cl, shares, price = v["current_assets"].value, v["current_liabilities"].value, v["shares"].value, v["price"].value
     bvps, fcff = v["book_value_per_share"].value, v["fcff"].value
     cash_burn = cash_burn_amount(cfo, fcff)
+    net_debt = None if debt is None or cash is None else debt - cash
     metrics = {
         "roe": metric_value("roe", safe_positive_denominator_div(ni, eq), "derived", "ROE indisponivel quando o patrimonio liquido nao e positivo." if eq is None or eq <= 0 else "Lucro liquido / patrimonio liquido positivo."),
         "roa": metric_value("roa", safe_positive_denominator_div(ni, assets), "derived"),
@@ -67,13 +68,13 @@ def build_metrics(statement_values: Mapping[str, MetricValue]) -> MetricPack:
         "net_debt_to_ebit": metric_value(
             "net_debt_to_ebit",
             safe_positive_denominator_div(
-                (debt or 0.0) - (cash or 0.0),
+                net_debt,
                 ebit,
             ),
             "derived",
             (
-                "Divida liquida / EBIT indisponivel quando o EBIT nao e positivo."
-                if ebit is None or ebit <= 0
+                "Divida liquida / EBIT exige divida, caixa e EBIT positivo."
+                if net_debt is None or ebit is None or ebit <= 0
                 else "Divida liquida dividida por EBIT positivo."
             ),
         ),

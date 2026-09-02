@@ -33,7 +33,8 @@ def classify_company_profile(
     industry = str(info.get("industry", "") or "").lower()
     ticker = str(info.get("ticker", info.get("symbol", "")) or "").upper().strip()
     explicit_business_model = str(info.get("business_model", "") or "").lower().strip()
-    text = " ".join(
+    sector_industry_text = f"{sector} {industry}"
+    descriptive_text = " ".join(
         str(info.get(name, "") or "").lower()
         for name in (
             "sector",
@@ -43,7 +44,7 @@ def classify_company_profile(
             "longName",
         )
     )
-    if any(_matches_keyword(text, key) for key in FINANCIAL_KEYWORDS):
+    if any(_matches_keyword(sector_industry_text, key) for key in FINANCIAL_KEYWORDS):
         return CompanyClassification(
             CompanyType.FINANCIAL,
             explicit_business_model or "financial_institution",
@@ -74,14 +75,20 @@ def classify_company_profile(
             "Ticker consta na taxonomia auditavel de modelos de negocio growth/tech.",
         )
 
-    if any(keyword in text for keyword in COMPANY_PROFILE.ev_pure_play_keywords):
+    if (
+        "auto" in industry
+        and any(
+            keyword in descriptive_text
+            for keyword in COMPANY_PROFILE.ev_pure_play_keywords
+        )
+    ):
         return CompanyClassification(
             CompanyType.GROWTH_TECH,
             "ev_pure_play",
             "ev_pure_play_description",
             "Descricao operacional identifica fabricante pure-play de veiculos eletricos.",
         )
-    if any(_matches_keyword(f"{sector} {industry}", key) for key in GROWTH_TECH_KEYWORDS):
+    if any(_matches_keyword(sector_industry_text, key) for key in GROWTH_TECH_KEYWORDS):
         return CompanyClassification(
             CompanyType.GROWTH_TECH,
             "growth_tech",

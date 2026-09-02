@@ -47,6 +47,18 @@ class SectorRuleTests(unittest.TestCase):
         self.assertEqual(profile.company_type, CompanyType.TRADITIONAL)
         self.assertEqual(profile.rule_code, "traditional_default")
 
+    def test_credit_mentioned_in_industrial_description_does_not_make_it_a_bank(self):
+        profile = classify_company_profile(
+            {
+                "ticker": "AUTO",
+                "sector": "Consumer Cyclical",
+                "industry": "Auto Manufacturers",
+                "longBusinessSummary": "The group also provides customer credit.",
+            }
+        )
+
+        self.assertEqual(profile.company_type, CompanyType.TRADITIONAL)
+
 
 if __name__ == "__main__":
     unittest.main()
