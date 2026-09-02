@@ -27,7 +27,7 @@
   medians remain visible but receive reduced influence and an explicit label.
 - Validated live behavior for NUE, MSFT, JPM, and RIVN and added regression
   coverage for missing periods, FCFF sign changes, mixed-source lineage,
-  peer-basis consistency, and exploratory median confidence. All 207 tests
+  peer-basis consistency, and exploratory median confidence. All 208 tests
   pass.
 - Kept valuation formulas, score weights, recommendation gates, and thresholds
   unchanged.

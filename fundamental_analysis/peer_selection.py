@@ -191,8 +191,17 @@ def median_multiples(approved: Sequence[PeerCandidateResult]) -> dict[str, float
 def peer_median_candidates(approved: Sequence[PeerCandidateResult], rejected: Sequence[PeerCandidateResult]) -> list[PeerCandidateResult]:
     if len(approved) >= PEER_SELECTION.min_approved_peers:
         return list(approved)
-    weak_references = [candidate for candidate in rejected if candidate.status == "weak_reference"]
-    return [*approved, *weak_references]
+    weak_references = sorted(
+        (
+            candidate
+            for candidate in rejected
+            if candidate.status == "weak_reference"
+        ),
+        key=lambda candidate: candidate.score,
+        reverse=True,
+    )
+    required = max(0, PEER_SELECTION.min_approved_peers - len(approved))
+    return [*approved, *weak_references[:required]]
 
 
 def peer_selection_confidence(approved: Sequence[PeerCandidateResult], median_candidates: Sequence[PeerCandidateResult]) -> float:
