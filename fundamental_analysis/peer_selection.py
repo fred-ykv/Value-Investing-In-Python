@@ -20,6 +20,7 @@ class PeerCandidateResult:
     vetoes: list[str] = field(default_factory=list)
     metrics: dict[str, float] = field(default_factory=dict)
     metric_sources: dict[str, str] = field(default_factory=dict)
+    metric_lineage: dict[str, dict[str, object]] = field(default_factory=dict)
     data_confidence: float = 0.0
 
 
@@ -31,6 +32,7 @@ class PeerSelectionReport:
     confidence: float
     summary: str
     peer_median_counts: dict[str, int] = field(default_factory=dict)
+    median_candidates: list[PeerCandidateResult] = field(default_factory=list)
 
 
 MULTIPLE_FIELDS = (
@@ -62,7 +64,21 @@ def build_peer_selection_report(target_info: Mapping[str, object], target_metric
     medians = median_multiples(median_candidates)
     counts = median_multiple_counts(median_candidates) if medians else {}
     confidence = peer_selection_confidence(approved, median_candidates)
-    return PeerSelectionReport(approved, rejected, medians, confidence, peer_selection_summary(approved, rejected, confidence, bool(medians), len(median_candidates)), counts)
+    return PeerSelectionReport(
+        approved,
+        rejected,
+        medians,
+        confidence,
+        peer_selection_summary(
+            approved,
+            rejected,
+            confidence,
+            bool(medians),
+            len(median_candidates),
+        ),
+        counts,
+        median_candidates,
+    )
 
 
 def company_profile(info: Mapping[str, object], metrics: MetricPack) -> dict[str, object]:
@@ -105,6 +121,7 @@ def score_candidate(target: Mapping[str, object], candidate: Mapping[str, object
         vetoes,
         candidate_multiples(candidate),
         candidate_metric_sources(candidate),
+        candidate_metric_lineage(candidate),
         data_confidence if data_confidence is not None else inferred_candidate_data_confidence(candidate),
     )
 
@@ -174,8 +191,17 @@ def median_multiples(approved: Sequence[PeerCandidateResult]) -> dict[str, float
 def peer_median_candidates(approved: Sequence[PeerCandidateResult], rejected: Sequence[PeerCandidateResult]) -> list[PeerCandidateResult]:
     if len(approved) >= PEER_SELECTION.min_approved_peers:
         return list(approved)
-    weak_references = [candidate for candidate in rejected if candidate.status == "weak_reference"]
-    return [*approved, *weak_references]
+    weak_references = sorted(
+        (
+            candidate
+            for candidate in rejected
+            if candidate.status == "weak_reference"
+        ),
+        key=lambda candidate: candidate.score,
+        reverse=True,
+    )
+    required = max(0, PEER_SELECTION.min_approved_peers - len(approved))
+    return [*approved, *weak_references[:required]]
 
 
 def peer_selection_confidence(approved: Sequence[PeerCandidateResult], median_candidates: Sequence[PeerCandidateResult]) -> float:
@@ -215,6 +241,19 @@ def candidate_metric_sources(candidate: Mapping[str, object]) -> dict[str, str]:
     return dict(sources) if isinstance(sources, Mapping) else {}
 
 
+def candidate_metric_lineage(
+    candidate: Mapping[str, object],
+) -> dict[str, dict[str, object]]:
+    lineage = candidate.get("_peer_metric_lineage")
+    if not isinstance(lineage, Mapping):
+        return {}
+    return {
+        str(name): dict(value)
+        for name, value in lineage.items()
+        if isinstance(value, Mapping)
+    }
+
+
 def inferred_candidate_data_confidence(candidate: Mapping[str, object]) -> float:
     if candidate_multiples(candidate):
         return confidence_for_source(str(candidate.get("candidate_source") or "manual"))
@@ -227,6 +266,25 @@ def merge_peer_medians(market_data: Mapping[str, object], peer_selection: PeerSe
         return merged
     merged["peer_medians"] = peer_selection.peer_medians
     merged["peer_median_counts"] = peer_selection.peer_median_counts
+    merged["peer_selection_confidence"] = peer_selection.confidence
+    merged["peer_median_provenance"] = {
+        field_name: [
+            {
+                "ticker": candidate.ticker,
+                "value": candidate.metrics[field_name],
+                "source": candidate.metric_sources.get(field_name),
+                "lineage": candidate.metric_lineage.get(field_name, {}),
+                "equivalence_status": candidate.status,
+                "equivalence_score": candidate.score,
+                "data_confidence": candidate.data_confidence,
+            }
+            for candidate in peer_selection.median_candidates
+            if candidate.metrics.get(field_name) is not None
+            and candidate.data_confidence
+            >= PEER_ENRICHMENT.minimum_confidence_for_relative_valuation
+        ]
+        for field_name in peer_selection.peer_medians
+    }
     return merged
 
 

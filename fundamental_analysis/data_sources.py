@@ -319,6 +319,7 @@ def _yahoo_annual_history(
     for period in sorted(periods, key=lambda item: _period_to_date(item)):
         income = {
             "revenue": _statement_metric_at_period(financials, ("Total Revenue", "Operating Revenue", "Revenue"), period, source_url, "Yahoo Finance income statement", currency),
+            "gross_profit": _statement_metric_at_period(financials, ("Gross Profit",), period, source_url, "Yahoo Finance income statement", currency),
             "ebit": _statement_metric_at_period(financials, ("Operating Income", "EBIT"), period, source_url, "Yahoo Finance income statement", currency),
             "net_income": _statement_metric_at_period(financials, ("Net Income", "Net Income Common Stockholders"), period, source_url, "Yahoo Finance income statement", currency),
             "tax_provision": _statement_metric_at_period(financials, ("Tax Provision", "Income Tax Expense"), period, source_url, "Yahoo Finance income statement", currency),

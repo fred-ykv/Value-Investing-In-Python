@@ -192,6 +192,10 @@ SEC_FACT_SPECS: dict[str, dict[str, _FactSpec]] = {
     },
 }
 
+# Optional because banks and some issuers do not present gross profit as a
+# separate line. Its absence must not reduce the core filing coverage gate.
+GROSS_PROFIT_SPEC = _FactSpec(("GrossProfit",), ("USD",), True)
+
 
 JsonGetter = Callable[[str], Mapping[str, Any]]
 
@@ -304,6 +308,16 @@ class SecEdgarClient:
                 if selected.is_available:
                     sections[section][name] = selected
 
+        gross_profit = _select_metric(
+            payload,
+            "gross_profit",
+            GROSS_PROFIT_SPEC,
+            anchor,
+            source_url,
+        )
+        if gross_profit.is_available:
+            sections["income_statement"]["gross_profit"] = gross_profit
+
         _complete_ebit(sections["income_statement"], payload, anchor, source_url)
         _complete_depreciation_amortization(
             sections["cash_flow"],
@@ -339,6 +353,11 @@ class SecEdgarClient:
             self.assumptions,
         )
         revenue = sections["income_statement"].get("revenue")
+        if revenue is not None and gross_profit.is_available:
+            sections["market_data"]["gross_margin"] = _derive_gross_margin(
+                gross_profit,
+                revenue,
+            )
         if revenue is not None:
             growth = _derive_revenue_growth(
                 payload,
@@ -1505,6 +1524,45 @@ def _derive_revenue_growth(
         input_observations=(
             ("current_revenue", float(revenue.value)),
             ("prior_revenue", float(prior_value)),
+        ),
+    )
+
+
+def _derive_gross_margin(
+    gross_profit: MetricValue,
+    revenue: MetricValue,
+) -> MetricValue:
+    if not gross_profit.is_available or not revenue.is_available or revenue.value <= 0:
+        return MetricValue(
+            "gross_margin",
+            None,
+            "sec_edgar_derived",
+            0.0,
+            "Lucro bruto e receita positiva precisam estar no mesmo filing SEC.",
+            period_end=revenue.period_end,
+            filing_date=revenue.filing_date,
+            scale="ratio",
+            basis="derived",
+            formula="annual_gross_profit_divided_by_annual_revenue",
+        )
+    return metric_value(
+        "gross_margin",
+        float(gross_profit.value) / float(revenue.value),
+        "sec_edgar_derived",
+        "Lucro bruto anual / receita anual do mesmo filing SEC.",
+        source_url=revenue.source_url,
+        source_document=revenue.source_document,
+        period_start=revenue.period_start,
+        period_end=revenue.period_end,
+        filing_date=revenue.filing_date,
+        as_of=revenue.as_of,
+        scale="ratio",
+        basis="derived",
+        formula="annual_gross_profit_divided_by_annual_revenue",
+        confidence=max(0.0, min(gross_profit.confidence, revenue.confidence) - 0.05),
+        input_observations=(
+            ("gross_profit", float(gross_profit.value)),
+            ("revenue", float(revenue.value)),
         ),
     )
 

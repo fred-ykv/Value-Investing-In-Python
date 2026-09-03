@@ -2,7 +2,11 @@ import unittest
 
 from fundamental_analysis.main import analyze_ticker_from_inputs
 from fundamental_analysis.metrics import MetricPack
-from fundamental_analysis.peer_selection import build_peer_selection_report
+from fundamental_analysis.peer_selection import (
+    PeerCandidateResult,
+    build_peer_selection_report,
+    peer_median_candidates,
+)
 
 
 class PeerSelectionTests(unittest.TestCase):
@@ -191,8 +195,25 @@ class PeerSelectionTests(unittest.TestCase):
         self.assertEqual(report.rejected[0].status, "weak_reference")
         self.assertEqual(report.peer_medians["price_to_earnings"], 18.0)
         self.assertEqual(report.peer_median_counts["price_to_earnings"], 2)
+        self.assertEqual(
+            [peer.ticker for peer in report.median_candidates], ["MLI", "ATI"]
+        )
         self.assertIn("mediana exploratoria", report.summary)
         self.assertLess(report.confidence, 1.0)
+
+    def test_exploratory_median_uses_only_best_weak_references_needed(self):
+        approved = [
+            PeerCandidateResult("APP", 0.70, "acceptable")
+        ]
+        rejected = [
+            PeerCandidateResult("LOW", 0.51, "weak_reference"),
+            PeerCandidateResult("BEST", 0.64, "weak_reference"),
+            PeerCandidateResult("MID", 0.58, "weak_reference"),
+        ]
+
+        selected = peer_median_candidates(approved, rejected)
+
+        self.assertEqual([candidate.ticker for candidate in selected], ["APP", "BEST"])
 
     def test_qualitative_equivalence_can_approve_peer_without_full_numeric_profile(self):
         report = build_peer_selection_report(

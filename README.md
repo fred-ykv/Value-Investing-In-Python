@@ -18,6 +18,10 @@ test, and reuse.
   DDM, and Growth-Tech valuation.
 * Scores stocks across valuation, growth, quality, debt, liquidity, and data
   confidence.
+* Reconstructs dated annual growth and margin signals with source, period,
+  formula, confidence, and input-level provenance.
+* Builds explainable peer groups and records every company, multiple, source,
+  and equivalence decision used in a relative-valuation median.
 * Produces Markdown reports with executive summary, valuation table, score by
   dimension, risk diagnostics, and a final recommendation.
 

@@ -8,6 +8,7 @@ from .comparables import ComparableReport
 
 BASIS_LABELS = {
     "approved_peer_medians": "medianas de pares aprovados",
+    "exploratory_peer_medians": "medianas exploratorias com referencias fracas",
     "sector_benchmark": "benchmark setorial de referencia",
     "unavailable": "comparacao indisponivel",
 }
@@ -18,6 +19,7 @@ def comparable_diagnostics_table(comparables: ComparableReport) -> dict[str, obj
         "basis": comparables.basis,
         "basis_label": comparable_basis_label(comparables),
         "benchmark_key": comparables.benchmark_key,
+        "peer_selection_confidence": comparables.peer_selection_confidence,
         "diagnostics": list(comparables.diagnostics),
     }
 

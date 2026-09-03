@@ -76,6 +76,34 @@ class PeerUniverseTests(unittest.TestCase):
         self.assertIn("CRS", tickers)
         self.assertIn("builtin_seed:metal_fabrication", result.sources)
 
+    def test_steel_and_software_platforms_have_distinct_auditable_universes(self):
+        steel = build_peer_universe(
+            {
+                "ticker": "NUE",
+                "sector": "Basic Materials",
+                "industry": "Steel",
+                "business_model": "steel_producer",
+            },
+            {},
+        )
+        software = build_peer_universe(
+            {
+                "ticker": "MSFT",
+                "sector": "Technology",
+                "industry": "Software - Infrastructure",
+                "business_model": "software_platform",
+            },
+            {},
+        )
+
+        self.assertEqual(
+            [candidate["ticker"] for candidate in steel.candidates],
+            ["STLD", "CMC", "CLF"],
+        )
+        self.assertIn("ORCL", [candidate["ticker"] for candidate in software.candidates])
+        self.assertIn("builtin_seed:steel_producer", steel.sources)
+        self.assertIn("builtin_seed:software_platform", software.sources)
+
 
 if __name__ == "__main__":
     unittest.main()

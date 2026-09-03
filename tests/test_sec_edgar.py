@@ -66,6 +66,11 @@ class SecEdgarClientTests(unittest.TestCase):
         self.assertEqual(snapshot.income_statement["revenue"].value, 1_000)
         self.assertEqual(snapshot.income_statement["revenue"].filing_date, date(2024, 2, 15))
         self.assertAlmostEqual(snapshot.market_data["revenue_growth"].value, 1_000 / 900 - 1)
+        self.assertAlmostEqual(snapshot.market_data["gross_margin"].value, 0.42)
+        self.assertEqual(
+            snapshot.market_data["gross_margin"].formula,
+            "annual_gross_profit_divided_by_annual_revenue",
+        )
         self.assertEqual(snapshot.market_data["shares"].value, 100)
         self.assertEqual(snapshot.balance_sheet["total_liabilities"].value, 600)
         self.assertEqual(snapshot.balance_sheet["total_debt"].value, 350)

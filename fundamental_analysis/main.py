@@ -20,10 +20,11 @@ from .didactic_reporting import apply_didactic_layer_to_html, apply_didactic_lay
 from .executive_reporting import executive_decision_summary
 from .financial_statements import FinancialStatements, build_statement_metrics, update_market_from_info
 from .html_reports import render_html_report
+from .historical_signals import derive_historical_signals, historical_signal_payload, merge_historical_signals
 from .metrics import MetricPack, build_metrics
 from .peer_discovery import discover_peer_candidates
 from .peer_enrichment import enrich_peer_candidates
-from .peer_reporting import append_peer_selection_to_html, append_peer_selection_to_markdown, peer_median_detail_table, peer_selection_visual_table
+from .peer_reporting import append_peer_selection_to_html, append_peer_selection_to_markdown, peer_equivalence_policy, peer_median_detail_table, peer_selection_visual_table
 from .peer_selection import PeerSelectionReport, build_peer_selection_report, merge_peer_medians
 from .reports import comparable_table, executive_summary, key_indicator_table, metric_lineage_table, peer_selection_table, render_markdown_report, risk_diagnostics, scenario_table, score_table, valuation_table
 from .reverse_dcf_reporting import append_reverse_dcf_to_html, append_reverse_dcf_to_markdown, reverse_dcf_table
@@ -54,6 +55,13 @@ class AnalysisResult:
 def analyze_ticker_from_inputs(ticker: str, income_statement: Mapping[str, object], balance_sheet: Mapping[str, object], cash_flow: Mapping[str, object], market_data: Mapping[str, object], info: Mapping[str, object] | None = None, source: str = "manual") -> AnalysisResult:
     statements = FinancialStatements(ticker, income_statement, balance_sheet, cash_flow, market_data, info or {}, source)
     statements = update_market_from_info(statements)
+    historical_signals = derive_historical_signals(
+        statements.market_data.get("cyclical_history", ())
+    )
+    analysis_market_data = merge_historical_signals(
+        statements.market_data,
+        historical_signals,
+    )
     statement_metrics = build_statement_metrics(statements)
     metrics = build_metrics(statement_metrics.values)
     profile_info = {**statements.info, "ticker": ticker.upper()}
@@ -70,13 +78,13 @@ def analyze_ticker_from_inputs(ticker: str, income_statement: Mapping[str, objec
     cyclical_normalization = normalize_cyclical_financials(
         company_type,
         values,
-        market_data.get("cyclical_history", ()),
+        analysis_market_data.get("cyclical_history", ()),
         profile_info,
-        market_data,
+        analysis_market_data,
     )
-    enrich_metrics_with_market_inputs(metrics, market_data, source)
-    capital = calculate_cost_of_capital(company_type, values, market_data, source)
-    growth_years = resolve_valuation_assumption("growth_years", market_data.get("growth_years"), DCF.default_growth_years, DCF.min_growth_years, DCF.max_growth_years, source)
+    enrich_metrics_with_market_inputs(metrics, analysis_market_data, source)
+    capital = calculate_cost_of_capital(company_type, values, analysis_market_data, source)
+    growth_years = resolve_valuation_assumption("growth_years", analysis_market_data.get("growth_years"), DCF.default_growth_years, DCF.min_growth_years, DCF.max_growth_years, source)
     if (
         cyclical_normalization.applied
         and growth_years.value is not None
@@ -92,10 +100,10 @@ def analyze_ticker_from_inputs(ticker: str, income_statement: Mapping[str, objec
             is_fallback=True,
             confidence=max(0.0, growth_years.confidence - 0.05),
         )
-    terminal_growth = resolve_valuation_assumption("terminal_growth", market_data.get("terminal_growth"), DCF.default_terminal_growth, DCF.min_terminal_growth, min(DCF.max_terminal_growth, capital.discount_rate - DCF.min_spread_wacc_terminal), source)
+    terminal_growth = resolve_valuation_assumption("terminal_growth", analysis_market_data.get("terminal_growth"), DCF.default_terminal_growth, DCF.min_terminal_growth, min(DCF.max_terminal_growth, capital.discount_rate - DCF.min_spread_wacc_terminal), source)
     ke = metric_value("ke", capital.cost_of_equity, "derived", capital.sources.get("cost_of_equity", "Custo do patrimonio calculado"), confidence=capital.component_confidences.get("cost_of_equity", capital.confidence))
     resolved_market_data = {
-        **market_data,
+        **analysis_market_data,
         "wacc": capital.discount_rate_metric(),
         "ke": ke,
         "growth_years": growth_years,
@@ -117,13 +125,13 @@ def analyze_ticker_from_inputs(ticker: str, income_statement: Mapping[str, objec
     valuations = build_valuations(company_type, values, metrics, resolved_market_data, source, dcf_input)
     scenarios = build_scenarios(company_type, values, metrics, resolved_market_data, source, build_valuations, capital.discount_rate)
     reverse_dcf = build_reverse_dcf(values, resolved_market_data, capital.discount_rate)
-    use_peer_yahoo = peer_yahoo_enrichment_enabled(market_data)
+    use_peer_yahoo = peer_yahoo_enrichment_enabled(analysis_market_data)
     peer_candidates = enrich_peer_candidates(
-        discover_peer_candidates({**profile_info, **market_data}, metrics, market_data),
+        discover_peer_candidates({**profile_info, **analysis_market_data}, metrics, analysis_market_data),
         use_yahoo=use_peer_yahoo,
     )
-    peer_selection = build_peer_selection_report({**profile_info, **market_data}, metrics, peer_candidates)
-    comparable_market_data = {**profile_info, **merge_peer_medians(market_data, peer_selection)}
+    peer_selection = build_peer_selection_report({**profile_info, **analysis_market_data}, metrics, peer_candidates)
+    comparable_market_data = {**profile_info, **merge_peer_medians(analysis_market_data, peer_selection)}
     comparables = build_comparable_report(company_type, values, metrics, comparable_market_data)
     score = compute_score(company_type, valuations, metrics, values["price"], comparables)
     cash_flow_reconciliation = reconcile_cash_flows(values)
@@ -175,6 +183,13 @@ def analyze_ticker_from_inputs(ticker: str, income_statement: Mapping[str, objec
         "executive_decision": executive_decision_summary(score, valuations),
         "valuation_table": valuation_table(valuations),
         "cost_of_capital": cost_of_capital_payload(capital),
+        "historical_signal_coverage": historical_signal_payload(
+            {
+                name: metrics.values[name]
+                for name in ("revenue_growth", "fcff_growth", "gross_margin")
+                if name in metrics.values
+            }
+        ),
         "cyclical_normalization": cyclical_normalization_payload(cyclical_normalization, metric_lineage),
         "cash_flow_reconciliation": cash_flow_reconciliation.payload(),
         "dcf_sensitivity_table": dcf_sensitivity_table(valuations),
@@ -182,6 +197,7 @@ def analyze_ticker_from_inputs(ticker: str, income_statement: Mapping[str, objec
         "reverse_dcf": reverse_dcf_table(reverse_dcf),
         "peer_selection_table": peer_selection_table(peer_selection),
         "peer_selection_visual_table": peer_selection_visual_table(peer_selection),
+        "peer_equivalence_policy": peer_equivalence_policy(),
         "peer_median_detail_table": peer_median_detail_table(peer_selection),
         "comparable_table": comparable_table(comparables),
         "comparable_diagnostics": comparable_diagnostics_table(comparables),
@@ -276,8 +292,29 @@ def _merge_cyclical_history(
             continue
         revenue = build_statement_metrics(item).values.get("revenue")
         if revenue is not None and revenue.period_end is not None:
-            combined[revenue.period_end] = item
+            existing = combined.get(revenue.period_end)
+            combined[revenue.period_end] = (
+                _merge_historical_statements(item, existing)
+                if existing is not None
+                else item
+            )
     return [combined[period] for period in sorted(combined)][-CYCLICAL.maximum_years :]
+
+
+def _merge_historical_statements(
+    primary: FinancialStatements,
+    fallback: FinancialStatements,
+) -> FinancialStatements:
+    """Prefer SEC fields while retaining complementary Yahoo observations."""
+    return FinancialStatements(
+        primary.ticker or fallback.ticker,
+        {**fallback.income_statement, **primary.income_statement},
+        {**fallback.balance_sheet, **primary.balance_sheet},
+        {**fallback.cash_flow, **primary.cash_flow},
+        {**fallback.market_data, **primary.market_data},
+        {**fallback.info, **primary.info},
+        primary.source,
+    )
 
 
 def enrich_metrics_with_market_inputs(metrics: MetricPack, market_data: Mapping[str, object], source: str) -> None:
