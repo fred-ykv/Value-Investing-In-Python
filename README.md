@@ -3,6 +3,14 @@ This tutorial covers fundamental analysis for US stocks.
 
 ## Modular Fundamental Analysis Toolkit
 
+### Arquivo historico e reproducao sem internet
+
+Use `--archive-dir` na coleta para guardar os precos efetivamente usados,
+os dados SEC, as entradas macro e os seis resultados de referencia. O comando
+`replay_historical_dataset.py` refaz os calculos sem consultar provedores,
+confere a versao do codigo e exige resultados identicos. Nao altera pesos.
+Consulte o [passo a passo de arquivo e replay](fundamental_analysis/HISTORICAL_REPLAY.md).
+
 This repository now also includes a modular Python toolkit for US stock
 fundamental analysis. The original notebooks are preserved, while the new
 package under `fundamental_analysis/` makes the analysis easier to audit,

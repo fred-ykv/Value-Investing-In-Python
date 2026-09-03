@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
-from dataclasses import replace
+from dataclasses import asdict, replace
 from datetime import date
 from pathlib import Path
 
@@ -15,6 +15,9 @@ from fundamental_analysis.benchmark_universe import (
     HISTORICAL_LIFECYCLE_CASES,
 )
 from fundamental_analysis.config import CALIBRATION, POINT_IN_TIME
+from fundamental_analysis.historical_archive import (
+    ArchiveWriter, RecordingMacroClient, RecordingPriceClient, RecordingSecClient,
+)
 from fundamental_analysis.historical_calibration import (
     evaluate_historical_outcomes,
     render_historical_calibration_markdown,
@@ -53,6 +56,14 @@ def parse_args() -> argparse.Namespace:
         default=POINT_IN_TIME.max_annual_filings_per_company,
     )
     parser.add_argument("--outdir", default="historical_calibration_outputs")
+    parser.add_argument(
+        "--archive-dir", default=None,
+        help="Diretorio NOVO para congelar todas as entradas e comprovar replay offline.",
+    )
+    parser.add_argument(
+        "--outcomes-available-through", type=date.fromisoformat, default=date.today(),
+        help="Data-limite dos resultados futuros, congelada no pacote de replay (AAAA-MM-DD).",
+    )
     parser.add_argument(
         "--universe",
         choices=("active", "expanded", "lifecycle"),
@@ -144,6 +155,11 @@ def main() -> int:
         else yahoo_client
     )
     macro_client = HistoricalMacroClient()
+    archive = ArchiveWriter(args.archive_dir) if args.archive_dir else None
+    if archive is not None:
+        sec_client = RecordingSecClient(archive, user_agent=args.sec_user_agent)
+        macro_client = RecordingMacroClient(archive)
+        price_client = RecordingPriceClient(archive, price_client)
     dataset = collect_benchmark_history(
         sec_client,
         price_client,
@@ -152,7 +168,22 @@ def main() -> int:
         start_year=args.start_year,
         end_year=args.end_year,
         max_filings_per_company=args.max_filings_per_company,
+        outcomes_available_through=args.outcomes_available_through,
     )
+    write_dataset_outputs(dataset, outdir, args.validation_start_year)
+    if archive is not None:
+        digest = archive.finish({
+            "cases": [asdict(case) for case in cases],
+            "start_year": args.start_year, "end_year": args.end_year,
+            "max_filings_per_company": args.max_filings_per_company,
+            "outcomes_available_through": args.outcomes_available_through,
+            "validation_start_year": args.validation_start_year,
+        }, outdir)
+        print(f"\nEntradas arquivadas em: {archive.directory}\nSHA-256 do manifesto: {digest}")
+    return 0 if dataset.observations else 1
+
+
+def write_dataset_outputs(dataset, outdir: Path, validation_start_year: int) -> None:
     write_historical_calibration_csv(
         dataset.observations,
         outdir / "historical_observations.csv",
@@ -165,7 +196,7 @@ def main() -> int:
     (outdir / "historical_calibration.md").write_text(calibration_markdown, encoding="utf-8")
     split_assumptions = replace(
         CALIBRATION,
-        validation_start_year=args.validation_start_year,
+        validation_start_year=validation_start_year,
     )
     out_of_sample = evaluate_out_of_sample_validation(
         dataset.observations,
@@ -185,7 +216,6 @@ def main() -> int:
     print(calibration_markdown)
     print()
     print(out_of_sample_markdown)
-    return 0 if dataset.observations else 1
 
 
 if __name__ == "__main__":
