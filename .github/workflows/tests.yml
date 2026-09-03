@@ -1,0 +1,49 @@
+name: Tests
+
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit-tests:
+    name: Offline tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.12", "3.14"]
+    env:
+      PYTHONHASHSEED: "0"
+      PYTHONUTF8: "1"
+      PYTHONNOUSERSITE: "1"
+      SEC_USER_AGENT: ""
+      TIINGO_API_KEY: ""
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Check Python syntax
+        run: python -S -m compileall -q fundamental_analysis scripts tests
+      - name: Install isolated test dependencies
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install --only-binary=:all: -r requirements-ci.txt
+          .venv/bin/python -m pip check
+      - name: Run offline regression suite
+        run: .venv/bin/python scripts/run_ci_tests.py

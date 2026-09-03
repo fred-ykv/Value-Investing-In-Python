@@ -1,5 +1,24 @@
 # Changelog
 
+## Automated offline regression checks
+
+- Added GitHub Actions checks for pull requests and pushes to master, plus
+  manual execution, on Python 3.10, 3.12, and 3.14.
+- Pinned official actions to commit SHAs, limited repository access to read,
+  disabled persisted checkout credentials, and bounded job duration.
+- Reused unittest and the controlled-data suite without the full notebook
+  dependency stack or Yahoo, SEC, or Tiingo credentials.
+- Added a minimal pinned CI dependency set in a fresh virtual environment;
+  preserved the real pandas fixture that validates historical split handling.
+- Made the tests directory an explicit package for portable unittest discovery.
+- Added a runner that rejects empty suites, skipped/expected-failure tests,
+  and Python socket access, including network errors caught by the application.
+- Added regression tests for the runner's failure paths and Portuguese job
+  summaries with explicit software-versus-financial-validation limitations.
+- Validated all 221 tests locally with zero skipped tests or network attempts.
+- Left production modules, financial formulas, score weights, recommendation
+  thresholds, production dependencies, and branch-protection settings unchanged.
+
 ## Historical signal and comparable-peer provenance
 
 - Added annual, like-for-like reconstruction for revenue growth, FCFF growth,
