@@ -3,9 +3,11 @@ from __future__ import annotations
 
 from dataclasses import asdict
 from datetime import date
+from math import isfinite
 from typing import Iterable, Mapping
 
-from .data_sources import MetricValue, get_mapping_value
+from .config import POINT_IN_TIME
+from .data_sources import MetricValue, get_mapping_value, safe_float
 from .financial_statements import FinancialStatements, build_statement_metrics
 
 
@@ -127,11 +129,17 @@ def _gross_margin(statements: FinancialStatements, period_end: date) -> MetricVa
         not gross_profit.is_available
         or not revenue.is_available
         or float(revenue.value) <= 0.0
+        or gross_profit.period_end != period_end
+        or revenue.period_end != period_end
+        or not _annual_duration(gross_profit)
+        or not _annual_duration(revenue)
+        or _conflicting_field((gross_profit, revenue), "period_start")
+        or _conflicting_field((gross_profit, revenue), "currency")
     ):
         return _unavailable_signal(
             "gross_margin",
             statements,
-            "Margem bruta exige lucro bruto e receita anual positiva no mesmo periodo.",
+            "Margem bruta exige lucro bruto e receita anual positiva no mesmo periodo e moeda.",
             period_end=period_end,
             inputs=(gross_profit, revenue),
         )
@@ -176,6 +184,11 @@ def _growth_signal(
         )
     current_value = float(current.value)
     prior_value = float(prior.value)
+    reason = _comparability_failure(name, current, prior, period_start, period_end)
+    if reason:
+        return _unavailable_from_inputs(
+            name, current, prior, reason, period_start, period_end, formula, observations
+        )
     if require_positive and (current_value <= 0.0 or prior_value <= 0.0):
         return _unavailable_from_inputs(
             name,
@@ -202,11 +215,53 @@ def _growth_signal(
     )
 
 
+def _annual_duration(metric: MetricValue) -> bool:
+    # Yahoo annual tables may omit the start date; known partial periods are rejected.
+    if metric.period_start is None:
+        return True
+    return metric.period_end is not None and (
+        POINT_IN_TIME.minimum_annual_comparative_gap_days
+        <= (metric.period_end - metric.period_start).days
+        <= POINT_IN_TIME.maximum_annual_comparative_gap_days
+    )
+
+
+def _conflicting_field(inputs: tuple[MetricValue, ...], field_name: str) -> bool:
+    return len({getattr(item, field_name) for item in inputs if getattr(item, field_name) is not None}) > 1
+
+
+def _comparability_failure(
+    name: str,
+    current: MetricValue,
+    prior: MetricValue,
+    period_start: date | None,
+    period_end: date,
+) -> str:
+    if period_start is None or not (
+        POINT_IN_TIME.minimum_annual_comparative_gap_days
+        <= (period_end - period_start).days
+        <= POINT_IN_TIME.maximum_annual_comparative_gap_days
+    ):
+        return "Crescimento indisponivel: intervalo entre os exercicios nao e anual comparavel."
+    if current.period_end != period_end or prior.period_end != period_start:
+        return "Crescimento indisponivel: insumos sem alinhamento ao periodo de cada exercicio."
+    if not _annual_duration(current) or not _annual_duration(prior):
+        return "Crescimento indisponivel: demonstrativo parcial nao e comparavel a um exercicio anual."
+    if _conflicting_field((current, prior), "currency"):
+        return "Crescimento indisponivel: os exercicios usam moedas diferentes."
+    if name == "fcff_growth" and current.formula != prior.formula:
+        return (
+            "Crescimento de FCFF indisponivel: bases de capital de giro diferentes "
+            "ou cobertura assimetrica entre os exercicios."
+        )
+    return ""
+
+
 def _derived_signal(
     name: str,
     value: float,
     inputs: tuple[MetricValue, ...],
-    period_start: date,
+    period_start: date | None,
     period_end: date,
     note: str,
     formula: str,
@@ -246,7 +301,7 @@ def _unavailable_from_inputs(
     current: MetricValue,
     prior: MetricValue,
     note: str,
-    period_start: date,
+    period_start: date | None,
     period_end: date,
     formula: str,
     observations: tuple[tuple[str, float], ...],
@@ -320,7 +375,8 @@ def _shared(metrics: tuple[MetricValue, ...], field_name: str) -> object:
 def _is_available(value: object) -> bool:
     if isinstance(value, MetricValue):
         return value.is_available
-    return value is not None
+    numeric = safe_float(value)
+    return numeric is not None and isfinite(numeric)
 
 
 def _is_undated_yahoo_profile(value: object) -> bool:

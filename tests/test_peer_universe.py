@@ -98,7 +98,7 @@ class PeerUniverseTests(unittest.TestCase):
 
         self.assertEqual(
             [candidate["ticker"] for candidate in steel.candidates],
-            ["STLD", "CMC", "CLF", "RS"],
+            ["STLD", "CMC", "CLF"],
         )
         self.assertIn("ORCL", [candidate["ticker"] for candidate in software.candidates])
         self.assertIn("builtin_seed:steel_producer", steel.sources)

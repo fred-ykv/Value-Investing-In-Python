@@ -1,4 +1,5 @@
 import unittest
+from dataclasses import replace
 from datetime import date
 
 from fundamental_analysis.data_sources import metric_value
@@ -56,6 +57,100 @@ def annual_statements(
 
 
 class HistoricalSignalTests(unittest.TestCase):
+    def positive_history(self, prior_end=date(2023, 12, 31)):
+        return [
+            annual_statements(
+                end,
+                revenue=revenue,
+                gross_profit=revenue * 0.4,
+                ebit=200,
+                tax=40,
+                depreciation=50,
+                capex=-80,
+                nwc_cash_effect=-20,
+            )
+            for end, revenue in ((prior_end, 1_000), (date(2024, 12, 31), 1_200))
+        ]
+
+    def test_rejects_missing_year_and_quarterly_gap(self):
+        for prior_end in (date(2022, 12, 31), date(2024, 9, 30)):
+            with self.subTest(prior_end=prior_end):
+                signals = derive_historical_signals(self.positive_history(prior_end))
+                for name in ("revenue_growth", "fcff_growth"):
+                    self.assertIsNone(signals[name].value)
+                    self.assertEqual(signals[name].confidence, 0.0)
+                    self.assertIn("intervalo", signals[name].note)
+
+    def test_accepts_52_and_53_week_annual_comparatives(self):
+        for prior_end in (date(2024, 1, 2), date(2023, 12, 26)):
+            with self.subTest(prior_end=prior_end):
+                signals = derive_historical_signals(self.positive_history(prior_end))
+                self.assertAlmostEqual(signals["revenue_growth"].value, 0.2)
+                self.assertAlmostEqual(signals["fcff_growth"].value, 0.0)
+
+    def test_rejects_known_partial_period_and_misaligned_gross_profit(self):
+        history = self.positive_history()
+        income = history[-1].income_statement
+        income["revenue"] = replace(income["revenue"], period_start=date(2024, 10, 1))
+        signals = derive_historical_signals(history)
+        self.assertIsNone(signals["revenue_growth"].value)
+        self.assertIsNone(signals["gross_margin"].value)
+        history = self.positive_history()
+        income = history[-1].income_statement
+        income["gross_profit"] = replace(income["gross_profit"], period_end=date(2023, 12, 31))
+        self.assertIsNone(derive_historical_signals(history)["gross_margin"].value)
+
+    def test_fcff_rejects_asymmetric_working_capital_bases(self):
+        for missing in (True, False):
+            with self.subTest(missing=missing):
+                history = self.positive_history()
+                prior_cf = history[0].cash_flow
+                cash_effect = prior_cf.pop("change_in_nwc_cash_effect")
+                if not missing:
+                    prior_cf["change_in_nwc"] = replace(
+                        cash_effect, name="change_in_nwc", value=20
+                    )
+                signal = derive_historical_signals(history)["fcff_growth"]
+                self.assertIsNone(signal.value)
+                self.assertIn("capital de giro", signal.note)
+                self.assertIn("current", dict(signal.input_observations))
+
+    def test_fcff_allows_symmetric_zero_nwc_with_fallback_label(self):
+        history = self.positive_history()
+        for statements in history:
+            statements.cash_flow.pop("change_in_nwc_cash_effect")
+        signal = derive_historical_signals(history)["fcff_growth"]
+        self.assertAlmostEqual(signal.value, 0.0)
+        self.assertTrue(signal.is_fallback)
+
+    def test_fcff_rejects_inputs_from_different_periods(self):
+        history = self.positive_history()
+        cf = history[-1].cash_flow
+        cf["capex"] = replace(cf["capex"], period_end=date(2023, 12, 31))
+        signal = derive_historical_signals(history)["fcff_growth"]
+        self.assertIsNone(signal.value)
+        self.assertIn("alinhamento", signal.note)
+
+    def test_rejects_conflicting_currencies(self):
+        history = self.positive_history()
+        for statements, currency in zip(history, ("EUR", "USD")):
+            income = statements.income_statement
+            income["revenue"] = replace(income["revenue"], currency=currency)
+        income = history[-1].income_statement
+        income["gross_profit"] = replace(income["gross_profit"], currency="EUR")
+        signals = derive_historical_signals(history)
+        self.assertIsNone(signals["revenue_growth"].value)
+        self.assertIsNone(signals["gross_margin"].value)
+
+    def test_nonfinite_manual_inputs_do_not_block_dated_evidence(self):
+        annual = derive_historical_signals(self.positive_history())["revenue_growth"]
+        for value in (float("nan"), float("inf"), "NaN", "Infinity", "missing"):
+            with self.subTest(value=value):
+                merged = merge_historical_signals(
+                    {"revenue_growth": value}, {"revenue_growth": annual}
+                )
+                self.assertEqual(merged["revenue_growth"], annual)
+
     def test_derives_dated_like_for_like_annual_signals(self):
         history = [
             annual_statements(

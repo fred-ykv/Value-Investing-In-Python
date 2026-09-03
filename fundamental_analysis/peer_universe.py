@@ -45,7 +45,6 @@ DEFAULT_SEED_UNIVERSES: dict[str, tuple[dict[str, object], ...]] = {
         {"ticker": "STLD", "sector": "Basic Materials", "industry": "Steel", "sic": "3312", "business_model": "steel_producer"},
         {"ticker": "CMC", "sector": "Basic Materials", "industry": "Steel", "sic": "3312", "business_model": "steel_producer"},
         {"ticker": "CLF", "sector": "Basic Materials", "industry": "Steel", "sic": "3312", "business_model": "steel_producer"},
-        {"ticker": "RS", "sector": "Basic Materials", "industry": "Steel", "sic": "5051", "business_model": "steel_producer"},
     ),
     "software_platform": (
         {"ticker": "MSFT", "sector": "Technology", "industry": "Software - Infrastructure", "sic": "7372", "business_model": "software_platform"},
