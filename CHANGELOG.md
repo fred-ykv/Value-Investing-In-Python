@@ -1,5 +1,28 @@
 # Changelog
 
+## Arquivo historico e replay offline
+
+- Adicionado --archive-dir ao coletor, sem modificar a chamada antiga quando
+  essa opcao nao e informada. Pacotes existentes nunca sao sobrescritos.
+- Arquivadas as janelas exatas de precos usadas no valuation, retorno e beta,
+  incluindo fechamentos ajustados, precos de valuation, identidade e fonte.
+- Congeladas as respostas SEC e macro efetivamente consumidas, inclusive
+  quando provenientes do cache, com objetos identificados por SHA-256.
+- Registrados universo, eventos terminais, datas, limite temporal, versao do
+  Python, hashes do codigo e os seis arquivos de referencia.
+- Adicionado replay em processo isolado, sem credenciais, acesso a cache vivo
+  ou fallback de rede. O bloqueio por auditoria Python inclui sockets,
+  processos externos e carregamento via ctypes; nao e um firewall do sistema.
+- Exigida igualdade integral do conteudo dos seis resultados, inclusive
+  scores, WACC/Ke, retornos, premissas, lineage e recomendacoes.
+- Adicionados testes de corrupcao, dados ausentes, mudanca de codigo,
+  divergencia de resultados e tentativas de rede mesmo quando capturadas.
+- Validados 236 testes locais. Piloto NUE/MSFT/JPM/RIVN com oito observacoes
+  reproduzido em processo isolado e em copia portatil: seis arquivos identicos,
+  zero erros e zero tentativas de rede, sem credenciais ou site-packages.
+- Mantidos pesos, formulas, thresholds, regras setoriais e universo existentes.
+  Reprodutibilidade nao autoriza recalibracao nem comprova desempenho financeiro.
+
 ## Automated offline regression checks
 
 - Added GitHub Actions checks for pull requests and pushes to master, plus
