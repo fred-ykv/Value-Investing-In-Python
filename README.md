@@ -137,15 +137,37 @@ valuation, scoring, and reporting into auditable Python modules.
 
 ### Tests
 
-Run the test suite:
+Run the same offline regression check used by GitHub Actions after installing
+the minimal test dependencies (no financial-service API credentials required):
 
 ```bash
-python -m unittest discover -s tests -v
+python -m pip install -r requirements-ci.txt
+python scripts/run_ci_tests.py
 ```
 
 The tests cover traditional industrial companies, big tech, banks/financials,
 negative-FCF companies, DCF sensitivity, zero-growth assumptions, report
 generation with metric lineage, and notebook adapter behavior.
+
+The `Tests` workflow runs on pull requests to `master`, pushes to `master`,
+and manual dispatch, using Python 3.10, 3.12, and 3.14 on Ubuntu. Open the PR's
+**Checks** tab or the repository's **Actions** tab to inspect the logs and the
+Portuguese job summary. Failed tests, empty discovery, skipped/expected-failure
+tests, and attempted Python socket access all produce a failed check, even
+when the application catches the network exception.
+
+CI uses a fresh virtual environment and pinned pandas dependencies for the
+historical-price DataFrame fixture. Package installation needs network access;
+the test phase uses controlled data only. Live-provider integration, installation
+of the full notebook dependency set, and economic validation remain separate
+checks; green CI does not prove
+valuation accuracy or authorize score recalibration. The Python socket audit hook is
+a regression guard, not an operating-system security sandbox.
+
+Actions are pinned to reviewed commit SHAs, use a read-only repository token,
+and do not receive financial-service credentials. Configuring these checks as
+mandatory merge requirements is a separate repository ruleset setting; this
+workflow does not change branch protection or merge automatically.
 
 ## Syllabus
 The organization of this tutorial falls into the following parts:
