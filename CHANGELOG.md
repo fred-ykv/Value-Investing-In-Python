@@ -1,5 +1,28 @@
 # Changelog
 
+## Evidencia lifecycle e diagnostico do benchmark arquivado
+
+- Documentada a rodada ativa congelada: 345 observacoes de 40 empresas,
+  325 aprovadas nos controles de dados e 20 reprovadas por dados criticos.
+  Replay com seis saidas identicas e zero tentativas de rede.
+- Explicitados vies de sobrevivencia, holdout ja inspecionado, fallbacks,
+  baixa discriminacao e cinco divergencias de datas terminais a reconciliar.
+- Adicionado coletor separado de evidencias Tiingo: respostas JSON completas
+  decodificadas, incluindo volume e ajustes quando fornecidos; CSV normalizado
+  apenas para series aprovadas nos controles de cobertura e identidade.
+- Registrados fonte, data de coleta, hashes de respostas e codigo, manifesto
+  e falhas parciais, sem cabecalhos de autenticacao ou texto de erro remoto.
+- Pacotes existentes nao sao sobrescritos. Respostas que refletem a chave
+  sao recusadas; campos ausentes nao sao inventados. Coleta completa nunca
+  marca reconciliacao economica ou elegibilidade para benchmark como aprovada.
+- Adicionado notebook Colab com pasta nova, chave oculta, verificacao de
+  integridade e ZIP privado com copia versionada do codigo. Sem instalacao
+  de dependencias ou alteracao do notebook de analise do usuario.
+- Adicionados testes offline para integridade, preservacao de campos,
+  credenciais, cobertura parcial, identidade, mudanca de codigo e exportacao.
+- Preservados todos os modulos financeiros, pesos, formulas, thresholds,
+  datas de eventos e cadastro dos provedores. Nenhum preco privado publicado.
+
 ## Arquivo historico e replay offline
 
 - Adicionado --archive-dir ao coletor, sem modificar a chamada antiga quando

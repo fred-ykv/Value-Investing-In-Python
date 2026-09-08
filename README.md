@@ -3,6 +3,17 @@ This tutorial covers fundamental analysis for US stocks.
 
 ## Modular Fundamental Analysis Toolkit
 
+### Evidencias de empresas retiradas da bolsa
+
+O [diagnostico de 345 observacoes](fundamental_analysis/BENCHMARK_ARCHIVED_345.md)
+confirma a reproducao offline, mas **nao autoriza recalibrar pesos**.
+Para a proxima etapa, abra o
+[notebook de evidencias Tiingo no Colab](https://colab.research.google.com/github/fred-ykv/Value-Investing-In-Python/blob/master/COLAB_LIFECYCLE_EVIDENCE.ipynb)
+e execute as quatro celulas em ordem. Ele preserva os precos e as respostas
+completas para reconciliar eventos terminais, sem alterar a analise atual.
+Mantenha a chave nos Segredos do Colab e o ZIP resultante privado.
+Coleta completa nao equivale a aprovacao economica dos dados.
+
 ### Arquivo historico e reproducao sem internet
 
 Use `--archive-dir` na coleta para guardar os precos efetivamente usados,
