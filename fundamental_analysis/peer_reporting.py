@@ -94,6 +94,8 @@ def peer_equivalence_policy() -> dict[str, object]:
         "minimum_evidence_weight": PEER_SELECTION.min_evidence_weight,
         "minimum_approved_peers": PEER_SELECTION.min_approved_peers,
         "minimum_data_confidence_for_median": PEER_ENRICHMENT.minimum_confidence_for_relative_valuation,
+        "confidence_reference_peer_count": PEER_SELECTION.confidence_reference_peer_count,
+        "confidence_maximum": PEER_SELECTION.confidence_maximum,
         "weights": {
             "sector": PEER_SELECTION.sector_weight,
             "industry": PEER_SELECTION.industry_weight,
@@ -171,9 +173,16 @@ def _peer_selection_markdown(peer_selection: PeerSelectionReport) -> str:
     lines = [
         "## Selecao visual de pares",
         "",
-        f"Resumo: **{approved} aprovados**, **{rejected} rejeitados**, **{median_count} multiplos com mediana utilizavel**. Confianca da selecao: **{peer_selection.confidence:.2f}**.",
+        f"Resumo: **{approved} aprovados**, **{rejected} rejeitados**, **{median_count} multiplos com mediana utilizavel**. Confianca da evidencia: **{peer_selection.confidence:.2f}** ({peer_selection.confidence_label}); isso mede cobertura e qualidade dos dados, nao probabilidade de acerto.",
         "",
         peer_selection.summary,
+        "",
+        (
+            f"Leitura da confianca: {peer_selection.confidence_label}. "
+            f"Tamanho da amostra {peer_selection.confidence_sample_size:.2f}; "
+            f"qualidade media dos dados {peer_selection.confidence_evidence_quality:.2f}. "
+            "A confianca mede a sustentacao da amostra, nao a probabilidade de o multiplo prever o valor correto."
+        ),
         "",
         (
             f"Regua: forte >= {PEER_SELECTION.strong_threshold:.2f}; "
@@ -219,17 +228,23 @@ def _peer_selection_html(peer_selection: PeerSelectionReport) -> str:
             "<h2>Selecao de pares</h2>",
             f"<p>{escape(str(peer_selection.summary))}</p>",
             (
-                '<p class="muted">Regua de equivalencia: '
+            '<p class="muted">Regua de equivalencia: '
                 f"forte &gt;= {PEER_SELECTION.strong_threshold:.2f}; "
                 f"aceitavel &gt;= {PEER_SELECTION.acceptable_threshold:.2f}; "
                 f"referencia fraca &gt;= {PEER_SELECTION.weak_threshold:.2f}; "
                 f"evidencia minima {PEER_SELECTION.min_evidence_weight:.2f}.</p>"
             ),
+            (
+                f'<p class="muted">Confianca da evidencia: {peer_selection.confidence:.2f} '
+                f'({escape(peer_selection.confidence_label)}). Tamanho da amostra: '
+                f'{peer_selection.confidence_sample_size:.2f}; qualidade media dos dados: '
+                f'{peer_selection.confidence_evidence_quality:.2f}. Nao e probabilidade de acerto.</p>'
+            ),
             '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin:12px 0 16px;">',
             _peer_summary_card("Aprovados", approved),
             _peer_summary_card("Rejeitados", rejected),
             _peer_summary_card("Multiplos com mediana", median_count),
-            _peer_summary_card("Confianca", f"{peer_selection.confidence:.2f}"),
+            _peer_summary_card("Confianca da evidencia", f"{peer_selection.confidence:.2f}"),
             "</div>",
             _peer_selection_table_html(visual_rows),
             "<h3>Multiplos usados na mediana</h3>",
@@ -307,3 +322,4 @@ def _html_table(headers: list[str], rows: list[list[str]]) -> str:
     for row in rows:
         body.append("<tr>" + "".join(f"<td>{value}</td>" for value in row) + "</tr>")
     return f"<table>{head}{''.join(body)}</table>"
+

@@ -33,6 +33,9 @@ class PeerSelectionReport:
     summary: str
     peer_median_counts: dict[str, int] = field(default_factory=dict)
     median_candidates: list[PeerCandidateResult] = field(default_factory=list)
+    confidence_sample_size: float = 0.0
+    confidence_evidence_quality: float = 0.0
+    confidence_label: str = "Sem amostra"
 
 
 MULTIPLE_FIELDS = (
@@ -63,7 +66,7 @@ def build_peer_selection_report(target_info: Mapping[str, object], target_metric
     median_candidates = peer_median_candidates(approved, rejected)
     medians = median_multiples(median_candidates)
     counts = median_multiple_counts(median_candidates) if medians else {}
-    confidence = peer_selection_confidence(approved, median_candidates)
+    confidence, size_score, evidence_quality, confidence_label = peer_selection_confidence_details(approved, median_candidates)
     return PeerSelectionReport(
         approved,
         rejected,
@@ -78,6 +81,9 @@ def build_peer_selection_report(target_info: Mapping[str, object], target_metric
         ),
         counts,
         median_candidates,
+        size_score,
+        evidence_quality,
+        confidence_label,
     )
 
 
@@ -205,12 +211,35 @@ def peer_median_candidates(approved: Sequence[PeerCandidateResult], rejected: Se
 
 
 def peer_selection_confidence(approved: Sequence[PeerCandidateResult], median_candidates: Sequence[PeerCandidateResult]) -> float:
-    approved_confidence = min(1.0, len(approved) / max(1, PEER_SELECTION.min_approved_peers))
-    if len(approved) >= PEER_SELECTION.min_approved_peers:
-        return approved_confidence
-    fallback_support = max(0, len(median_candidates) - len(approved))
-    weak_support = min(0.30, fallback_support * 0.15)
-    return min(0.85, approved_confidence + weak_support)
+    return peer_selection_confidence_details(approved, median_candidates)[0]
+
+
+def peer_selection_confidence_details(
+    approved: Sequence[PeerCandidateResult],
+    median_candidates: Sequence[PeerCandidateResult],
+) -> tuple[float, float, float, str]:
+    """Confidence describes evidence breadth, not probability of a correct valuation."""
+    candidates = list(median_candidates or approved)
+    count = len(candidates)
+    size_score = min(1.0, count / max(1, PEER_SELECTION.confidence_reference_peer_count))
+    evidence_quality = (
+        sum(max(0.0, min(1.0, candidate.data_confidence)) for candidate in candidates) / count
+        if candidates else 0.0
+    )
+    approved_ratio = len(approved) / count if count else 0.0
+    confidence = min(
+        PEER_SELECTION.confidence_maximum,
+        size_score * evidence_quality * approved_ratio,
+    )
+    if not candidates:
+        label = "Sem amostra"
+    elif count < PEER_SELECTION.confidence_reference_peer_count:
+        label = "Amostra estreita"
+    elif evidence_quality < 0.70:
+        label = "Evidencia limitada"
+    else:
+        label = "Amostra adequada"
+    return confidence, size_score, evidence_quality, label
 
 
 def median_multiple_counts(approved: Sequence[PeerCandidateResult]) -> dict[str, int]:
@@ -291,13 +320,13 @@ def merge_peer_medians(market_data: Mapping[str, object], peer_selection: PeerSe
 def peer_selection_summary(approved: Sequence[PeerCandidateResult], rejected: Sequence[PeerCandidateResult], confidence: float, has_medians: bool = False, median_candidate_count: int | None = None) -> str:
     if not approved:
         if has_medians:
-            return f"Nenhum par plenamente aprovado, mas {median_candidate_count or 0} referencias fracas permitiram uma mediana exploratoria; use com baixa confianca."
-        return "Nenhum par aprovado pelo filtro de equivalencia."
+            return f"Nenhum par plenamente aprovado, mas {median_candidate_count or 0} referencias fracas permitiram uma mediana exploratoria; confianca da evidencia {confidence:.2f}, use com baixa confianca."
+        return f"Nenhum par aprovado pelo filtro de equivalencia; confianca da evidencia {confidence:.2f}."
     if len(approved) < PEER_SELECTION.min_approved_peers:
         if has_medians:
-            return f"{len(approved)} par aprovado e referencias fracas completaram uma mediana exploratoria; confianca rebaixada para {confidence:.2f}."
-        return f"{len(approved)} par aprovado, abaixo do minimo de {PEER_SELECTION.min_approved_peers}; mediana de pares nao foi usada."
-    return f"{len(approved)} pares aprovados, {len(rejected)} rejeitados; confianca da selecao {confidence:.2f}."
+            return f"{len(approved)} par aprovado e referencias fracas completaram uma mediana exploratoria; confianca da evidencia rebaixada para {confidence:.2f}."
+        return f"{len(approved)} par aprovado, abaixo do minimo de {PEER_SELECTION.min_approved_peers}; mediana de pares nao foi usada e a confianca da evidencia e {confidence:.2f}."
+    return f"{len(approved)} pares aprovados, {len(rejected)} rejeitados; confianca da evidência {confidence:.2f} (nao e probabilidade de acerto)."
 
 
 def normalized_text(value: object) -> str:
@@ -313,3 +342,4 @@ def first_present(values: Mapping[str, object], *keys: str) -> object:
         if values.get(key) is not None:
             return values[key]
     return None
+

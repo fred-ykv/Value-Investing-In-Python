@@ -198,6 +198,15 @@ def analyze_ticker_from_inputs(ticker: str, income_statement: Mapping[str, objec
         "peer_selection_table": peer_selection_table(peer_selection),
         "peer_selection_visual_table": peer_selection_visual_table(peer_selection),
         "peer_equivalence_policy": peer_equivalence_policy(),
+        "peer_selection_confidence_audit": {
+            "value": peer_selection.confidence,
+            "label": peer_selection.confidence_label,
+            "sample_size_score": peer_selection.confidence_sample_size,
+            "evidence_quality": peer_selection.confidence_evidence_quality,
+            "approved_count": len(peer_selection.approved),
+            "median_candidate_count": len(peer_selection.median_candidates),
+            "note": "Nao e probabilidade de acerto; mede cobertura e qualidade da evidencia dos pares.",
+        },
         "peer_median_detail_table": peer_median_detail_table(peer_selection),
         "comparable_table": comparable_table(comparables),
         "comparable_diagnostics": comparable_diagnostics_table(comparables),
@@ -439,3 +448,4 @@ def resolve_valuation_assumption(name: str, value: object, default: float, lower
         bounded = clamp(numeric, lower, upper)
         return metric_value(name, bounded, source, "Premissa informada" if bounded == numeric else f"Premissa limitada de {numeric:.2%} para {bounded:.2%}", is_fallback=bounded != numeric)
     return metric_value(name, clamp(default, lower, upper), "fallback", "Premissa padrao de config.py", is_fallback=True)
+
