@@ -298,7 +298,8 @@ def _merge_cyclical_history(
                 if existing is not None
                 else item
             )
-    return [combined[period] for period in sorted(combined)][-CYCLICAL.maximum_years :]
+    # Apply the window only after fiscal identities have been resolved.
+    return [combined[period] for period in sorted(combined)]
 
 
 def _merge_historical_statements(
@@ -311,7 +312,14 @@ def _merge_historical_statements(
         {**fallback.income_statement, **primary.income_statement},
         {**fallback.balance_sheet, **primary.balance_sheet},
         {**fallback.cash_flow, **primary.cash_flow},
-        {**fallback.market_data, **primary.market_data},
+        {
+            **fallback.market_data,
+            **primary.market_data,
+            "cyclical_source_statements": (
+                *fallback.market_data.get("cyclical_source_statements", (fallback,)),
+                *primary.market_data.get("cyclical_source_statements", (primary,)),
+            ),
+        },
         {**fallback.info, **primary.info},
         primary.source,
     )

@@ -175,6 +175,10 @@ class CashFlowReconciliationAssumptions:
 
 @dataclass(frozen=True)
 class CyclicalNormalizationAssumptions:
+    annual_period_min_days: int = 350
+    annual_period_max_days: int = 380
+    fiscal_date_tolerance_days: int = 7
+    fiscal_value_relative_tolerance: float = 0.005
     minimum_years: int = 5
     target_years: int = 8
     maximum_years: int = 10

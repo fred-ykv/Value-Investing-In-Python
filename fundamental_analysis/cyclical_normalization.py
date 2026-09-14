@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+import json
+from dataclasses import asdict, dataclass, replace
 from datetime import date
 from statistics import mean
 from typing import Iterable, Mapping
@@ -25,6 +26,14 @@ class CyclicalPeriod:
     confidence: float
     fcff_uses_nwc_fallback: bool
     source_document: str = ""
+    period_start: date | None = None
+    source: str = ""
+    currency: str | None = None
+    source_url: str | None = None
+    filing_date: date | None = None
+    identity_evidence: str = ""
+    source_observations: tuple[str, ...] = ()
+    ticker: str = ""
 
 
 @dataclass(frozen=True)
@@ -284,9 +293,13 @@ def build_cyclical_periods(
 ) -> tuple[tuple[CyclicalPeriod, ...], tuple[str, ...]]:
     if not isinstance(history, Iterable) or isinstance(history, (str, bytes, Mapping)):
         return (), ()
-    by_period: dict[date, CyclicalPeriod] = {}
+    candidates: list[CyclicalPeriod] = []
     warnings: list[str] = []
-    for statements in history:
+    expanded = []
+    for item in history:
+        if isinstance(item, FinancialStatements):
+            expanded.extend(item.market_data.get("cyclical_source_statements", (item,)))
+    for statements in expanded:
         if not isinstance(statements, FinancialStatements):
             continue
         values = build_statement_metrics(statements).values
@@ -294,6 +307,7 @@ def build_cyclical_periods(
         revenue = _number(revenue_metric)
         period_end = revenue_metric.period_end or _period_end(values)
         if revenue is None or revenue <= 0 or period_end is None:
+            warnings.append("Registro sem receita/data valida excluido da normalizacao.")
             continue
         ebit = _number(values.get("ebit"))
         net_income = _number(values.get("net_income"))
@@ -331,9 +345,23 @@ def build_cyclical_periods(
                 and "nwc_fallback" in fcff_metric.formula
             ),
             source_document=revenue_metric.source_document or statements.source,
+            period_start=revenue_metric.period_start,
+            source=revenue_metric.source,
+            currency=revenue_metric.currency,
+            source_url=revenue_metric.source_url,
+            filing_date=revenue_metric.filing_date,
+            ticker=statements.ticker,
         )
-        by_period[period_end] = period
-    ordered = tuple(sorted(by_period.values(), key=lambda item: item.period_end))
+        period_type = str(statements.info.get("period_type", "annual")).lower()
+        duration = (period_end - period.period_start).days + 1 if period.period_start else None
+        if period_type not in {"annual", "fy"} or revenue_metric.basis.lower() in {"ttm", "quarterly", "transition"}:
+            warnings.append("Periodo nao anual em quarentena: " + _period_snapshot(period))
+        elif duration is not None and not assumptions.annual_period_min_days <= duration <= assumptions.annual_period_max_days:
+            warnings.append("Duracao nao anual em quarentena: " + _period_snapshot(period))
+        else:
+            candidates.append(period)
+    ordered, identity_warnings = _resolve_fiscal_periods(candidates, assumptions)
+    warnings.extend(identity_warnings)
     if len(ordered) > assumptions.maximum_years:
         ordered = ordered[-assumptions.maximum_years :]
     if ordered:
@@ -341,6 +369,78 @@ def build_cyclical_periods(
         if expected_span > len(ordered) + 1:
             warnings.append("O historico anual possui lacunas relevantes dentro da janela do ciclo.")
     return ordered, tuple(warnings)
+
+
+def _period_snapshot(period: CyclicalPeriod) -> str:
+    return json.dumps(
+        {key: value for key, value in asdict(period).items() if key != "source_observations"},
+        sort_keys=True, default=str, ensure_ascii=True,
+    )
+
+
+def _same_fiscal_period(left: CyclicalPeriod, right: CyclicalPeriod, assumptions: CyclicalNormalizationAssumptions) -> bool:
+    if abs((left.period_end - right.period_end).days) > assumptions.fiscal_date_tolerance_days:
+        return False
+    if left.currency != right.currency:
+        return False
+    if left.period_start and right.period_start:
+        return abs((left.period_start - right.period_start).days) <= assumptions.fiscal_date_tolerance_days
+    # An annual provider without start dates needs two matching financial anchors.
+    if left.net_margin is None or right.net_margin is None:
+        return False
+    return all(
+        math.isclose(a, b, rel_tol=assumptions.fiscal_value_relative_tolerance, abs_tol=1e-9)
+        for a, b in (
+            (left.revenue, right.revenue),
+            (left.revenue * left.net_margin, right.revenue * right.net_margin),
+        )
+    )
+
+
+def _resolve_fiscal_periods(candidates: list[CyclicalPeriod], assumptions: CyclicalNormalizationAssumptions) -> tuple[tuple[CyclicalPeriod, ...], tuple[str, ...]]:
+    if len({p.ticker for p in candidates}) > 1:
+        return (), ("Historico com emissores distintos em quarentena: " + " | ".join(sorted(_period_snapshot(p) for p in candidates)),)
+    candidates = list({_period_snapshot(p): p for p in candidates}.values())
+    groups: list[list[CyclicalPeriod]] = []
+    for period in sorted(candidates, key=lambda p: (p.period_end, _period_snapshot(p))):
+        # Nearby annual endpoints may describe overlapping or transitional periods.
+        # Connected groups are resolved pairwise to avoid tolerance chaining.
+        previous = groups[-1][-1] if groups else None
+        overlaps = (
+            previous is not None
+            and period.period_start is not None
+            and previous.period_start is not None
+            and (previous.period_end - period.period_start).days >= assumptions.fiscal_date_tolerance_days
+        )
+        if previous is not None and (
+            (period.period_end - previous.period_end).days < assumptions.annual_period_min_days
+            or overlaps
+        ):
+            groups[-1].append(period)
+        else:
+            groups.append([period])
+    resolved = []
+    warnings = []
+    for group in groups:
+        snapshots = tuple(sorted(set(_period_snapshot(p) for p in group)))
+        if any(not _same_fiscal_period(a, b, assumptions) for i, a in enumerate(group) for b in group[i + 1:]):
+            warnings.append("Identidade fiscal ambigua; grupo em quarentena: " + " | ".join(snapshots))
+            continue
+        selected = max(group, key=lambda p: (
+            p.source.startswith("sec_edgar"),
+            p.period_start is not None,
+            p.filing_date or date.min,
+            p.confidence,
+            _period_snapshot(p),
+        ))
+        evidence = "Intervalo anual informado" if selected.period_start else "Fonte anual sem data inicial; duracao nao comprovada"
+        if len(snapshots) > 1:
+            evidence += "; fontes reconciliadas por datas e/ou receita e lucro; prioridade SEC"
+            warnings.append(f"Fontes reconciliadas em um exercicio: {selected.period_end}; {len(snapshots)} observacoes preservadas.")
+        if selected.period_start is None:
+            warnings.append(f"Duracao anual inferida da fonte em {selected.period_end}; inicio nao informado.")
+        resolved.append(replace(selected, identity_evidence=evidence, source_observations=snapshots))
+    return tuple(resolved), tuple(sorted(set(warnings)))
 
 
 def _normalization_confidence(
