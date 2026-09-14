@@ -314,6 +314,8 @@ class PeerSelectionAssumptions:
     margin_weight: float = 0.08
     leverage_weight: float = 0.04
     min_evidence_weight: float = 0.50
+    confidence_reference_peer_count: int = 6
+    confidence_maximum: float = 0.85
 
 
 @dataclass(frozen=True)
@@ -505,3 +507,4 @@ DATA_SOURCE_CONFIDENCE = {
     "fallback": 0.50,
     "missing": 0.00,
 }
+
