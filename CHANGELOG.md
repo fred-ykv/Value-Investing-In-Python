@@ -1,5 +1,16 @@
 # Changelog
 
+## PR66 - Preflight unificado de cobertura do benchmark
+
+- Adicionado preflight fail-closed que enumera os 50 casos do manifesto e
+  cruza preços, fundamentos, macro, identidade de grupo e eventos lifecycle.
+- Geradas matrizes JSON e Markdown com status e motivo de cada bloqueio.
+- Impedida a execução do benchmark quando a cobertura ou a reconciliação
+  econômica forem insuficientes.
+- Detectada e exposta a divergência entre os grupos reais do cadastro e os
+  totais declarados no manifesto, sem corrigi-la silenciosamente.
+- Nenhum cálculo, peso, fórmula ou limiar foi alterado.
+
 ## PR65 - Manifesto experimental do backtest historico
 
 - Congelado o universo, as datas, os horizontes, os benchmarks, as regras de
