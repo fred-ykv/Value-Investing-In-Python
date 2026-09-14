@@ -18,6 +18,7 @@ from .data_sources import MetricValue, YahooFinanceClient, clamp, metric_value, 
 from .dcf_sensitivity_reporting import append_dcf_sensitivity_to_html, append_dcf_sensitivity_to_markdown, dcf_sensitivity_table
 from .didactic_reporting import apply_didactic_layer_to_html, apply_didactic_layer_to_markdown, didactic_summary_table
 from .executive_reporting import executive_decision_summary
+from .decision_consistency import audit_decision_consistency, append_decision_consistency_to_html, append_decision_consistency_to_markdown
 from .financial_statements import FinancialStatements, build_statement_metrics, update_market_from_info
 from .html_reports import render_html_report
 from .historical_signals import derive_historical_signals, historical_signal_payload, merge_historical_signals
@@ -136,6 +137,8 @@ def analyze_ticker_from_inputs(ticker: str, income_statement: Mapping[str, objec
     score = compute_score(company_type, valuations, metrics, values["price"], comparables)
     cash_flow_reconciliation = reconcile_cash_flows(values)
     metric_lineage = {**values, **metrics.values}
+    decision_risks = risk_diagnostics(score, valuations, metric_lineage)
+    decision_consistency = audit_decision_consistency(score.recommendation, scenarios, decision_risks)
     markdown = render_markdown_report(ticker, score, valuations, metric_lineage, scenarios, comparables, None)
     markdown = append_peer_selection_to_markdown(markdown, peer_selection)
     markdown = append_comparable_diagnostics_to_markdown(markdown, comparables)
@@ -145,6 +148,7 @@ def analyze_ticker_from_inputs(ticker: str, income_statement: Mapping[str, objec
     markdown = append_dcf_sensitivity_to_markdown(markdown, valuations)
     markdown = append_reverse_dcf_to_markdown(markdown, reverse_dcf)
     markdown = apply_didactic_layer_to_markdown(markdown, score, metric_lineage, valuations)
+    markdown = append_decision_consistency_to_markdown(markdown, decision_consistency)
     html = render_html_report(ticker, score, valuations, metric_lineage, scenarios, comparables, None)
     html = append_peer_selection_to_html(html, peer_selection)
     html = append_comparable_diagnostics_to_html(html, comparables)
@@ -154,6 +158,7 @@ def analyze_ticker_from_inputs(ticker: str, income_statement: Mapping[str, objec
     html = append_dcf_sensitivity_to_html(html, valuations)
     html = append_reverse_dcf_to_html(html, reverse_dcf)
     html = apply_didactic_layer_to_html(html, score, metric_lineage, valuations)
+    html = append_decision_consistency_to_html(html, decision_consistency)
     html = apply_visual_polish_to_html(html, score.recommendation)
     report = {
         "company_profile": {
@@ -222,6 +227,7 @@ def analyze_ticker_from_inputs(ticker: str, income_statement: Mapping[str, objec
         ],
         "metric_lineage_table": metric_lineage_table(metric_lineage),
         "risk_diagnostics": risk_diagnostics(score, valuations, metric_lineage),
+        "decision_consistency": decision_consistency.payload(),
         "didactic_summary": didactic_summary_table(score, metric_lineage, valuations),
         "recommendation": score.recommendation,
         "markdown": markdown,
