@@ -161,7 +161,9 @@ class PeerSelectionTests(unittest.TestCase):
             ],
         )
 
-        self.assertEqual(report.confidence, 0.5)
+        self.assertLess(report.confidence, 0.20)
+        self.assertEqual(report.confidence_label, "Amostra estreita")
+        self.assertAlmostEqual(report.confidence_sample_size, 1 / 6)
         self.assertEqual(report.peer_medians, {})
         self.assertIn("abaixo do minimo", report.summary)
 
@@ -272,3 +274,4 @@ class PeerSelectionTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
