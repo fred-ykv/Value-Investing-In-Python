@@ -1,5 +1,17 @@
 # Changelog
 
+## PR60 - Evidencia patrimonial de divida no point-in-time
+
+- Corrigida a regra de completude de `total_debt`: despesa de juros isolada nao
+  e mais tratada como prova de saldo de divida no encerramento.
+- Mantida a protecao contra falso zero quando existe evidencia patrimonial de
+  divida. O fallback continua com confianca reduzida e alerta para revisao de
+  notas de divida e arrendamentos.
+- A correcao recupera observacoes historicas como a NEWR, cujos filings SEC
+  informam ausencia de divida pendente apesar de pequena despesa de juros.
+- Adicionado teste de regressao. Nenhum peso, formula, threshold ou premissa
+  de valuation foi alterado.
+
 ## PR59 - Negociabilidade historica e quarentena auditavel
 
 - Separadas suspensao de negociacao, ultima linha elegivel e data efetiva

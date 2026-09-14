@@ -15,6 +15,18 @@ na data da aquisicao. Volume ausente nao e convertido para zero.
 
 ## Arquitetura e controles
 
+### Completude da divida historica
+
+O campo `total_debt` somente recebe valor positivo quando ha um conceito
+patrimonial de divida ou de obrigacao financeira no filing ancorado. Uma
+despesa de juros na demonstracao de resultados, sozinha, nao determina o
+saldo devedor no encerramento e pode estar relacionada a arrendamentos,
+descontos ou outros itens. Nessa situacao o sistema pode usar o fallback
+conservador de divida zero com confianca reduzida e alerta explicito; isso nao
+equivale a afirmar que a empresa nunca teve divida. Esse criterio evita tanto
+inventar saldo quanto bloquear empresas que a SEC descreve como sem divida
+pendente.
+
 1. `price_eligibility.py`: regras revisadas, vinculadas a ticker, CIK, classe,
    identificador cadastrado, evento e documento SEC. A ligacao entre SEC e
    Tiingo e curada pelo projeto; nao e certificacao do fornecedor para CIK

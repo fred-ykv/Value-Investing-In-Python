@@ -658,7 +658,7 @@ class SecEdgarClientTests(unittest.TestCase):
         )
         self.assertEqual(debt.confidence, client.assumptions.zero_debt_fallback_confidence)
 
-    def test_does_not_assume_zero_debt_when_interest_evidence_exists(self):
+    def test_interest_alone_does_not_block_conservative_zero_debt_fallback(self):
         payload = deepcopy(company_facts_fixture())
         gaap = payload["facts"]["us-gaap"]
         gaap.pop("LongTermDebt")
@@ -675,7 +675,10 @@ class SecEdgarClientTests(unittest.TestCase):
             )
             snapshot = client.build_snapshot("TEST", date(2024, 2, 16))
 
-        self.assertNotIn("total_debt", snapshot.balance_sheet)
+        debt = snapshot.balance_sheet["total_debt"]
+        self.assertEqual(debt.value, 0.0)
+        self.assertTrue(debt.is_fallback)
+        self.assertIn("juros isolada", debt.note)
 
     def test_discloses_operating_lease_without_treating_it_as_financial_debt(self):
         payload = deepcopy(company_facts_fixture())

@@ -1386,8 +1386,9 @@ def _complete_total_debt(
             0.0,
             "sec_edgar_derived",
             "Aproximacao conservadora de divida zero: o filing ancora nao apresenta "
-            "conceito padronizado de divida nem despesa financeira positiva. Revisar "
-            "manualmente notas de divida e arrendamentos antes de uma decisao."
+            "conceito patrimonial padronizado de divida. Despesa de juros isolada "
+            "nao foi tratada como saldo de divida; revisar manualmente notas de "
+            "divida e arrendamentos antes de uma decisao."
             + lease_note,
             source_url=source_url,
             source_document=f"SEC EDGAR {anchor.form} {anchor.accession_number}",
@@ -1441,29 +1442,12 @@ def _anchor_financing_evidence(
         anchor,
         source_url,
     )
-    interest = _select_metric(
-        payload,
-        "interest_evidence",
-        _FactSpec(
-            (
-                "InterestExpenseNonOperating",
-                "InterestExpenseNonoperating",
-                "InterestAndDebtExpense",
-                "InterestExpense",
-                "InterestExpenseDebt",
-                "InterestExpenseDebtExcludingAmortization",
-            ),
-            ("USD",),
-            True,
-        ),
-        anchor,
-        source_url,
-    )
     evidence: list[str] = []
     if debt.is_available and abs(float(debt.value)) > 0.0:
         evidence.append(debt.formula or "debt_evidence")
-    if interest.is_available and abs(float(interest.value)) > 0.0:
-        evidence.append(interest.formula or "interest_evidence")
+    # Juros isolados nao provam saldo de divida no encerramento. Eles podem
+    # refletir arrendamentos, descontos, outros passivos financeiros ou itens
+    # que nao devem ser usados como divida sem um ajuste simetrico no FCFF.
     return tuple(evidence)
 
 
