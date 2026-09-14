@@ -5,13 +5,14 @@ from __future__ import annotations
 import calendar
 import csv
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Protocol
 
 from .benchmark_universe import HistoricalLifecycleEvent
 from .config import POINT_IN_TIME, PointInTimeAssumptions
+from .price_eligibility import apply_price_eligibility
 
 
 @dataclass(frozen=True)
@@ -19,6 +20,7 @@ class PricePoint:
     day: date
     adjusted_close: float
     raw_close: float | None = None
+    volume: float | None = None
 
     @property
     def valuation_close(self) -> float:
@@ -32,6 +34,7 @@ class PriceSeries:
     source: str
     security_id: str = ""
     issuer_cik: str = ""
+    input_evidence_sha256: str = ""
 
     def between(self, start: date, end: date) -> "PriceSeries":
         return PriceSeries(
@@ -40,6 +43,7 @@ class PriceSeries:
             self.source,
             self.security_id,
             self.issuer_cik,
+            self.input_evidence_sha256,
         )
 
 
@@ -64,6 +68,10 @@ class CsvHistoricalPriceClient:
     def __init__(self, path: str | Path):
         self.path = Path(path)
         self._series = self._load()
+        from .benchmark_universe import HISTORICAL_LIFECYCLE_CASES
+        if set(self._series) & {case.ticker for case in HISTORICAL_LIFECYCLE_CASES}:
+            from .lifecycle_evidence import reconcile_csv_evidence
+            self._series = reconcile_csv_evidence(self.path, self._series)
 
     def _load(self) -> dict[str, PriceSeries]:
         by_ticker: dict[str, list[PricePoint]] = {}
@@ -201,6 +209,7 @@ class PriceOutcome:
     lifecycle_event_date: date | None = None
     terminal_value_per_share: float | None = None
     lifecycle_source_url: str = ""
+    price_eligibility_audit: dict = field(default_factory=dict)
 
 
 class YFinanceHistoricalPriceClient:
@@ -272,7 +281,9 @@ def calculate_price_outcome(
     target_end = add_months(as_of, assumptions.forward_horizon_months)
     lookback_start = add_months(as_of, -assumptions.beta_lookback_months) - timedelta(days=10)
     fetch_end = target_end + timedelta(days=assumptions.price_end_max_lag_days + 2)
-    stock = normalize_price_series(provider.fetch_series(ticker, lookback_start, fetch_end))
+    raw_stock = provider.fetch_series(ticker, lookback_start, fetch_end)
+    stock, price_audit = apply_price_eligibility(raw_stock, ticker, lifecycle_event)
+    stock = normalize_price_series(stock)
     benchmark = normalize_price_series(provider.fetch_series(benchmark_ticker, lookback_start, fetch_end))
     if expected_cik is not None:
         cik_candidate = str(expected_cik).strip()
@@ -306,7 +317,7 @@ def calculate_price_outcome(
         lifecycle_event is not None
         and lifecycle_event.effective_date <= target_end
     ):
-        return _calculate_lifecycle_outcome(
+        return replace(_calculate_lifecycle_outcome(
             ticker,
             benchmark_ticker,
             as_of,
@@ -317,7 +328,7 @@ def calculate_price_outcome(
             benchmark_start,
             lifecycle_event,
             assumptions,
-        )
+        ), price_eligibility_audit=price_audit)
     stock_end = _first_on_or_after(
         stock,
         target_end,
@@ -365,6 +376,7 @@ def calculate_price_outcome(
         beta_observations=beta_observations,
         source=stock.source + ";" + benchmark.source,
         stock_terminal_date=stock_end.day,
+        price_eligibility_audit=price_audit,
     )
 
 
@@ -475,7 +487,7 @@ def normalize_price_series(series: PriceSeries) -> PriceSeries:
         adjusted = float(point.adjusted_close)
         raw = float(point.raw_close) if point.raw_close is not None else None
         if math.isfinite(adjusted) and adjusted > 0 and (raw is None or math.isfinite(raw) and raw > 0):
-            by_day[point.day] = PricePoint(point.day, adjusted, raw)
+            by_day[point.day] = PricePoint(point.day, adjusted, raw, point.volume)
     points = tuple(by_day[day] for day in sorted(by_day))
     if not points:
         raise LookupError(f"Serie historica vazia para {series.ticker}")
@@ -485,6 +497,7 @@ def normalize_price_series(series: PriceSeries) -> PriceSeries:
         series.source,
         series.security_id,
         series.issuer_cik,
+        series.input_evidence_sha256,
     )
 
 

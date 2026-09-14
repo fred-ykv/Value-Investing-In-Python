@@ -5,13 +5,15 @@ from __future__ import annotations
 import csv
 import json
 import math
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import date
 from pathlib import Path
 from statistics import mean
 from typing import Callable, Iterable, TypeVar
 
 from .config import CALIBRATION, CalibrationAssumptions
+from .benchmark_universe import HISTORICAL_LIFECYCLE_CASES
+from .price_eligibility import valid_price_eligibility_audit
 
 
 _MappingValue = TypeVar("_MappingValue")
@@ -132,6 +134,7 @@ class HistoricalCalibrationObservation:
     stock_terminal_date: date | None = None
     terminal_value_per_share: float | None = None
     lifecycle_source_url: str = ""
+    price_eligibility_audit: dict = field(default_factory=dict)
     dimension_valuation_score: float | None = None
     dimension_valuation_confidence: float | None = None
     dimension_growth_score: float | None = None
@@ -190,8 +193,24 @@ class HistoricalCalibrationObservation:
         return self.excess_return is not None and self.max_drawdown is not None
 
     @property
+    def has_valid_price_eligibility(self) -> bool:
+        if (self.lifecycle_event_type or self.universe_status != "active"
+                or any(case.ticker == self.ticker or case.cik == self.security_cik
+                       for case in HISTORICAL_LIFECYCLE_CASES)):
+            if not valid_price_eligibility_audit(
+                self.price_eligibility_audit, self.ticker, self.security_cik, self.stock_terminal_date,
+            ):
+                return False
+            event = self.price_eligibility_audit["identity"]["event"]
+            if (self.lifecycle_event_type != event["event_type"]
+                    or self.lifecycle_event_date is None
+                    or self.lifecycle_event_date.isoformat() != event["effective_date"]):
+                return False
+        return True
+
+    @property
     def is_point_in_time_valid(self) -> bool:
-        if not self.point_in_time_validated:
+        if not self.point_in_time_validated or not self.has_valid_price_eligibility:
             return False
         if self.latest_filing_date is not None and self.latest_filing_date > self.as_of:
             return False
@@ -266,6 +285,12 @@ def evaluate_historical_outcomes(
     monotonic_ratio = monotonic_steps / possible_steps if possible_steps else 0.0
 
     warnings: list[str] = []
+    invalid_prices = sum(not item.has_valid_price_eligibility for item in observations)
+    if invalid_prices:
+        warnings.append(
+            f"Negociabilidade nao comprovada em {invalid_prices} observacoes lifecycle. "
+            "Recolher e reproduzir com evidencia de precos; nao recalibrar esta amostra."
+        )
     if len(observations) < assumptions.minimum_historical_observations:
         warnings.append(
             f"Historico insuficiente: {len(observations)} de "
@@ -496,6 +521,7 @@ def write_historical_calibration_csv(
         "stock_terminal_date",
         "terminal_value_per_share",
         "lifecycle_source_url",
+        "price_eligibility_audit",
     ]
     with Path(path).open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
@@ -723,6 +749,7 @@ def write_historical_calibration_csv(
                         observation.terminal_value_per_share
                     ),
                     "lifecycle_source_url": observation.lifecycle_source_url,
+                    "price_eligibility_audit": json.dumps(observation.price_eligibility_audit, sort_keys=True, allow_nan=False),
                 }
             )
 
@@ -958,6 +985,7 @@ def read_historical_calibration_csv(path: str | Path) -> list[HistoricalCalibrat
                     lifecycle_source_url=row.get(
                         "lifecycle_source_url", ""
                     ).strip(),
+                    price_eligibility_audit=json.loads(row.get("price_eligibility_audit") or "{}"),
                     dimension_valuation_score=_parse_optional_float(
                         row.get("dimension_valuation_score", "")
                     ),

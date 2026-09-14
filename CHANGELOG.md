@@ -1,5 +1,28 @@
 # Changelog
 
+## PR59 - Negociabilidade historica e quarentena auditavel
+
+- Separadas suspensao de negociacao, ultima linha elegivel e data efetiva
+  do evento. Regras SEC revisadas para as dez empresas lifecycle, com
+  vinculo a CIK, identidade e classe; excecoes explicitas para MNTV e BBBY.
+- Criada validacao anterior aos calculos, preservando dados recebidos e
+  registrando cada exclusao, motivo, fonte e hash. Volume zero ou ausente
+  isoladamente nao exclui dados. Falhas de qualidade nao acionam fallback.
+- Adicionada leitura direta do ZIP de evidencia e reconciliacao completa
+  CSV/JSON. CSV lifecycle isolado ou pacote incompleto deixa de ser aceito.
+- Preservados volume e hash da evidencia no arquivo de replay. Coletor,
+  CSV e relatorio exibem auditoria de negociabilidade; observacoes antigas
+  sem auditoria valida bloqueiam recalibracao. Coleta parcial retorna erro.
+- Acrescentados 21 testes, totalizando 268 testes locais aprovados, incluindo
+  replay completo em processo isolado e arquivos adulterados/incompletos.
+- Validada a coleta real das mesmas 50 datas: seis saidas identicas no replay,
+  zero tentativas de rede, 50 auditorias de precos validas e 46 observacoes
+  financeiramente utilizaveis. Quatro lacunas de divida da NEWR permanecem.
+- Nenhum peso, formula financeira, threshold, valor contratual, data efetiva,
+  mapeamento de cobertura Tiingo ou notebook de analise foi alterado.
+- Documentado o fluxo e suas limitacoes em
+  `fundamental_analysis/LIFECYCLE_PRICE_ELIGIBILITY.md`. Dados privados nao publicados.
+
 ## Evidencia lifecycle e diagnostico do benchmark arquivado
 
 - Documentada a rodada ativa congelada: 345 observacoes de 40 empresas,

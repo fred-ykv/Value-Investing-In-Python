@@ -12,6 +12,7 @@ from fundamental_analysis.historical_prices import (
     PriceSeries,
     calculate_price_outcome,
     yfinance_price_points,
+    _calculate_lifecycle_outcome,
 )
 
 
@@ -250,13 +251,13 @@ class HistoricalPriceTests(unittest.TestCase):
             "0000001234-24-000001",
         )
 
-        outcome = calculate_price_outcome(
-            "OLD",
-            "SPY",
-            date(2024, 1, 4),
-            provider,
-            assumptions,
-            lifecycle_event=event,
+        # Isolate the unchanged payoff formula; reviewed lifecycle entry points
+        # are exercised with registered securities in test_price_eligibility.
+        outcome = _calculate_lifecycle_outcome(
+            "OLD", "SPY", date(2024, 1, 4), date(2024, 3, 4),
+            provider.series["OLD"], provider.series["SPY"],
+            provider.series["OLD"].points[2], provider.series["SPY"].points[2],
+            event, assumptions,
         )
 
         self.assertAlmostEqual(outcome.forward_return, 0.32)
@@ -309,13 +310,11 @@ class HistoricalPriceTests(unittest.TestCase):
             "0000001234-24-000002",
         )
 
-        outcome = calculate_price_outcome(
-            "FAIL",
-            "SPY",
-            date(2024, 1, 4),
-            provider,
-            assumptions,
-            lifecycle_event=event,
+        outcome = _calculate_lifecycle_outcome(
+            "FAIL", "SPY", date(2024, 1, 4), date(2024, 3, 4),
+            provider.series["FAIL"], provider.series["SPY"],
+            provider.series["FAIL"].points[2], provider.series["SPY"].points[2],
+            event, assumptions,
         )
 
         self.assertEqual(outcome.forward_return, -1.0)
