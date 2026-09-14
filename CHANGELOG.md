@@ -418,5 +418,4 @@ Original notebooks remain unchanged.
 - Added point-in-time U.S. Treasury 10-year rates and historical Damodaran implied ERP to historical score reconstruction.
 - Added strict availability dates, staleness controls, source lineage, caching, and rejection of unavailable macro observations without a current-data fallback.
 - Persisted risk-free rate, ERP, Ke, WACC or applied discount rate, cost-of-capital method, confidence, and fallback status in historical calibration CSVs.
-- Re-ran the MLI/NUE pilot with 6/6 valid macro observations and documented recommendation sensitivity without changing score weights or thresholds.
-
+- Re-ran the MLI/NUE pilot with 6/6 valid macro observations and documented recommendation sensitivity without changing score weights or thresholds.\n
