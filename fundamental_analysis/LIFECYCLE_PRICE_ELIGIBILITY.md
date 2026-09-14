@@ -144,4 +144,4 @@ O modelo continua **nao pronto para recalibracao**. Antes de integrar a rodada
 as 345 observacoes ativas, investigar a lacuna de divida da NEWR e conferir
 compatibilidade de codigo, configuracao, universo, periodos e fontes. Nunca
 usar o holdout ja inspecionado para escolher pesos. Nenhum dado licenciado,
-resposta SEC em massa, token ou ZIP privado foi adicionado ao repositorio.\n
+resposta SEC em massa, token ou ZIP privado foi adicionado ao repositorio.
