@@ -9,8 +9,6 @@
 - Registrado que o split de 2022 ja foi inspecionado e nao e holdout intocado.
 - Nenhum peso, formula, trava ou limiar de recomendacao foi alterado.
 
-# Changelog
-
 ## PR60 - Evidencia patrimonial de divida no point-in-time
 
 - Corrigida a regra de completude de `total_debt`: despesa de juros isolada nao
