@@ -95,7 +95,7 @@ class LifecycleEvidenceTests(unittest.TestCase):
         self.assertEqual(report["state"], "incomplete")
         self.assertEqual(sum(row["is_ready"] for row in report["coverage"]), 9)
         self.assertEqual(sum(r["status"] == "failed" for r in report["responses"]), 1)
-        with self.assertRaises(LookupError):
+        with self.assertRaisesRegex(ValueError, "incompleto"):
             mapping = TIINGO_LIFECYCLE_MAPPINGS[0]
             CsvHistoricalPriceClient(output / "normalized_prices.csv").fetch_series("MDLA", mapping.expected_first_price_date, mapping.expected_last_price_date)
         for file in output.rglob("*"):

@@ -15,6 +15,7 @@ from urllib.request import Request, urlopen
 from .benchmark_universe import HISTORICAL_LIFECYCLE_CASES
 from .config import POINT_IN_TIME, PointInTimeAssumptions
 from .historical_prices import PricePoint, PriceSeries, normalize_price_series
+from .price_eligibility import content_hash, PriceEligibilityError
 
 
 JsonGetter = Callable[[str], object]
@@ -137,7 +138,10 @@ class TiingoHistoricalPriceClient:
         if mapping is None:
             raise LookupError(f"Ticker {canonical} nao pertence ao mapa Tiingo auditado")
         if canonical not in self._cache:
-            self._cache[canonical] = self._fetch_complete_series(mapping)
+            try:
+                self._cache[canonical] = self._fetch_complete_series(mapping)
+            except LookupError as exc:
+                raise PriceEligibilityError(str(exc)) from exc
         return self._cache[canonical].between(start, end)
 
     def _fetch_complete_series(
@@ -176,9 +180,12 @@ class TiingoHistoricalPriceClient:
                     f"{mapping.canonical_ticker}"
                 )
             try:
+                if any(isinstance(raw_row.get(key), bool) for key in ("adjClose", "close", "volume")):
+                    raise ValueError("Booleano nao e preco ou volume")
                 day = date.fromisoformat(str(raw_row["date"])[:10])
                 adjusted_close = float(raw_row["adjClose"])
                 raw_close = float(raw_row["close"])
+                volume = float(raw_row["volume"]) if raw_row.get("volume") is not None else None
             except (KeyError, TypeError, ValueError) as exc:
                 raise ValueError(
                     f"Preco Tiingo invalido para {mapping.canonical_ticker} "
@@ -189,6 +196,7 @@ class TiingoHistoricalPriceClient:
                 or adjusted_close <= 0
                 or not math.isfinite(raw_close)
                 or raw_close <= 0
+                or (volume is not None and (not math.isfinite(volume) or volume < 0))
             ):
                 raise ValueError(
                     f"Preco Tiingo nao positivo para {mapping.canonical_ticker} "
@@ -200,7 +208,7 @@ class TiingoHistoricalPriceClient:
                     f"em {day}"
                 )
             seen_days.add(day)
-            points.append(PricePoint(day, adjusted_close, raw_close))
+            points.append(PricePoint(day, adjusted_close, raw_close, volume))
         if not points:
             raise LookupError(f"Serie Tiingo vazia para {mapping.canonical_ticker}")
         series = normalize_price_series(
@@ -213,6 +221,7 @@ class TiingoHistoricalPriceClient:
                 ),
                 mapping.security_id,
                 mapping.issuer_cik,
+                content_hash({"metadata": metadata, "prices": payload}),
             )
         )
         first_day = series.points[0].day

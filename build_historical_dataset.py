@@ -29,6 +29,7 @@ from fundamental_analysis.historical_prices import (
     YFinanceHistoricalPriceClient,
 )
 from fundamental_analysis.institutional_prices import TiingoHistoricalPriceClient
+from fundamental_analysis.lifecycle_evidence import LifecycleEvidencePriceClient
 from fundamental_analysis.historical_macro import HistoricalMacroClient
 from fundamental_analysis.point_in_time_collection import (
     collect_benchmark_history,
@@ -56,6 +57,10 @@ def parse_args() -> argparse.Namespace:
         default=POINT_IN_TIME.max_annual_filings_per_company,
     )
     parser.add_argument("--outdir", default="historical_calibration_outputs")
+    parser.add_argument(
+        "--lifecycle-evidence", default=None,
+        help="ZIP do PR58 ou pasta com manifest.json; valida CSV/JSON sem executar codigo do pacote.",
+    )
     parser.add_argument(
         "--archive-dir", default=None,
         help="Diretorio NOVO para congelar todas as entradas e comprovar replay offline.",
@@ -120,7 +125,9 @@ def main() -> int:
     if unknown:
         raise SystemExit("Tickers fora do benchmark configurado: " + ", ".join(sorted(unknown)))
     tiingo_token = os.environ.get(POINT_IN_TIME.tiingo_api_key_env, "").strip()
-    if args.price_source == "csv" and not args.historical_prices_csv:
+    if args.lifecycle_evidence and (args.historical_prices_csv or args.price_source == "tiingo"):
+        raise SystemExit("Use --lifecycle-evidence sem outro arquivo CSV ou --price-source tiingo.")
+    if args.price_source == "csv" and not (args.historical_prices_csv or args.lifecycle_evidence):
         raise SystemExit(
             "--price-source csv exige --historical-prices-csv."
         )
@@ -130,11 +137,13 @@ def main() -> int:
         )
 
     historical_providers = []
+    if args.lifecycle_evidence:
+        historical_providers.append(LifecycleEvidencePriceClient(args.lifecycle_evidence))
     if args.price_source in {"auto", "csv"} and args.historical_prices_csv:
         historical_providers.append(
             CsvHistoricalPriceClient(args.historical_prices_csv)
         )
-    if args.price_source in {"auto", "tiingo"} and tiingo_token:
+    if args.price_source in {"auto", "tiingo"} and tiingo_token and not args.lifecycle_evidence:
         historical_providers.append(
             TiingoHistoricalPriceClient(api_token=tiingo_token)
         )
@@ -180,7 +189,7 @@ def main() -> int:
             "validation_start_year": args.validation_start_year,
         }, outdir)
         print(f"\nEntradas arquivadas em: {archive.directory}\nSHA-256 do manifesto: {digest}")
-    return 0 if dataset.observations else 1
+    return 0 if dataset.observations and not dataset.errors else 1
 
 
 def write_dataset_outputs(dataset, outdir: Path, validation_start_year: int) -> None:

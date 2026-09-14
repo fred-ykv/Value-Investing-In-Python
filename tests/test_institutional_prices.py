@@ -95,7 +95,7 @@ class TiingoHistoricalPriceTests(unittest.TestCase):
 
         client = TiingoHistoricalPriceClient(json_getter=get_json)
 
-        with self.assertRaisesRegex(LookupError, "Emissor Tiingo"):
+        with self.assertRaisesRegex(ValueError, "Emissor Tiingo"):
             client.fetch_series(
                 "MDLA",
                 date(2019, 1, 1),

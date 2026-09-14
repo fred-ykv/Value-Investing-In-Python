@@ -5,6 +5,12 @@ This tutorial covers fundamental analysis for US stocks.
 
 ### Evidencias de empresas retiradas da bolsa
 
+O PR59 acrescenta [negociabilidade e quarentena auditavel](fundamental_analysis/LIFECYCLE_PRICE_ELIGIBILITY.md):
+leitura do ZIP ja coletado, regras SEC antes dos calculos, auditoria de
+exclusoes e replay completo sem internet. A rodada de 50 observacoes foi
+reproduzida, mas quatro lacunas financeiras permanecem e os pesos continuam
+congelados. O notebook de analise de acoes nao precisa ser substituido.
+
 O [diagnostico de 345 observacoes](fundamental_analysis/BENCHMARK_ARCHIVED_345.md)
 confirma a reproducao offline, mas **nao autoriza recalibrar pesos**.
 Para a proxima etapa, abra o

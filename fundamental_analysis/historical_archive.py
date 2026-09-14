@@ -223,7 +223,8 @@ def _price_series(payload: dict) -> PriceSeries:
     return PriceSeries(
         ticker=payload["ticker"], source=payload["source"],
         security_id=payload["security_id"], issuer_cik=payload["issuer_cik"],
-        points=tuple(PricePoint(date.fromisoformat(p["day"]), p["adjusted_close"], p["raw_close"]) for p in payload["points"]),
+        input_evidence_sha256=payload.get("input_evidence_sha256", ""),
+        points=tuple(PricePoint(date.fromisoformat(p["day"]), p["adjusted_close"], p["raw_close"], p.get("volume")) for p in payload["points"]),
     )
 
 

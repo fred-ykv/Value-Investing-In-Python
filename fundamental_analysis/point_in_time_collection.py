@@ -353,6 +353,7 @@ def collect_point_in_time_observation(
                 case.lifecycle_event.effective_date if case.lifecycle_event else None
             ),
             stock_terminal_date=outcome.stock_terminal_date,
+            price_eligibility_audit=outcome.price_eligibility_audit,
             terminal_value_per_share=outcome.terminal_value_per_share,
             lifecycle_source_url=(
                 case.lifecycle_event.source_url if case.lifecycle_event else ""
@@ -535,6 +536,26 @@ def render_collection_markdown(dataset: PointInTimeDataset) -> str:
             f"{observation.benchmark_ticker if observation else '-'} | "
             f"{result.error or '; '.join(result.warnings) or '-'} |"
         )
+    audited = [result.observation for result in dataset.results
+               if result.observation and result.observation.price_eligibility_audit]
+    if audited:
+        lines.extend([
+            "", "## Negociabilidade dos precos", "",
+            "Registros em quarentena continuam nas entradas arquivadas, mas nao entram nos calculos.",
+            "As datas abaixo descrevem cada janela consultada, nao toda a cobertura do fornecedor.",
+            "Volume zero ou ausente, sozinho, nao elimina um registro. Integridade nao certifica negociacao executada.", "",
+            "| Ticker | Data-base | Ultima linha recebida | Ultima elegivel na janela | Preco terminal usado em | Em quarentena | Evidencia |",
+            "|---|---|---|---|---|---:|---|",
+        ])
+        for observation in audited:
+            audit = observation.price_eligibility_audit
+            lines.append(
+                f"| {observation.ticker} | {observation.as_of} | {audit['provider_last_date_in_window']} | "
+                f"{audit['last_eligible_date_in_window']} | {observation.stock_terminal_date} | "
+                f"{len(audit['quarantined_rows'])} | [SEC]({audit['identity']['source_url']}) |"
+            )
+        lines.extend(["", "Datas, motivos, precos, volumes e hashes por exclusao estao no manifesto e no CSV.",
+                      "Suspensao solicitada nao e confirmacao operacional da bolsa. Para BBBY, a resolucao e diaria; nao se presume horario intradiario."])
     return "\n".join(lines)
 
 

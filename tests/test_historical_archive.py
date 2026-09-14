@@ -7,12 +7,13 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import date, timedelta
 from unittest.mock import patch
 
 from build_historical_dataset import write_dataset_outputs
-from fundamental_analysis.benchmark_universe import BenchmarkCase
+from fundamental_analysis.benchmark_universe import BenchmarkCase, HISTORICAL_LIFECYCLE_CASES
+from fundamental_analysis.price_eligibility import trading_identity
 from fundamental_analysis.historical_archive import (
     ArchiveError, ArchiveReader, ArchiveWriter, OUTPUT_FILES,
     RecordingMacroClient, RecordingPriceClient, RecordingSecClient,
@@ -39,6 +40,18 @@ class Prices:
                 points.append(PricePoint(day, adjusted, adjusted * 2))
             day += timedelta(days=1)
         return PriceSeries(ticker, tuple(points), "fixture adjusted dividends and splits", "fixture-id", "0000001234")
+
+
+class LifecyclePrices(Prices):
+    def fetch_series(self, ticker, start, end):
+        series = super().fetch_series(ticker, start, end)
+        if ticker != "COUP":
+            return series
+        identity = trading_identity(ticker)
+        return replace(series, points=tuple(
+            replace(point, volume=0 if point.day == date(2023, 2, 28) else 100)
+            for point in series.points if point.day <= date(2023, 2, 28)
+        ), security_id=identity["security_id"], issuer_cik=identity["issuer_cik"], input_evidence_sha256="a" * 64)
 
 
 class HistoricalArchiveTests(unittest.TestCase):
@@ -157,28 +170,44 @@ class HistoricalArchiveTests(unittest.TestCase):
             with self.assertRaises(ArchiveError):
                 ReplaySecClient(reader)._load_json("not-archived", "company_tickers.json")
 
-    def make_collection(self):
+    def make_collection(self, lifecycle=False):
         writer = ArchiveWriter(self.root / "archive")
-        case = BenchmarkCase("TEST", "tradicionais_ciclicas", "industrial_machinery", "fixture")
+        case = (next(case for case in HISTORICAL_LIFECYCLE_CASES if case.ticker == "COUP") if lifecycle
+                else BenchmarkCase("TEST", "tradicionais_ciclicas", "industrial_machinery", "fixture"))
+        year = 2023 if lifecycle else 2024
 
         def get_json(url):
-            return ticker_map_fixture() if "company_tickers" in url else company_facts_fixture()
+            payload = ticker_map_fixture() if "company_tickers" in url else company_facts_fixture()
+            if lifecycle:
+                # Synthetic statements only; shift fixture periods one year so
+                # the known event lies in the forward window, not in features.
+                for concept in payload["facts"]["us-gaap"].values():
+                    for facts in concept["units"].values():
+                        for fact in facts:
+                            for key in ("start", "end", "filed"):
+                                if key in fact:
+                                    day = date.fromisoformat(fact[key])
+                                    fact[key] = day.replace(year=day.year - 1).isoformat()
+                            if "fy" in fact:
+                                fact["fy"] -= 1
+                payload["cik"] = int(case.cik)
+            return payload
 
         def get_text(url):
             if "treasury" in url:
-                return "Date,10 Yr\n02/15/2024,4.00\n"
+                return f"Date,10 Yr\n02/15/{year},4.00\n"
             return erp_html()
 
         run = {
-            "cases": [asdict(case)], "start_year": 2024, "end_year": 2024,
+            "cases": [asdict(case)], "start_year": year, "end_year": year,
             "max_filings_per_company": 1, "outcomes_available_through": date(2026, 9, 3),
             "validation_start_year": 2022,
         }
         dataset = collect_benchmark_history(
             RecordingSecClient(writer, json_getter=get_json, cache_dir=self.root / "sec"),
-            RecordingPriceClient(writer, Prices()),
+            RecordingPriceClient(writer, LifecyclePrices() if lifecycle else Prices()),
             RecordingMacroClient(writer, text_getter=get_text, cache_dir=self.root / "macro"),
-            cases=[case], start_year=2024, end_year=2024, max_filings_per_company=1,
+            cases=[case], start_year=year, end_year=year, max_filings_per_company=1,
             outcomes_available_through=run["outcomes_available_through"],
         )
         self.assertEqual(len(dataset.errors), 0)
@@ -220,6 +249,27 @@ class HistoricalArchiveTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         verification = json.loads((self.root / "replay" / "replay_verification.json").read_text(encoding="utf-8"))
         self.assertFalse(verification["passed"])
+
+    def test_lifecycle_quarantine_replays_all_six_outputs_and_keeps_raw_rows(self):
+        archive = self.make_collection(lifecycle=True)
+        manifest = json.loads((archive / "manifest.json").read_bytes())
+        entry = next(entry for entry in manifest["entries"] if entry["kind"] == "price_series"
+                     and json.loads(entry["key"])[0] == "COUP")
+        raw = json.loads((archive / "objects" / (entry["sha256"] + ".json")).read_bytes())
+        self.assertEqual(raw["points"][-1]["day"], "2023-02-28")
+        self.assertEqual(raw["points"][-1]["volume"], 0)
+        result = self.run_replay(archive, self.root / "replay")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        verification = json.loads((self.root / "replay" / "replay_verification.json").read_text())
+        self.assertTrue(verification["passed"])
+        self.assertEqual(verification["network_attempts"], [])
+        self.assertEqual(len(verification["outputs_identical"]), 6)
+        self.assertTrue(all(verification["outputs_identical"].values()))
+        from fundamental_analysis.historical_calibration import read_historical_calibration_csv
+        observation = read_historical_calibration_csv(self.root / "replay" / "historical_observations.csv")[0]
+        self.assertTrue(observation.has_valid_price_eligibility)
+        self.assertEqual(observation.stock_terminal_date, date(2023, 2, 27))
+        self.assertEqual(observation.price_eligibility_audit["quarantined_rows"][0]["day"], "2023-02-28")
 
     def test_guard_counts_caught_network_and_native_escape_attempts(self):
         from replay_historical_dataset import OfflineGuard
