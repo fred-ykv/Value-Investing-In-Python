@@ -21,6 +21,9 @@ def cyclical_normalization_payload(
         "status_label": _status_label(result),
         "confidence": result.confidence,
         "sample_years": result.sample_years,
+        "unique_fiscal_periods": result.sample_years,
+        "history_start": result.periods[0].period_end.isoformat() if result.periods else None,
+        "history_end": result.periods[-1].period_end.isoformat() if result.periods else None,
         "cycle_position": result.cycle_position,
         "cycle_position_label": _cycle_position_label(result.cycle_position),
         "transition_years": result.transition_years,
@@ -53,14 +56,15 @@ def cyclical_normalization_summary(result: CyclicalNormalizationResult) -> str:
         return "A empresa nao foi classificada como ciclica; os valores correntes foram preservados."
     if result.applied:
         return (
-            f"A normalizacao foi aplicada com {result.sample_years} anos e confianca "
+            f"A normalizacao foi aplicada com {result.sample_years} exercicios unicos "
+            f"(encerramentos de {result.periods[0].period_end} a {result.periods[-1].period_end}) e confianca "
             f"de {result.confidence:.0%}. O DCF converge gradualmente do FCFF atual "
             f"para o FCFF de meio de ciclo em {result.transition_years} anos; Graham "
             "e EVA usam lucro e rentabilidade normalizados."
         )
     return (
         f"A empresa foi identificada como ciclica, mas a normalizacao nao foi aplicada "
-        f"(historico: {result.sample_years} anos; confianca: {result.confidence:.0%}). "
+        f"(historico: {result.sample_years} exercicios unicos; confianca: {result.confidence:.0%}). "
         "Os valores correntes foram preservados para evitar falsa precisao."
     )
 
@@ -91,15 +95,15 @@ def append_cyclical_normalization_to_markdown(
         [
             "",
             "### Historico usado",
-            "| Periodo | Margem EBIT | Margem liquida | Margem FCFF | Reinvestimento/receita | Confianca |",
-            "|---|---:|---:|---:|---:|---:|",
+            "| Periodo | Margem EBIT | Margem liquida | Margem FCFF | Reinvestimento/receita | Confianca | Identidade fiscal |",
+            "|---|---:|---:|---:|---:|---:|---|",
         ]
     )
     for period in result.periods:
         lines.append(
             f"| {period.period_end} | {_percent(period.operating_margin)} | "
             f"{_percent(period.net_margin)} | {_percent(period.fcff_margin)} | "
-            f"{_percent(period.reinvestment_margin)} | {period.confidence:.2f} |"
+            f"{_percent(period.reinvestment_margin)} | {period.confidence:.2f} | {period.identity_evidence} |"
         )
     if result.warnings:
         lines.extend(["", "**Pontos de atencao:**", *[f"- {item}" for item in result.warnings]])
@@ -134,6 +138,7 @@ def append_cyclical_normalization_to_html(
         f"<td>{escape(_percent(period.fcff_margin))}</td>"
         f"<td>{escape(_percent(period.reinvestment_margin))}</td>"
         f"<td>{period.confidence:.2f}</td>"
+        f"<td>{escape(period.identity_evidence)}</td>"
         "</tr>"
         for period in result.periods
     )
@@ -151,7 +156,7 @@ def append_cyclical_normalization_to_html(
         "<table><thead><tr><th>Medida</th><th>Atual</th><th>Normalizado</th><th>Como foi normalizado</th></tr></thead>"
         f"<tbody>{comparison_rows}</tbody></table>"
         "<h3>Historico usado</h3>"
-        "<table><thead><tr><th>Periodo</th><th>Margem EBIT</th><th>Margem liquida</th><th>Margem FCFF</th><th>Reinvestimento/receita</th><th>Confianca</th></tr></thead>"
+        "<table><thead><tr><th>Periodo</th><th>Margem EBIT</th><th>Margem liquida</th><th>Margem FCFF</th><th>Reinvestimento/receita</th><th>Confianca</th><th>Identidade fiscal</th></tr></thead>"
         f"<tbody>{history_rows}</tbody></table>{warning_html}</section>"
     )
     marker = '<section class="panel cost-of-capital">'
