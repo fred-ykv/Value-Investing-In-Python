@@ -1900,5 +1900,4 @@ def _parse_date(value: object) -> date | None:
     try:
         return date.fromisoformat(str(value)[:10])
     except ValueError:
-        return None
-
+        return None\n
