@@ -1,0 +1,75 @@
+{
+  "manifest_version": "1.0",
+  "experiment_id": "historical_backtest_v1",
+  "status": "frozen_before_new_benchmark",
+  "created_at": "2026-09-14",
+  "purpose": "Avaliar, de forma point-in-time e reproduzivel, se o score multifatorial ordena retornos futuros depois de custos.",
+  "model_policy": {"weights_and_formulas_frozen": true, "recalibration_allowed_before_results": false, "primary_horizon_months": 12, "secondary_horizons_months": [1, 3, 6, 24, 36]},
+  "universe": {
+    "source_module": "fundamental_analysis.benchmark_universe",
+    "source_constant": "HISTORICAL_BENCHMARK_CASES",
+    "expected_total_companies": 50,
+    "expected_default_companies": 40,
+    "expected_lifecycle_cases": 10,
+    "groups": {
+      "tradicionais_ciclicas": {"expected_count": 12, "benchmark": "SPY"},
+      "growth_tech": {"expected_count": 11, "benchmark": "QQQ"},
+      "bancos_financeiras": {"expected_count": 10, "benchmark": "KBE"},
+      "fcf_negativo_early_growth": {"expected_count": 17, "benchmark": "IWM"}
+    },
+    "inclusion_policy": ["Casos definidos antes da execucao, sem selecao posterior pelo resultado.", "Inclui empresas ativas, adquiridas e canceladas quando ha evidencia documental.", "Nao adicionar empresas ao universo depois de observar retornos."],
+    "known_biases": ["O universo atual e curado e nao representa todas as acoes elegiveis.", "A cobertura historica nao elimina integralmente vies de sobrevivencia ou disponibilidade de dados."]
+  },
+  "data_and_time": {
+    "fundamental_start": "2015-01-01",
+    "fundamental_end": "2025-12-31",
+    "signal_frequency": "annual_filing_or_latest_eligible_filing",
+    "signal_cutoff": "Usar somente dados publicados ate a data-base, respeitando o atraso de divulgacao.",
+    "price_source": "Arquivo historico institucional point-in-time, com identidade, volume, ajustes e hashes.",
+    "fundamental_source": "SEC EDGAR e evidencias arquivadas dos demonstrativos.",
+    "current_data_excluded_from_pit": "Yahoo Finance pode apoiar a analise atual, mas nao substitui o arquivo historico no benchmark.",
+    "calibration_end_exclusive": "2022-01-01",
+    "validation_start_inclusive": "2022-01-01",
+    "split_warning": "Esta divisao ja foi inspecionada em rodadas anteriores; nao e um holdout intocado.",
+    "embargo_months": [1, 3, 6, 12, 24, 36],
+    "execution_rule": "Sinal na data-base; entrada no proximo pregao elegivel; saida no fechamento ajustado do horizonte ou no evento terminal documentado."
+  },
+  "benchmarks": {
+    "market_total_return": "SPY",
+    "group_mapping": {"tradicionais_ciclicas": "SPY", "growth_tech": "QQQ", "bancos_financeiras": "KBE", "fcf_negativo_early_growth": "IWM"},
+    "additional_comparison": "Carteira equal-weight do universo, calculada somente com componentes elegiveis na data.",
+    "return_convention": "Usar retorno total quando a serie arquivada fornecer ajustes; declarar quando houver apenas preco."
+  },
+  "portfolio_rules": {
+    "portfolio_type": "long_only", "currency": "USD", "initial_capital_usd": 100000,
+    "max_positions": 20, "target_weight_per_position": 0.05, "maximum_sector_weight": 0.25,
+    "rebalance_frequency": "monthly", "selection": "Ordenar por score elegivel na data-base e selecionar os melhores sem violar limites.",
+    "leverage": false, "short_sales": false, "derivatives": false, "whole_shares": true, "cash_residual_return": 0.0,
+    "volume_participation_cap": 0.10, "missing_critical_data": "Excluir da carteira e registrar o motivo; nunca preencher silenciosamente."
+  },
+  "costs": {
+    "primary_transaction_cost_bps_per_side": 10,
+    "sensitivity_transaction_cost_bps_per_side": [5, 25],
+    "slippage_and_spread": "Incluidos no custo por lado; nao cobrar duas vezes.",
+    "taxes_and_withholding": "Nao incluidos no caso-base; reportar como limitacao.", "fx_brl_usd": "Nao incluido; resultado primario em USD."
+  },
+  "events_and_failures": {
+    "corporate_actions": "Aplicar splits, dividendos, aquisicoes e cancelamentos apenas com evidencia disponivel na data.",
+    "terminal_event": "Usar preco contratual ou zero somente quando o evento e documentado; marcar a origem.",
+    "missing_forward_price": "Sem retorno imputado; observacao fica inelegivel.", "partial_collection": "Bloquear o benchmark e preservar o pacote parcial para auditoria.",
+    "future_information": "Qualquer dado publicado apos a data-base invalida a observacao."
+  },
+  "metrics_and_gates": {
+    "performance": ["cagr", "retorno_acumulado", "volatilidade_anualizada", "max_drawdown", "turnover", "excesso_vs_benchmark"],
+    "ranking": ["spearman_score_forward_return", "monotonicidade_por_quintil", "hit_rate"],
+    "uncertainty": "Intervalos por bootstrap em blocos temporais e contagem de observacoes por grupo.",
+    "gates_source": "fundamental_analysis.config.CalibrationAssumptions",
+    "minimum_point_in_time_ratio": 0.95, "minimum_outcome_coverage": 0.90, "minimum_spearman_correlation": 0.10, "minimum_monotonic_bucket_ratio": 0.60,
+    "recalibration_rule": "Nao recalibrar pesos, formulas, travas ou limites com base em uma rodada que nao passe os gates e sem registrar nova versao do manifesto."
+  },
+  "reproducibility": {
+    "required_artifacts": ["manifesto", "codigo_hash", "universo_congelado", "filings_sec", "precos_historicos", "macro_series", "resultado_json", "relatorio"],
+    "offline_replay_required": true, "network_calls_during_replay": false, "hash_algorithm": "SHA-256", "result_status_before_run": "not_run"
+  }
+}
+

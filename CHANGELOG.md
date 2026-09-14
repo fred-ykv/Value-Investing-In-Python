@@ -1,5 +1,14 @@
 # Changelog
 
+## PR65 - Manifesto experimental do backtest historico
+
+- Congelado o universo, as datas, os horizontes, os benchmarks, as regras de
+  carteira, os custos e os criterios de qualidade antes da nova rodada.
+- Adicionados manifesto executavel em JSON, resumo para leitura humana e
+  validador que bloqueia configuracoes essenciais ausentes ou alteradas.
+- Registrado que o split de 2022 ja foi inspecionado e nao e holdout intocado.
+- Nenhum peso, formula, trava ou limiar de recomendacao foi alterado.
+
 ## PR60 - Evidencia patrimonial de divida no point-in-time
 
 - Corrigida a regra de completude de `total_debt`: despesa de juros isolada nao
