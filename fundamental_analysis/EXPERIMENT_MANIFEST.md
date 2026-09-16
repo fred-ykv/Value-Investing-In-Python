@@ -1,5 +1,22 @@
 # Manifesto experimental do backtest historico
 
+## Revisao 1.1 (2026-09-16)
+
+Corrigida a contagem declarada, preservando os mesmos 50 tickers. A versao
+1.0 registrava incorretamente 12 tradicionais e 17 early growth. O cadastro
+contem 11 tradicionais e 18 early growth; os demais grupos nao mudaram.
+
+| Grupo | Padrao | Lifecycle | Total |
+|---|---:|---:|---:|
+| Tradicionais/ciclicas | 10 | 1 (BBBY) | 11 |
+| Growth/tech | 10 | 1 (ZEN) | 11 |
+| Bancos/financeiras | 10 | 0 | 10 |
+| FCF negativo/early growth | 10 | 8 | 18 |
+| Total | 40 | 10 | 50 |
+
+Esta revisao nao certifica cobertura de dados, integridade do arquivo nem
+prontidao do executor. Esses controles precisam passar pelo preflight.
+
 Este documento congela as regras antes da proxima rodada. O contrato executavel
 esta em `EXPERIMENT_MANIFEST.json`; `experiment_manifest.py` o valida.
 
