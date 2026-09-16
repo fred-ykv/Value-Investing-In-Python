@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import json
+from collections import Counter
 from pathlib import Path
 from typing import Any, Mapping
+
+from .benchmark_universe import HISTORICAL_BENCHMARK_CASES
 
 
 MANIFEST_PATH = Path(__file__).with_name("EXPERIMENT_MANIFEST.json")
@@ -28,6 +31,20 @@ def validate_experiment_manifest(manifest: Mapping[str, Any]) -> list[str]:
     if manifest.get("status") != "frozen_before_new_benchmark":
         errors.append("status precisa indicar congelamento anterior ao benchmark")
     universe = manifest.get("universe", {})
+    if not isinstance(universe, Mapping):
+        errors.append("universo deve ser um objeto")
+        universe = {}
+    groups = universe.get("groups", {})
+    counts = Counter(case.benchmark_group for case in HISTORICAL_BENCHMARK_CASES)
+    if universe.get("expected_total_companies") != len(HISTORICAL_BENCHMARK_CASES):
+        errors.append("total do universo diverge do cadastro")
+    if not isinstance(groups, Mapping) or set(groups) != set(counts):
+        errors.append("grupos do manifesto divergem do cadastro")
+    else:
+        for group, count in counts.items():
+            spec = groups[group]
+            if not isinstance(spec, Mapping) or type(spec.get("expected_count")) is not int or spec["expected_count"] != count:
+                errors.append(f"contagem do grupo {group} diverge do cadastro: esperado {count}")
     if universe.get("expected_default_companies") != 40 or universe.get("expected_lifecycle_cases") != 10:
         errors.append("composicao esperada do universo deve ser 40 + 10 lifecycle")
     if manifest.get("costs", {}).get("primary_transaction_cost_bps_per_side") != 10:
