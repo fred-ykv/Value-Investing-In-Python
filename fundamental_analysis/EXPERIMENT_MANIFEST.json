@@ -1,5 +1,6 @@
 {
-  "manifest_version": "1.0",
+  "manifest_version": "1.1",
+  "revision": {"previous_version": "1.0", "date": "2026-09-16", "reason": "Correcao de contagem por grupo; nenhum ticker ou parametro financeiro alterado."},
   "experiment_id": "historical_backtest_v1",
   "status": "frozen_before_new_benchmark",
   "created_at": "2026-09-14",
@@ -12,10 +13,10 @@
     "expected_default_companies": 40,
     "expected_lifecycle_cases": 10,
     "groups": {
-      "tradicionais_ciclicas": {"expected_count": 12, "benchmark": "SPY"},
+      "tradicionais_ciclicas": {"expected_count": 11, "benchmark": "SPY"},
       "growth_tech": {"expected_count": 11, "benchmark": "QQQ"},
       "bancos_financeiras": {"expected_count": 10, "benchmark": "KBE"},
-      "fcf_negativo_early_growth": {"expected_count": 17, "benchmark": "IWM"}
+      "fcf_negativo_early_growth": {"expected_count": 18, "benchmark": "IWM"}
     },
     "inclusion_policy": ["Casos definidos antes da execucao, sem selecao posterior pelo resultado.", "Inclui empresas ativas, adquiridas e canceladas quando ha evidencia documental.", "Nao adicionar empresas ao universo depois de observar retornos."],
     "known_biases": ["O universo atual e curado e nao representa todas as acoes elegiveis.", "A cobertura historica nao elimina integralmente vies de sobrevivencia ou disponibilidade de dados."]
