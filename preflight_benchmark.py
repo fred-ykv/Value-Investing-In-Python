@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 from fundamental_analysis.benchmark_preflight import build_preflight, render_markdown
+from fundamental_analysis.archive_inventory import inspect_archive
 
 
 def main() -> int:
@@ -12,8 +13,17 @@ def main() -> int:
     parser.add_argument("--lifecycle-evidence")
     parser.add_argument("--historical-observations")
     parser.add_argument("--output", default="benchmark_preflight")
+    parser.add_argument("--input-archive", action="append", default=[], help="Pasta de arquivo historico; pode repetir.")
     args = parser.parse_args()
     result = build_preflight(lifecycle_evidence=args.lifecycle_evidence, historical_observations=args.historical_observations)
+    result["archives"] = []
+    for path in args.input_archive:
+        try:
+            result["archives"].append({"path": path, **inspect_archive(path)})
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            result["archives"].append({"path": path, "integrity_verified": False, "error": str(exc)})
+            result["status"] = "blocked"
+            result["blocking_reasons"].append(f"arquivo historico rejeitado: {path}")
     out = Path(args.output)
     out.with_suffix(".json").write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
     out.with_suffix(".md").write_text(render_markdown(result), encoding="utf-8")
