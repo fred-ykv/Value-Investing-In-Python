@@ -1,5 +1,12 @@
 # Changelog
 
+## PR67 - Correcao da composicao do manifesto
+
+- Revisao 1.1 corrige as contagens para 11/11/10/18, sem alterar os 50 tickers.
+- Validacao compara grupos e total com o cadastro e rejeita divergencias.
+- Documentada a decomposicao dos 40 casos padrao e 10 casos lifecycle.
+- Nenhum peso ou parametro financeiro alterado; cobertura continua pendente.
+
 ## PR65 - Manifesto experimental do backtest historico
 
 - Congelado o universo, as datas, os horizontes, os benchmarks, as regras de
@@ -428,3 +435,4 @@ Original notebooks remain unchanged.
 - Added strict availability dates, staleness controls, source lineage, caching, and rejection of unavailable macro observations without a current-data fallback.
 - Persisted risk-free rate, ERP, Ke, WACC or applied discount rate, cost-of-capital method, confidence, and fallback status in historical calibration CSVs.
 - Re-ran the MLI/NUE pilot with 6/6 valid macro observations and documented recommendation sensitivity without changing score weights or thresholds.
+
