@@ -2,6 +2,8 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
+from fundamental_analysis.benchmark_preflight import _observation_index
 
 from fundamental_analysis.benchmark_preflight import build_preflight
 
@@ -22,6 +24,25 @@ class BenchmarkPreflightTests(unittest.TestCase):
         row = next(row for row in result["rows"] if row["ticker"] == "MDLA")
         self.assertFalse(row["elegivel"])
         self.assertIn("reconciliacao economica lifecycle pendente", row["motivos"])
+        self.assertFalse(row["preco_disponivel"])
+
+    def test_preserves_every_observation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "observations.csv"
+            path.write_text("ticker,point_in_time_validated\nMLI,False\nMLI,True\n", encoding="utf-8")
+            rows = _observation_index(path)
+        self.assertEqual(len(rows["MLI"]), 2)
+
+    def test_expanded_executor_blocks_before_clients_or_calculation(self):
+        import build_historical_dataset as runner
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch("sys.argv", ["runner", "--universe", "expanded", "--outdir", tmp]), patch.object(runner, "SecEdgarClient") as sec, patch.object(runner, "collect_benchmark_history") as collect:
+                self.assertEqual(runner.main(), 2)
+                sec.assert_not_called()
+                collect.assert_not_called()
+            result = json.loads((Path(tmp) / "benchmark_preflight.json").read_text(encoding="utf-8"))
+            self.assertEqual(result["status"], "blocked")
+            self.assertEqual(len(result["rows"]), 50)
 
 
 if __name__ == "__main__":
