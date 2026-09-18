@@ -17,7 +17,12 @@ class YFinanceSupplementProvider:
         if frame is None or getattr(frame, "empty", True):
             raise LookupError(f"serie Yahoo vazia: {ticker}")
         series = normalize_price_series(PriceSeries(ticker, tuple(yfinance_price_points(frame)), "yfinance_supplement"))
-        return series.between(start, end), yfinance_corporate_action_evidence(frame, ticker)
+        actions = yfinance_corporate_action_evidence(frame, ticker)
+        actions["events"] = [item for item in actions["events"]
+                             if start <= date.fromisoformat(item["day"]) <= end]
+        actions["unresolved_dividends"] = [item for item in actions["unresolved_dividends"]
+                                           if start <= date.fromisoformat(item["ex_date"]) <= end]
+        return series.between(start, end), actions
 
 
 def create_market_supplement_request(base_archives, output):
@@ -105,7 +110,7 @@ def collect_market_supplement(base_archives, output, provider=None, tolerance=0.
     by_ticker = {}
     for ticker, day in required:
         by_ticker.setdefault(ticker, []).append(date.fromisoformat(day))
-    entries, issues, unresolved, captured = [], [], [], 0
+    entries, issues, warnings, unresolved, captured = [], [], [], [], 0
     all_events = []
     for ticker, days in sorted(by_ticker.items()):
         try:
@@ -116,12 +121,16 @@ def collect_market_supplement(base_archives, output, provider=None, tolerance=0.
                 point, original = points.get(day), required[(ticker, day.isoformat())]
                 if point is None or point.volume is None or not math.isfinite(point.volume) or point.volume < 0:
                     raise ValueError(f"volume ausente em {day}")
-                for field, observed in (("raw_close", point.valuation_close), ("adjusted_close", point.adjusted_close)):
-                    expected = float(original[field])
-                    if abs(observed - expected) / expected > tolerance:
-                        raise ValueError(f"{field} diverge em {day}")
-                accepted.append({"day": day.isoformat(), "adjusted_close": point.adjusted_close,
-                                 "raw_close": point.valuation_close, "volume": point.volume})
+                expected_raw = float(original["raw_close"])
+                if abs(point.valuation_close - expected_raw) / expected_raw > tolerance:
+                    raise ValueError(f"raw_close diverge em {day}")
+                expected_adjusted = float(original["adjusted_close"])
+                if abs(point.adjusted_close - expected_adjusted) / expected_adjusted > tolerance:
+                    warnings.append(f"{ticker}: adjusted_close revisado em {day}")
+                accepted.append({"day": day.isoformat(), "adjusted_close": expected_adjusted,
+                                 "raw_close": expected_raw, "volume": point.volume,
+                                 "provider_raw_close": point.valuation_close,
+                                 "provider_adjusted_close": point.adjusted_close})
             payload = {"ticker": ticker, "points": accepted, "source": "yfinance_supplement_reconciled",
                        "security_id": "", "issuer_cik": "", "input_evidence_sha256": ""}
             entries.append(("price_series", _price_key(ticker, min(days), max(days)), payload))
@@ -137,7 +146,7 @@ def collect_market_supplement(base_archives, output, provider=None, tolerance=0.
                                                        "events": all_events, "source": "yfinance_actions"}))
     report = {"status": "complete_with_pending_events" if not issues else "partial",
               "source_archive_sha256": sorted(source_hashes), "required_volume_points": len(required),
-              "captured_volume_points": captured, "issues": issues,
+              "captured_volume_points": captured, "issues": issues, "warnings": warnings,
               "unresolved_dividends": unresolved, "corporate_event_coverage_written": bool(by_ticker and not issues and not unresolved)}
     if request_digest:
         report["request_sha256"] = request_digest
