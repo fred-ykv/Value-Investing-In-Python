@@ -66,9 +66,18 @@ def _load_archives(paths):
                 for point in payload["points"]:
                     identity = (ticker, point["day"])
                     normalized = {field: point.get(field) for field in ("raw_close", "adjusted_close", "volume")}
-                    if identity in prices and prices[identity] != normalized:
-                        conflicts.append(f"preco conflitante: {ticker} {point['day']}")
-                    prices[identity] = normalized
+                    if identity in prices:
+                        current = prices[identity]
+                        if any(abs(float(current[field]) - float(normalized[field])) > 1e-8
+                               for field in ("raw_close", "adjusted_close")):
+                            conflicts.append(f"preco conflitante: {ticker} {point['day']}")
+                        elif current.get("volume") is not None and normalized.get("volume") is not None \
+                                and float(current["volume"]) != float(normalized["volume"]):
+                            conflicts.append(f"volume conflitante: {ticker} {point['day']}")
+                        elif current.get("volume") is None and normalized.get("volume") is not None:
+                            current["volume"] = normalized["volume"]
+                    else:
+                        prices[identity] = normalized
             elif kind == "corporate_events":
                 payload = reader.load(kind, key)
                 event_coverage.append((date.fromisoformat(payload["start"]), date.fromisoformat(payload["end"])))
