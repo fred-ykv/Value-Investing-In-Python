@@ -21,8 +21,10 @@ autoriza a execucao do benchmark. Nenhum resultado real foi usado para defini-lo
 ## Limites desta primeira implementacao
 
 O simulador e independente do coletor. A entrada protegida reexecuta o preflight
-quando disponivel, mas permanece bloqueada mesmo com status ready: falta vincular
-os dados de entrada aos hashes das evidencias. Nao e uma integracao concluida.
+e compara hashes separados de calendario, sinais, barras, eventos e regras antes
+de chamar o motor. Alteracoes posteriores ao atestado sao rejeitadas e os hashes
+usados ficam anexados ao resultado. O PR66 ainda nao emite esse atestado; portanto,
+a execucao real permanece bloqueada ate a integracao entre os PRs.
 O calendario XNYS e validado com exchange_calendars e registra versao e hash das
 sessoes. Instale requirements-backtest.txt e execute check_portfolio_calendar.py
 para a verificacao independente de feriados, lacunas e ordenacao.
