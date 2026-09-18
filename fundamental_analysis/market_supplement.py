@@ -115,6 +115,11 @@ def collect_market_supplement(base_archives, output, provider=None, tolerance=0.
     for ticker, days in sorted(by_ticker.items()):
         try:
             series, actions = provider.fetch(ticker, min(days), max(days))
+            entries.append(("corporate_action_candidates", ticker, {
+                "ticker": ticker, "start": min(days).isoformat(), "end": max(days).isoformat(),
+                "events": actions["events"], "unresolved_dividends": actions["unresolved_dividends"],
+                "source": "yfinance_actions", "coverage_certified": False,
+            }))
             points = {point.day: point for point in series.points}
             accepted = []
             for day in sorted(days):
@@ -139,15 +144,11 @@ def collect_market_supplement(base_archives, output, provider=None, tolerance=0.
             unresolved.extend(actions["unresolved_dividends"])
         except (LookupError, ValueError, TypeError, RuntimeError) as exc:
             issues.append(f"{ticker}: {exc}")
-    if by_ticker and not issues and not unresolved:
-        start = min(day for days in by_ticker.values() for day in days)
-        end = max(day for days in by_ticker.values() for day in days)
-        entries.append(("corporate_events", "XNYS", {"start": start.isoformat(), "end": end.isoformat(),
-                                                       "events": all_events, "source": "yfinance_actions"}))
+    # Empty dividend results do not certify splits, terminal events, or issuer identity.
     report = {"status": "complete_with_pending_events" if not issues else "partial",
               "source_archive_sha256": sorted(source_hashes), "required_volume_points": len(required),
               "captured_volume_points": captured, "issues": issues, "warnings": warnings,
-              "unresolved_dividends": unresolved, "corporate_event_coverage_written": bool(by_ticker and not issues and not unresolved)}
+              "unresolved_dividends": unresolved, "corporate_event_coverage_written": False}
     if request_digest:
         report["request_sha256"] = request_digest
     entries.append(("market_evidence_report", "report", report))
