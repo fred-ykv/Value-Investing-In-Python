@@ -20,8 +20,13 @@ autoriza a execucao do benchmark. Nenhum resultado real foi usado para defini-lo
 
 ## Limites desta primeira implementacao
 
-O simulador e independente do coletor. Ainda faltam integracao ao preflight,
-calendario validado, tratamento de fracoes e relatorio de performance versus benchmarks.
+O simulador e independente do coletor. A entrada protegida reexecuta o preflight
+quando disponivel, mas permanece bloqueada mesmo com status ready: falta vincular
+os dados de entrada aos hashes das evidencias. Nao e uma integracao concluida.
+O calendario XNYS e validado com exchange_calendars e registra versao e hash das
+sessoes. Instale requirements-backtest.txt e execute check_portfolio_calendar.py
+para a verificacao independente de feriados, lacunas e ordenacao.
+Ainda faltam tratamento de fracoes e relatorio de performance versus benchmarks.
 Dividendos ordinarios registram direitos pelas acoes mantidas antes da negociacao
 na ex-date. A venda posterior preserva o recebivel; compras na ex-date nao recebem.
 Recebiveis integram o patrimonio, mas so viram caixa na primeira sessao na data
