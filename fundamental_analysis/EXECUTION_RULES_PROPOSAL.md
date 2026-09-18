@@ -21,9 +21,13 @@ autoriza a execucao do benchmark. Nenhum resultado real foi usado para defini-lo
 ## Limites desta primeira implementacao
 
 O simulador e independente do coletor. Ainda faltam integracao ao preflight,
-calendario validado, cadastro temporal de direitos a dividendos (ex-date versus
-pagamento), tratamento de fracoes e relatorio de performance versus benchmarks.
-O mecanismo simples de dividendos por acao mantida so serve para fixtures sem
-negociacao entre ex-date e pagamento. Nao usar essa aproximacao em dados reais.
+calendario validado, tratamento de fracoes e relatorio de performance versus benchmarks.
+Dividendos ordinarios registram direitos pelas acoes mantidas antes da negociacao
+na ex-date. A venda posterior preserva o recebivel; compras na ex-date nao recebem.
+Recebiveis integram o patrimonio, mas so viram caixa na primeira sessao na data
+de pagamento ou depois. Direitos pendentes ao fim permanecem no patrimonio.
+Dividendos especiais com due bills nao sao suportados. Split e dividendo na mesma
+data sao rejeitados ate reconciliar a base por acao. Eventos terminais impedem
+recompra do ticker em todos os rebalanceamentos posteriores.
 Os arquivos atuais de 12 meses nao bastam para comprovar esses requisitos.
 
