@@ -27,6 +27,21 @@ class Provider:
 
 
 class MarketSupplementTests(unittest.TestCase):
+    def test_splits_survive_pending_dividends(self):
+        from unittest.mock import Mock
+        from fundamental_analysis.historical_archive import ArchiveReader
+        with tempfile.TemporaryDirectory() as tmp:
+            base, supplement = Path(tmp) / "base", Path(tmp) / "supplement"
+            self.base_archive(base)
+            series, actions = Provider(dividend=True).fetch("AAA", None, None)
+            actions["events"] = [{"day": "2020-01-02", "ticker": "AAA", "kind": "split", "value": 2}]
+            provider = Mock()
+            provider.fetch.return_value = (series, actions)
+            collect_market_supplement([base], supplement, provider=provider)
+            archived = ArchiveReader(supplement).load("corporate_action_candidates", "AAA")
+        self.assertEqual(archived["events"], actions["events"])
+        self.assertFalse(archived["coverage_certified"])
+
     def base_archive(self, root):
         payload = {"ticker": "AAA", "source": "base", "security_id": "", "issuer_cik": "",
                    "input_evidence_sha256": "", "points": [{"day": "2020-01-02", "adjusted_close": 9.5,
@@ -41,7 +56,7 @@ class MarketSupplementTests(unittest.TestCase):
             _, _, prices, _, coverage, issues = _load_archives([base, supplement])
         self.assertEqual(report["captured_volume_points"], 1)
         self.assertEqual(prices[("AAA", "2020-01-02")]["volume"], 1234)
-        self.assertTrue(coverage)
+        self.assertFalse(coverage)
         self.assertFalse(issues)
 
     def test_supplement_preserves_base_price_within_reconciliation_tolerance(self):
@@ -63,6 +78,10 @@ class MarketSupplementTests(unittest.TestCase):
             base, supplement = Path(tmp) / "base", Path(tmp) / "supplement"
             self.base_archive(base)
             report = collect_market_supplement([base], supplement, provider=Provider(dividend=True))
+            from fundamental_analysis.historical_archive import ArchiveReader
+            evidence = ArchiveReader(supplement).load("corporate_action_candidates", "AAA")
+            self.assertEqual(len(evidence["unresolved_dividends"]), 1)
+            self.assertFalse(evidence["coverage_certified"])
         self.assertFalse(report["corporate_event_coverage_written"])
         self.assertEqual(report["unresolved_dividends"][0]["reason"], "payment_date_missing")
 
