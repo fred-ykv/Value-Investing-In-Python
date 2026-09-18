@@ -5,7 +5,8 @@ import unittest
 
 from fundamental_analysis.historical_archive import _price_key
 from fundamental_analysis.historical_prices import PricePoint, PriceSeries
-from fundamental_analysis.market_supplement import _write_archive, collect_market_supplement
+from fundamental_analysis.market_supplement import (_write_archive, collect_market_supplement,
+                                                     create_market_supplement_request)
 from fundamental_analysis.portfolio_package import _load_archives
 
 
@@ -56,6 +57,18 @@ class MarketSupplementTests(unittest.TestCase):
             report = collect_market_supplement([base], supplement, provider=Provider(changed_close=True))
         self.assertEqual(report["captured_volume_points"], 0)
         self.assertIn("raw_close diverge", report["issues"][0])
+
+    def test_compact_request_preserves_source_identity(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp) / "base"
+            request = Path(tmp) / "request.json"
+            supplement = Path(tmp) / "supplement"
+            self.base_archive(base)
+            created = create_market_supplement_request([base], request)
+            report = collect_market_supplement([], supplement, provider=Provider(), request_path=request)
+        self.assertEqual(created["required_volume_points"], 1)
+        self.assertEqual(report["source_archive_sha256"], created["source_archive_sha256"])
+        self.assertEqual(report["captured_volume_points"], 1)
 
 
 if __name__ == "__main__":
