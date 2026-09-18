@@ -1,0 +1,4 @@
+# Optional calendar dependency for the research portfolio runner.
+exchange-calendars==4.10.1
+pandas==2.2.3
+
