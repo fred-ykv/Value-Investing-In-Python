@@ -4,6 +4,28 @@ from fundamental_analysis.portfolio_simulator import Bar, Event, Signal, simulat
 
 
 class PortfolioTests(unittest.TestCase):
+    def test_dividend_right_survives_sale(self):
+        days = [date(2020,1,31),date(2020,2,3),date(2020,2,28),date(2020,3,2),date(2020,3,3)]
+        signals = {days[0]: [Signal("A", "x", .8, days[0])], days[2]: []}
+        bars = {(d,"A"): Bar(100.,100000) for d in days}
+        result = simulate(days, signals, bars, {days[2]: [Event("A","dividend",2.,days[-1])]})
+        self.assertEqual(result["equity_curve"][2]["receivables"], 100.)
+        self.assertEqual(result["equity_curve"][3]["holdings"], {})
+        self.assertEqual(result["equity_curve"][-1]["cash"], 100090.)
+        self.assertEqual(result["equity_curve"][-1]["receivables"], 0.)
+
+    def test_buy_on_ex_date_receives_no_dividend(self):
+        result = simulate(self.days,self.signals,self.bars,{self.days[1]: [Event("A","dividend",2.,self.days[-1])]})
+        self.assertEqual(result["equity_curve"][-1]["nav"],99995.)
+
+    def test_terminal_event_prevents_later_repurchase(self):
+        days = self.days + [date(2020,2,28),date(2020,3,2)]
+        signals = dict(self.signals)
+        signals[days[-2]] = self.signals[self.days[0]]
+        bars = {(d,"A"): Bar(100.,100000) for d in days}
+        result = simulate(days,signals,bars,{self.days[-1]: [Event("A","cancelled_zero",0.)]})
+        self.assertEqual(result["equity_curve"][-1]["holdings"],{})
+
     def setUp(self):
         self.days = [date(2020, 1, 31), date(2020, 2, 3), date(2020, 2, 4)]
         self.signals = {self.days[0]: [Signal("A", "industrial", .8, self.days[0])]}
