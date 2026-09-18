@@ -20,6 +20,50 @@ class YFinanceSupplementProvider:
         return series.between(start, end), yfinance_corporate_action_evidence(frame, ticker)
 
 
+def create_market_supplement_request(base_archives, output):
+    """Export only the immutable price identities needed by an online collector."""
+    required, source_hashes = {}, []
+    for path in base_archives:
+        reader = ArchiveReader(path)
+        source_hashes.append(reader.digest)
+        for entry in reader.manifest["entries"]:
+            if entry["kind"] != "price_series":
+                continue
+            payload = reader.load(entry["kind"], entry["key"])
+            ticker = payload["ticker"].upper()
+            for point in payload["points"]:
+                if point.get("volume") is None:
+                    required[(ticker, point["day"])] = {
+                        "ticker": ticker, "day": point["day"],
+                        "raw_close": point["raw_close"], "adjusted_close": point["adjusted_close"],
+                    }
+    payload = {"schema_version": 1, "source_archive_sha256": sorted(source_hashes),
+               "required_points": [required[key] for key in sorted(required)]}
+    raw = canonical_json(payload)
+    path = Path(output)
+    path.write_bytes(raw)
+    path.with_suffix(".sha256").write_text(sha256(raw), encoding="ascii")
+    return {"request_sha256": sha256(raw), "required_volume_points": len(required),
+            "source_archive_sha256": payload["source_archive_sha256"]}
+
+
+def _load_request(path):
+    path = Path(path)
+    raw = path.read_bytes()
+    if path.with_suffix(".sha256").read_text(encoding="ascii").strip() != sha256(raw):
+        raise ValueError("integridade da requisicao de mercado reprovada")
+    payload = json.loads(raw)
+    if payload.get("schema_version") != 1 or not isinstance(payload.get("required_points"), list):
+        raise ValueError("requisicao de mercado invalida")
+    required = {}
+    for point in payload["required_points"]:
+        key = (point["ticker"].upper(), point["day"])
+        if key in required:
+            raise ValueError("ponto duplicado na requisicao de mercado")
+        required[key] = point
+    return required, payload["source_archive_sha256"], sha256(raw)
+
+
 def _write_archive(output, entries, run):
     output = Path(output)
     output.mkdir(parents=True, exist_ok=False)
@@ -41,21 +85,23 @@ def _write_archive(output, entries, run):
     (output / "manifest.sha256").write_text(sha256(raw) + "\n", encoding="ascii")
 
 
-def collect_market_supplement(base_archives, output, provider=None, tolerance=0.005):
+def collect_market_supplement(base_archives, output, provider=None, tolerance=0.005, request_path=None):
     provider = provider or YFinanceSupplementProvider()
-    required = {}
-    source_hashes = []
-    for path in base_archives:
-        reader = ArchiveReader(path)
-        source_hashes.append(reader.digest)
-        for entry in reader.manifest["entries"]:
-            if entry["kind"] != "price_series":
-                continue
-            payload = reader.load(entry["kind"], entry["key"])
-            ticker = payload["ticker"].upper()
-            for point in payload["points"]:
-                if point.get("volume") is None:
-                    required[(ticker, point["day"])] = point
+    if request_path:
+        required, source_hashes, request_digest = _load_request(request_path)
+    else:
+        required, source_hashes, request_digest = {}, [], ""
+        for path in base_archives:
+            reader = ArchiveReader(path)
+            source_hashes.append(reader.digest)
+            for entry in reader.manifest["entries"]:
+                if entry["kind"] != "price_series":
+                    continue
+                payload = reader.load(entry["kind"], entry["key"])
+                ticker = payload["ticker"].upper()
+                for point in payload["points"]:
+                    if point.get("volume") is None:
+                        required[(ticker, point["day"])] = point
     by_ticker = {}
     for ticker, day in required:
         by_ticker.setdefault(ticker, []).append(date.fromisoformat(day))
@@ -82,7 +128,7 @@ def collect_market_supplement(base_archives, output, provider=None, tolerance=0.
             captured += len(accepted)
             all_events.extend(actions["events"])
             unresolved.extend(actions["unresolved_dividends"])
-        except (LookupError, ValueError, TypeError) as exc:
+        except (LookupError, ValueError, TypeError, RuntimeError) as exc:
             issues.append(f"{ticker}: {exc}")
     if by_ticker and not issues and not unresolved:
         start = min(day for days in by_ticker.values() for day in days)
@@ -93,6 +139,8 @@ def collect_market_supplement(base_archives, output, provider=None, tolerance=0.
               "source_archive_sha256": sorted(source_hashes), "required_volume_points": len(required),
               "captured_volume_points": captured, "issues": issues,
               "unresolved_dividends": unresolved, "corporate_event_coverage_written": bool(by_ticker and not issues and not unresolved)}
+    if request_digest:
+        report["request_sha256"] = request_digest
     entries.append(("market_evidence_report", "report", report))
     _write_archive(output, entries, report)
     return report
