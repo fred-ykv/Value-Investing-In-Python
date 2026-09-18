@@ -34,13 +34,14 @@ class Event:
     ticker: str
     kind: str
     value: float
+    payment_date: date | None = None
 
 
 def simulate(sessions, signals, bars, events=None, rules=ExecutionRules()):
     """signals maps month-end dates to full eligible snapshots; bars use raw USD.
 
     sessions must be a complete, independently validated exchange calendar.
-    Event dividends are cash on payment date; splits precede that day's close.
+    Dividend events occur on ex-date with a separate payment date.
     Missing held-asset prices or liquidity abort rather than silently fill.
     """
     sessions = tuple(sessions)
@@ -59,6 +60,8 @@ def simulate(sessions, signals, bars, events=None, rules=ExecutionRules()):
     cash, holdings, sectors = rules.initial_cash, {}, {}
     ledger, curve = [], []
     pending = None
+    terminated = set()
+    receivables = []
     fee = rules.cost_bps / 10000
     def bar(day, ticker):
         item = bars.get((day, ticker))
@@ -66,8 +69,12 @@ def simulate(sessions, signals, bars, events=None, rules=ExecutionRules()):
             raise ValueError(f"Preco/volume invalido: {ticker} {day}")
         return item
     for day in sessions:
-        terminated = set()
-        for event in events.get(day, ()):
+        day_events = tuple(events.get(day, ()))
+        if len({(e.ticker, e.kind) for e in day_events}) != len(day_events):
+            raise ValueError("Evento duplicado")
+        if any(e.kind == "dividend" and any(other.ticker == e.ticker and other.kind == "split" for other in day_events) for e in day_events):
+            raise ValueError("Split e dividendo simultaneos exigem base por acao reconciliada")
+        for event in day_events:
             if not isfinite(event.value) or event.value < 0 or event.kind not in {"split", "dividend", "cash_acquisition", "cancelled_zero"}:
                 raise ValueError("Evento corporativo invalido")
             qty = holdings.get(event.ticker, 0)
@@ -78,7 +85,9 @@ def simulate(sessions, signals, bars, events=None, rules=ExecutionRules()):
                 if qty:
                     holdings[event.ticker] = int(new_qty)
             elif event.kind == "dividend":
-                cash += qty * event.value
+                if event.payment_date is None or event.payment_date < day:
+                    raise ValueError("Dividendo exige pagamento posterior ou igual a data ex")
+                receivables.append((event.payment_date, event.ticker, qty * event.value))
             else:
                 if event.kind == "cancelled_zero" and event.value != 0:
                     raise ValueError("Cancelamento exige valor zero")
@@ -86,10 +95,17 @@ def simulate(sessions, signals, bars, events=None, rules=ExecutionRules()):
                 holdings.pop(event.ticker, None)
                 terminated.add(event.ticker)
             ledger.append({"date": str(day), "ticker": event.ticker, "event": event.kind, "value": event.value, "shares": qty})
+        for payment_day, ticker, amount in receivables:
+            if payment_day <= day:
+                cash += amount
+                ledger.append({"date": str(day), "payment_date": str(payment_day), "ticker": ticker,
+                               "event": "dividend_payment", "amount": amount})
+        receivables = [r for r in receivables if r[0] > day]
+        receivable_value = sum(r[2] for r in receivables)
         if pending is not None:
             ranked = [s for s in pending if s.eligible and s.ticker not in terminated]
             ranked.sort(key=lambda s: (-s.score, s.ticker))
-            nav = cash + sum(q * bar(day, t).close for t, q in holdings.items())
+            nav = cash + receivable_value + sum(q * bar(day, t).close for t, q in holdings.items())
             targets, sector_targets = {}, {}
             for signal in ranked:
                 if len(targets) >= rules.max_positions:
@@ -127,8 +143,8 @@ def simulate(sessions, signals, bars, events=None, rules=ExecutionRules()):
                     holdings[ticker] = holdings.get(ticker, 0) + qty
                     ledger.append({"date": str(day), "ticker": ticker, "side": "buy", "shares": qty, "price": item.close, "cost": cost})
         pending = None
-        nav = cash + sum(q * bar(day, t).close for t, q in holdings.items())
-        curve.append({"date": str(day), "cash": cash, "nav": nav, "holdings": dict(holdings)})
+        nav = cash + receivable_value + sum(q * bar(day, t).close for t, q in holdings.items())
+        curve.append({"date": str(day), "cash": cash, "receivables": receivable_value, "nav": nav, "holdings": dict(holdings)})
         if day in signals:
             pending = tuple(signals[day])
             if len({s.ticker for s in pending}) != len(pending):
@@ -136,5 +152,5 @@ def simulate(sessions, signals, bars, events=None, rules=ExecutionRules()):
             if any(s.available_on > day or not s.sector or not s.ticker or not isfinite(s.score) or not 0 <= s.score <= 1 for s in pending):
                 raise ValueError("Sinal invalido ou contem informacao futura")
     return {"ledger": ledger, "equity_curve": curve, "total_cost": sum(r.get("cost", 0) for r in ledger),
-            "benchmark_authorized": False, "limitations": ["Calendario e evidencias PIT precisam de validacao externa ao simulador", "Limites de pesos aplicados nos alvos de rebalanceamento; oscilacoes entre datas podem excede-los", "Dividendos exigem direitos por acao e datas de pagamento pre-processados; fracionamentos nao inteiros bloqueiam"]}
+            "benchmark_authorized": False, "limitations": ["Calendario e evidencias PIT precisam de validacao externa ao simulador", "Limites de pesos aplicados nos alvos de rebalanceamento; oscilacoes entre datas podem excede-los", "Pagamento em dia sem sessao fica disponivel na sessao seguinte; dividendos especiais com due bills e fracoes exigem tratamento separado"]}
 
