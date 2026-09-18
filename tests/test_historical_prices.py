@@ -11,7 +11,7 @@ from fundamental_analysis.historical_prices import (
     PricePoint,
     PriceSeries,
     calculate_price_outcome,
-    yfinance_price_points,
+    yfinance_price_points, yfinance_corporate_action_evidence,
     _calculate_lifecycle_outcome,
 )
 
@@ -147,6 +147,8 @@ class HistoricalPriceTests(unittest.TestCase):
                 "Close": [50.0, 50.0, 60.0],
                 "Adj Close": [45.0, 46.0, 55.0],
                 "Stock Splits": [0.0, 2.0, 0.0],
+                "Volume": [1000, 2000, 3000],
+                "Dividends": [0.0, 0.0, 0.5],
             },
             index=pd.to_datetime(["2024-01-04", "2024-01-05", "2024-01-08"]),
         )
@@ -157,6 +159,11 @@ class HistoricalPriceTests(unittest.TestCase):
         self.assertEqual(points[1].valuation_close, 50.0)
         self.assertEqual(points[2].valuation_close, 60.0)
         self.assertEqual(points[0].adjusted_close, 45.0)
+        self.assertEqual(points[1].volume, 2000.0)
+        actions = yfinance_corporate_action_evidence(frame, "test")
+        self.assertEqual(actions["events"][0]["kind"], "split")
+        self.assertEqual(actions["events"][0]["value"], 2.0)
+        self.assertEqual(actions["unresolved_dividends"][0]["reason"], "payment_date_missing")
 
     def test_normalized_csv_requires_permanent_identity_and_source(self):
         content = (
@@ -325,3 +332,4 @@ class HistoricalPriceTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

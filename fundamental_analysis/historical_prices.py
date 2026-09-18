@@ -243,6 +243,7 @@ def yfinance_price_points(frame: object) -> list[PricePoint]:
     raw_close = frame["Close"]
     adjusted_close = frame["Adj Close"] if "Adj Close" in frame else raw_close
     splits = frame["Stock Splits"] if "Stock Splits" in frame else None
+    volumes = frame["Volume"] if "Volume" in frame else None
     points: list[PricePoint] = []
     future_split_factor = 1.0
     for raw_day in reversed(frame.index):
@@ -260,13 +261,39 @@ def yfinance_price_points(frame: object) -> list[PricePoint]:
                 if hasattr(raw_day, "to_pydatetime")
                 else date.fromisoformat(str(raw_day)[:10])
             )
-            points.append(PricePoint(converted, adjusted_value, valuation_value))
+            volume = None
+            if volumes is not None:
+                candidate = float(volumes.loc[raw_day])
+                if math.isfinite(candidate) and candidate >= 0:
+                    volume = candidate
+            points.append(PricePoint(converted, adjusted_value, valuation_value, volume))
         if splits is not None:
             split_factor = float(splits.loc[raw_day])
             if math.isfinite(split_factor) and split_factor > 0:
                 future_split_factor *= split_factor
     points.reverse()
     return points
+
+
+def yfinance_corporate_action_evidence(frame: object, ticker: str) -> dict:
+    """Extract splits and flag dividends that lack an auditable payment date."""
+    split_column = frame["Stock Splits"] if "Stock Splits" in frame else None
+    dividend_column = frame["Dividends"] if "Dividends" in frame else None
+    splits, unresolved_dividends = [], []
+    for raw_day in frame.index:
+        day = (raw_day.to_pydatetime().date() if hasattr(raw_day, "to_pydatetime")
+               else date.fromisoformat(str(raw_day)[:10]))
+        if split_column is not None:
+            value = float(split_column.loc[raw_day])
+            if math.isfinite(value) and value > 0:
+                splits.append({"day": day.isoformat(), "ticker": ticker.upper(),
+                               "kind": "split", "value": value, "payment_date": None})
+        if dividend_column is not None:
+            value = float(dividend_column.loc[raw_day])
+            if math.isfinite(value) and value > 0:
+                unresolved_dividends.append({"ex_date": day.isoformat(), "ticker": ticker.upper(),
+                                             "value": value, "reason": "payment_date_missing"})
+    return {"events": splits, "unresolved_dividends": unresolved_dividends}
 
 
 def calculate_price_outcome(
@@ -626,3 +653,4 @@ def add_months(value: date, months: int) -> date:
     month = month_index % 12 + 1
     day = min(value.day, calendar.monthrange(year, month)[1])
     return date(year, month, day)
+

@@ -1,0 +1,4 @@
+# Optional dependencies for preparing and validating the research portfolio.
+exchange-calendars==4.10.1
+pandas==2.2.3
+

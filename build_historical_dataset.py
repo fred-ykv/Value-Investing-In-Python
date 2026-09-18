@@ -112,6 +112,17 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
+    if args.universe == "expanded":
+        from fundamental_analysis.benchmark_preflight import build_preflight, render_markdown
+        result = build_preflight(lifecycle_evidence=args.lifecycle_evidence)
+        outdir = Path(args.outdir)
+        outdir.mkdir(parents=True, exist_ok=True)
+        (outdir / "benchmark_preflight.json").write_text(
+            json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+        (outdir / "benchmark_preflight.md").write_text(render_markdown(result), encoding="utf-8")
+        if result["status"] != "ready":
+            print("Benchmark completo bloqueado. Consulte benchmark_preflight.md.")
+            return 2
     requested = {ticker.upper().strip() for ticker in args.tickers}
     universe = {
         "active": DEFAULT_BENCHMARK_CASES,
@@ -229,3 +240,4 @@ def write_dataset_outputs(dataset, outdir: Path, validation_start_year: int) -> 
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
