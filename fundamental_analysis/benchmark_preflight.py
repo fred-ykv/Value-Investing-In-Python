@@ -13,6 +13,7 @@ from typing import Any, Iterable, Mapping
 from .benchmark_universe import HISTORICAL_BENCHMARK_CASES, BenchmarkCase
 from .experiment_manifest import load_experiment_manifest
 from .lifecycle_evidence import LifecycleEvidencePriceClient
+from .portfolio_attestation import load_portfolio_attestation
 
 
 @dataclass(frozen=True)
@@ -67,6 +68,8 @@ def build_preflight(
     manifest_path: str | Path | None = None,
     lifecycle_evidence: str | Path | None = None,
     historical_observations: str | Path | None = None,
+    portfolio_attestation: str | Path | None = None,
+    verified_archive_sha256: Iterable[str] = (),
     cases: Iterable[BenchmarkCase] = HISTORICAL_BENCHMARK_CASES,
 ) -> dict[str, Any]:
     manifest = load_experiment_manifest(manifest_path) if manifest_path else load_experiment_manifest()
@@ -113,7 +116,28 @@ def build_preflight(
     if len(rows) != expected: blocking.append(f"universo esperado: {expected}; observado: {len(rows)}")
     if not group_ok: blocking.append("cobertura de grupos diverge do manifesto")
     if eligible != expected: blocking.append(f"empresas elegiveis: {eligible}/{expected}")
-    return {"manifest_version": manifest["manifest_version"], "experiment_id": manifest["experiment_id"], "status": "blocked" if blocking else "ready", "expected_companies": expected, "observed_companies": len(rows), "eligible_companies": eligible, "group_counts": group_counts, "group_counts_match_manifest": group_ok, "rows": [asdict(row) for row in rows], "blocking_reasons": blocking}
+    attestation = None
+    if portfolio_attestation:
+        try:
+            attestation = load_portfolio_attestation(
+                portfolio_attestation,
+                expected_experiment_id=manifest["experiment_id"],
+                expected_manifest_version=manifest["manifest_version"],
+                verified_archive_sha256=verified_archive_sha256,
+            )
+        except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+            blocking.append(f"atestado da carteira rejeitado: {exc}")
+    else:
+        blocking.append("atestado das entradas da carteira ausente")
+    result = {"manifest_version": manifest["manifest_version"], "experiment_id": manifest["experiment_id"], "status": "blocked" if blocking else "ready", "expected_companies": expected, "observed_companies": len(rows), "eligible_companies": eligible, "group_counts": group_counts, "group_counts_match_manifest": group_ok, "rows": [asdict(row) for row in rows], "blocking_reasons": blocking}
+    if attestation:
+        result.update({
+            "portfolio_input_hashes": attestation["portfolio_input_hashes"],
+            "calendar_sessions_sha256": attestation["calendar_sessions_sha256"],
+            "portfolio_attestation_sha256": attestation["attestation_sha256"],
+            "source_archive_sha256": attestation["source_archive_sha256"],
+        })
+    return result
 
 
 def render_markdown(result: Mapping[str, Any]) -> str:
