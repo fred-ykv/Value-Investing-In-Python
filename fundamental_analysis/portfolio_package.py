@@ -63,12 +63,14 @@ def _load_archives(paths):
             elif kind == "price_series":
                 payload = reader.load(kind, key)
                 ticker = payload["ticker"].upper()
+                is_supplement = payload.get("source") == "yfinance_supplement_reconciled"
                 for point in payload["points"]:
                     identity = (ticker, point["day"])
                     normalized = {field: point.get(field) for field in ("raw_close", "adjusted_close", "volume")}
                     if identity in prices:
                         current = prices[identity]
-                        if any(abs(float(current[field]) - float(normalized[field])) > 1e-8
+                        tolerance = 0.005 if is_supplement else 1e-8
+                        if any(abs(float(current[field]) - float(normalized[field])) / float(current[field]) > tolerance
                                for field in ("raw_close", "adjusted_close")):
                             conflicts.append(f"preco conflitante: {ticker} {point['day']}")
                         elif current.get("volume") is not None and normalized.get("volume") is not None \
@@ -76,6 +78,8 @@ def _load_archives(paths):
                             conflicts.append(f"volume conflitante: {ticker} {point['day']}")
                         elif current.get("volume") is None and normalized.get("volume") is not None:
                             current["volume"] = normalized["volume"]
+                    elif is_supplement:
+                        conflicts.append(f"volume suplementar sem preco-base: {ticker} {point['day']}")
                     else:
                         prices[identity] = normalized
             elif kind == "corporate_events":
